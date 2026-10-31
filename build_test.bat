@@ -62,7 +62,7 @@ if not "%~1"=="" (
   set "RN=%~1"
 ) else (
   set "RN=1"
-  for /f "usebackq delims=" %%n in (`powershell -NoProfile -Command "$m=0; Get-ChildItem @('%APK_OUT%\Anx-Reader-android-%VER%-*-r*.apk','%WIN_OUT%\Anx-Reader-windows-%VER%-r*.zip') -ErrorAction SilentlyContinue | Where-Object { $_.Name -cmatch '-r(\d+)\.(apk^|zip)$' } | ForEach-Object { $n=[int]$Matches[1]; if($n -gt $m){$m=$n} }; $m+1"`) do set "RN=%%n"
+  for /f "usebackq delims=" %%n in (`powershell -NoProfile -Command "$m=0; Get-ChildItem @('%APK_OUT%\Anx-Reader-android-%VER%-*-r*.apk','%WIN_OUT%\Anx-Reader-windows-*-r*.zip') -ErrorAction SilentlyContinue | Where-Object { $_.Name -cmatch '-r(\d+)\.(apk^|zip)$' } | ForEach-Object { $n=[int]$Matches[1]; if($n -gt $m){$m=$n} }; $m+1"`) do set "RN=%%n"
 )
 echo Revision: r%RN%
 set "FAILED=0"
@@ -110,9 +110,11 @@ call flutter build windows --release --no-tree-shake-icons || set "FAILED=1"
 if "%FAILED%"=="1" goto fail
 
 echo === stage windows package ===
+rem cmd "copy" does not recurse - xcopy /e is required for the data\ dir
 if exist "%WIN_STAGE%" rmdir /s /q "%WIN_STAGE%"
 mkdir "%WIN_STAGE%" || goto fail
-copy /y "build\windows\x64\runner\Release\*" "%WIN_STAGE%\" >nul || (set "FAILED=1" & echo [FAIL] copy runner Release)
+xcopy /y /e /i /q "build\windows\x64\runner\Release\*" "%WIN_STAGE%" >nul
+if errorlevel 1 (set "FAILED=1" & echo [FAIL] xcopy runner Release)
 copy /y "windows\runner\resources\app_icon.ico" "%WIN_STAGE%\logo.ico" >nul || (set "FAILED=1" & echo [FAIL] copy logo.ico)
 copy /y "scripts\windows\x64\*" "%WIN_STAGE%\" >nul || (set "FAILED=1" & echo [FAIL] copy VC runtime DLLs)
 if "%FAILED%"=="1" goto fail
@@ -123,7 +125,7 @@ echo zip: !WINZIP!
 powershell -NoProfile -Command "Compress-Archive -Path '%WIN_STAGE%\*' -DestinationPath '%WIN_OUT%\Anx-Reader-windows-%VER%-r%RN%.zip' -Force" || (set "FAILED=1" & echo [FAIL] Compress-Archive)
 
 echo verify: Anx-Reader-windows-%VER%-r%RN%.zip
-python -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); bad=z.testzip(); sys.exit(1 if bad else 0)" "%WIN_OUT%\Anx-Reader-windows-%VER%-r%RN%.zip" || (set "FAILED=1" & echo [FAIL] zip check windows)
+python -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); names=z.namelist(); need=['anx_reader.exe','logo.ico','msvcp140.dll','icudtl.dat','flutter_assets']; miss=[k for k in need if not any(k in n.replace('\\','/') for n in names)]; sys.exit(1 if (z.testzip() or miss) else 0)" "%WIN_OUT%\Anx-Reader-windows-%VER%-r%RN%.zip" || (set "FAILED=1" & echo [FAIL] zip check windows ^(missing or corrupt entries^))
 if exist "%WIN_STAGE%" rmdir /s /q "%WIN_STAGE%"
 
 rem ============================ SUMMARY ============================
