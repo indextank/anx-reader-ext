@@ -99,8 +99,9 @@ kdfSalt 说明：v1 采用确定性盐以保证多设备同钥——盐 = `SHA-2
 | `tts` | ttsService、ttsVolume/Pitch/Rate、ttsVoiceModel_*、onlineTtsConfig_* | 是（服务 key） |
 | `translate` | translateService、translateServiceConfig_*、translationMode、bookTranslationModes | 是（服务 key） |
 | `ai` | aiProviders（含 API keys）、selectedAiService、aiPrompt_*、userPrompts、enabledAiTools、aiRpm、maxAiCacheCount、aiPanelWidth/Height、aiChatDisplayMode、旧 aiConfig_* | 是（API key） |
-| `account` | 其余服务凭据类键（显式列举，非自动兜底） | 是 |
 | `advanced` | chapterSplit*、searchEngines、customCSS、clearLogWhenStart、enableJsForEpub、statisticsDashboardTiles | 否 |
+
+实现期修订（2026-10-31）：取消原「account」类别——盘点全部 pref 键后确认不存在归属其下的键（应用无登录账号体系，服务凭据已分别归入 tts/translate/ai），保留空类别违背 YAGNI。类别数为 6。
 
 排除规则：
 
@@ -116,7 +117,7 @@ kdfSalt 说明：v1 采用确定性盐以保证多设备同钥——盐 = `SHA-2
 
 ## 6. 合并与冲突处理
 
-- 时间戳：本地为每个类别保存上次同步快照（`settingsSyncSnapshot_<category>`）与 `settingsSyncUpdatedAt_<category>`。每次同步重新采集快照并与上次比对：内容变化 → `updatedAt = now`；未变 → 沿用旧值。不依赖 `Prefs` 写钩子。
+- 时间戳：本地以单键 `settingsSyncState` 保存每个类别的上次同步内容哈希（canonical JSON 的 SHA-256）与 `updatedAt`。每次同步重新采集快照并与上次哈希比对：内容变化 → `updatedAt = now`；未变 → 沿用旧值。不依赖 `Prefs` 写钩子；哈希而非完整快照，避免双份存储敏感数据。
 - 合并规则：远端 `updatedAt` 严格大于本地 → 取远端并写入本地；否则本地胜（相等取本地，避免时钟抖动回退）。即 last-write-wins、优先最新有效配置。
 - 有效性校验：远端值以备份 schema 的 `{type, value}` 标签写入，应用时按类型分发到 `prefs.setBool/setInt/setDouble/setString/setStringList`；类型或结构不符的项丢弃并记日志，不中断整批。
 - 首次同步（远端无该文件）→ 直接上传本地。
@@ -136,7 +137,7 @@ kdfSalt 说明：v1 采用确定性盐以保证多设备同钥——盐 = `SHA-2
 `lib/page/settings_page/sync.dart` 的「WebDAV」Section 下新增「设置同步」子区块：
 
 - 总开关（`settingsSyncEnabled`）。
-- 7 个类别排除开关（复用现有 `SwitchListTile` 风格；关闭即加入 `settingsSyncExcludedCategories`）。
+- 6 个类别排除开关（复用现有 `SwitchListTile` 风格；关闭即加入 `settingsSyncExcludedCategories`）。
 - 简短说明：默认同步外观、阅读、朗读、翻译、AI 等设置；AI 密钥等敏感数据加密后同步。
 
 ## 9. 测试策略（TDD）
