@@ -2,8 +2,11 @@ import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
+import 'package:anx_reader/service/tts/online_tts.dart';
+import 'package:anx_reader/service/tts/tts_factory.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/service/tts/tts_service.dart' as tts_svc;
+import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/reading_page/widget_title.dart';
 import 'package:anx_reader/page/book_player/epub_player.dart';
 import 'package:anx_reader/page/settings_page/narrate.dart';
@@ -27,9 +30,24 @@ class _TtsWidgetState extends State<TtsWidget> {
   double rate = TtsHandler().rate;
   double stopSeconds = 0;
   Timer? stopTimer;
+  OnlineTts? _onlineTts;
+
+  void _onSegmentsSkipped() {
+    final tts = _onlineTts;
+    if (tts == null || !mounted) return;
+    // Notify once per speak run (on the first skipped segment) so the
+    // user knows text was skipped without spamming toasts.
+    if (tts.skippedSegmentsNotifier.value != 1) return;
+    AnxToast.show(L10n.of(context).ttsSegmentsSkipped(1));
+  }
 
   @override
   void initState() {
+    final current = TtsFactory().current;
+    if (current is OnlineTts) {
+      _onlineTts = current;
+      current.skippedSegmentsNotifier.addListener(_onSegmentsSkipped);
+    }
     if (TtsHandler().ttsStateNotifier.value != TtsStateEnum.playing) {
       TtsHandler()
           .init(
@@ -47,6 +65,7 @@ class _TtsWidgetState extends State<TtsWidget> {
 
   @override
   void dispose() {
+    _onlineTts?.skippedSegmentsNotifier.removeListener(_onSegmentsSkipped);
     super.dispose();
   }
 

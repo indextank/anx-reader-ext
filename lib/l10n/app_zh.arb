@@ -824,6 +824,32 @@
   "settingsNarrateOpenAiModelDescription": "OpenAI TTS 模型（例如 gpt-4o-mini-tts）",
   "settingsNarrateOpenAiVoiceDescription": "语音名称（例如 alloy）",
   "settingsNarrateOpenAiInstructionsDescription": "可选的语音风格指令",
+  "settingsNarrateStepAudioTts": "StepAudio TTS",
+  "settingsNarrateStepAudioHelpText": "阶跃星辰 StepAudio 提供神经网络 TTS 语音。请配置 StepFun API Key、模型与音色以使用此服务。",
+  "settingsNarrateStepAudioUrlDescription": "StepAudio TTS 接口地址（填基础地址或完整地址均可）",
+  "settingsNarrateStepAudioKeyDescription": "StepFun API Key",
+  "settingsNarrateStepAudioModelDescription": "StepAudio TTS 模型（例如 step-tts-2）",
+  "settingsNarrateStepAudioVoiceDescription": "音色 ID（例如 cixingnansheng）",
+  "settingsNarrateStepAudioFormatDescription": "音频格式（mp3 或 wav）",
+  "settingsNarrateStepAudioNormalizationDescription": "文本规范化：enhanced 适合长文朗读（数字处理更好），standard 时延更低",
+  "settingsNarrateMimoTts": "MiMo TTS",
+  "settingsNarrateMimoHelpText": "小米 MiMo 提供神经网络 TTS 语音。请配置 MiMo API Key 与音色以使用此服务。",
+  "settingsNarrateMimoUrlDescription": "MiMo TTS 接口地址（填基础地址或完整地址均可）",
+  "settingsNarrateMimoKeyDescription": "MiMo API Key",
+  "settingsNarrateMimoModelDescription": "MiMo TTS 模型（例如 mimo-v2.5-tts）",
+  "settingsNarrateMimoVoiceDescription": "预置音色",
+  "settingsNarrateMimoFormatDescription": "音频格式（mp3 或 wav）",
+  "settingsNarrateMimoInstructionDescription": "可选的音色/风格描述（作为 user 消息发送）",
+  "settingsNarrateTimeoutDescription": "请求超时时间（秒）",
+  "settingsNarrateEmptyAudioResult": "未返回音频，请检查配置。",
+  "ttsSegmentsSkipped": "因语音合成失败跳过 {n} 段，继续朗读后续内容。",
+  "@ttsSegmentsSkipped": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
   "translateBingWeb": "Bing 网页翻译",
   "translateGoogleWeb": "Google 网页翻译",
   "translateMicrosoftAzure": "Microsoft Azure API",

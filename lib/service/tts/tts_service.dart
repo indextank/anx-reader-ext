@@ -1,7 +1,9 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/service/tts/aliyun/aliyun_tts_backend.dart';
 import 'package:anx_reader/service/tts/azure_tts_backend.dart';
+import 'package:anx_reader/service/tts/mimo/mimo_tts_backend.dart';
 import 'package:anx_reader/service/tts/openai_tts_backend.dart';
+import 'package:anx_reader/service/tts/step_audio/step_audio_tts_backend.dart';
 import 'package:anx_reader/service/tts/tts_service_provider.dart';
 import 'package:flutter/material.dart';
 
@@ -11,7 +13,9 @@ enum TtsService {
   system,
   aliyun,
   azure,
-  openai;
+  openai,
+  stepaudio,
+  mimo;
   // Future services can be added here: google, aws, elevenlabs, etc.
 
   /// Get the provider for this TTS service.
@@ -25,6 +29,10 @@ enum TtsService {
         return AzureTtsProvider();
       case TtsService.openai:
         return OpenAiTtsProvider();
+      case TtsService.stepaudio:
+        return StepAudioTtsProvider();
+      case TtsService.mimo:
+        return MimoTtsProvider();
     }
   }
 

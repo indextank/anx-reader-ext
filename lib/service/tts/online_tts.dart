@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/page/reading_page.dart';
@@ -7,6 +8,7 @@ import 'package:anx_reader/service/tts/tts_service.dart';
 import 'package:anx_reader/service/tts/tts_service_provider.dart';
 import 'package:anx_reader/service/tts/models/tts_segment.dart';
 import 'package:anx_reader/service/tts/models/tts_sentence.dart';
+import 'package:anx_reader/service/tts/models/tts_text_splitter.dart';
 import 'package:anx_reader/service/tts/models/tts_voice.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -70,9 +72,22 @@ class OnlineTts extends BaseTts {
   final ValueNotifier<TtsStateEnum> ttsStateNotifier =
       ValueNotifier<TtsStateEnum>(TtsStateEnum.stopped);
 
+  /// Number of segments skipped in the current speak run because every
+  /// fetch attempt failed. Playback continues with the following segments;
+  /// the UI can listen here to surface the loss to the user.
+  final ValueNotifier<int> skippedSegmentsNotifier = ValueNotifier<int>(0);
+
   @override
   void updateTtsState(TtsStateEnum newState) {
     ttsStateNotifier.value = newState;
+  }
+
+  void _onSegmentSkipped(TtsSegment segment) {
+    skippedSegmentsNotifier.value = skippedSegmentsNotifier.value + 1;
+    final head = segment.sentence.text.substring(
+        0, segment.sentence.text.length.clamp(0, 20));
+    AnxLog.severe(
+        'TTS segment skipped after $_maxRetries retries (skipped so far: ${skippedSegmentsNotifier.value}): "$head..."');
   }
 
   // ============ Properties ============
@@ -152,12 +167,8 @@ class OnlineTts extends BaseTts {
   }
 
   // ============ Buffer Management ============
-  String _segmentKey(TtsSentence sentence) {
-    if (sentence.cfi != null && sentence.cfi!.isNotEmpty) {
-      return sentence.cfi!;
-    }
-    return '${sentence.text.hashCode}';
-  }
+  String _segmentKey(TtsSentence sentence, int partIndex) =>
+      segmentBufferKey(sentence, partIndex);
 
   void _resetBuffer() {
     _buffer.clear();
@@ -219,17 +230,22 @@ class OnlineTts extends BaseTts {
           continue;
         }
 
-        // Create placeholder segments in ORDER first
+        // Create placeholder segments in ORDER first. Long sentences are
+        // split into engine-sized chunks (see TtsServiceProvider
+        // .maxRequestChars) so engines that reject oversized input cannot
+        // silently drop the text.
         final newSegments = <TtsSegment>[];
         for (final sentence in sentences) {
           if (_shouldStop) break;
-          final key = _segmentKey(sentence);
-          if (_bufferKeys.contains(key)) continue;
+          for (final segment
+              in expandTtsSentence(sentence, backend.maxRequestChars)) {
+            final key = _segmentKey(segment.sentence, segment.partIndex);
+            if (_bufferKeys.contains(key)) continue;
 
-          _bufferKeys.add(key);
-          final segment = TtsSegment(sentence: sentence);
-          newSegments.add(segment);
-          _buffer.add(segment); // Add in order!
+            _bufferKeys.add(key);
+            newSegments.add(segment);
+            _buffer.add(segment); // Add in order!
+          }
         }
 
         // Now fetch audio in batches to limit concurrency
@@ -261,19 +277,12 @@ class OnlineTts extends BaseTts {
       );
 
       // Filter out already buffered sentences
-      final newSentences = <TtsSentence>[];
-      for (final s in sentences) {
-        final key = _segmentKey(s);
-        if (!_bufferKeys.contains(key)) {
-          newSentences.add(s);
-        }
-      }
-
       // Note: We do NOT call getNextTextFunction here.
       // Advancing the reader position should only happen in the player loop
       // after playback completes, to avoid interfering with highlighting.
-
-      return newSentences;
+      // Per-chunk dedupe happens when segments are created in the
+      // prefetcher, so no sentence-level filter is needed here.
+      return sentences;
     } catch (e) {
       AnxLog.severe('Collect sentences error: $e');
       return [];
@@ -321,6 +330,7 @@ class OnlineTts extends BaseTts {
           // Check version before marking as silent
           if (segment.fetchVersion == targetVersion) {
             segment.isSilent = true;
+            _onSegmentSkipped(segment);
           }
         }
       } catch (e) {
@@ -329,6 +339,7 @@ class OnlineTts extends BaseTts {
           // Check version before marking as silent
           if (segment.fetchVersion == targetVersion) {
             segment.isSilent = true;
+            _onSegmentSkipped(segment);
           }
         }
       }
@@ -376,15 +387,20 @@ class OnlineTts extends BaseTts {
           continue;
         }
 
-        // Play audio
-        _playbackCompleter = Completer<void>();
-        final source = BytesSource(segment.audio!, mimeType: 'audio/mp3');
-
-        try {
-          await audioPlayer.play(source);
-          await _playbackCompleter!.future;
-        } catch (e) {
-          AnxLog.severe('Playback error: $e');
+        // Play audio. A transient player failure would drop the whole
+        // segment, so retry once before moving on.
+        var played = false;
+        for (var attempt = 0; attempt < 2 && !played && !_shouldStop;
+            attempt++) {
+          _playbackCompleter = Completer<void>();
+          final source = BytesSource(segment.audio!, mimeType: 'audio/mp3');
+          try {
+            await audioPlayer.play(source);
+            await _playbackCompleter!.future;
+            played = true;
+          } catch (e) {
+            AnxLog.severe('Playback error (attempt ${attempt + 1}/2): $e');
+          }
         }
 
         _playbackCompleter = null;
@@ -417,6 +433,7 @@ class OnlineTts extends BaseTts {
   @override
   Future<void> speak({String? content}) async {
     _shouldStop = false;
+    skippedSegmentsNotifier.value = 0;
     updateTtsState(TtsStateEnum.playing);
 
     // Sync to current location first
@@ -478,8 +495,9 @@ class OnlineTts extends BaseTts {
     await speak();
   }
 
-  /// For testing a specific voice in settings
-  Future<void> speakWithVoice(String content, String voice) async {
+  /// For testing a specific voice in settings.
+  /// Returns the synthesized audio so callers can react to empty results.
+  Future<Uint8List> speakWithVoice(String content, String voice) async {
     await stop();
     final audioPlayer = await _ensurePlayer();
 
@@ -488,6 +506,7 @@ class OnlineTts extends BaseTts {
       final source = BytesSource(bytes, mimeType: 'audio/mp3');
       await audioPlayer.play(source);
     }
+    return bytes;
   }
 
   @override

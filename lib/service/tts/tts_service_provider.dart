@@ -30,6 +30,12 @@ abstract class TtsServiceProvider extends ServiceProvider<dynamic> {
   @override
   String getLabel(BuildContext context);
 
+  /// Maximum text length (in characters) sent to [speak] in a single
+  /// request. The playback pipeline splits longer sentences before
+  /// requesting audio, so no text is dropped when an engine rejects
+  /// oversized input. Engines with a documented limit override this.
+  int get maxRequestChars => 800;
+
   /// Generate speech audio from text.
   /// Only required for online TTS services.
   /// System TTS doesn't use this method.

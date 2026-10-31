@@ -9,6 +9,7 @@ import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/service/tts/tts_service.dart' as tts_svc;
 import 'package:anx_reader/utils/get_current_language_code.dart';
 import 'package:anx_reader/utils/log/common.dart';
+import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/common/anx_button.dart';
 import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:anx_reader/widgets/settings/service_config_form.dart';
@@ -63,7 +64,10 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
       await tts.stop();
       if (tts is OnlineTts) {
         if (voiceShortName != null) {
-          await tts.speakWithVoice(text, voiceShortName);
+          final bytes = await tts.speakWithVoice(text, voiceShortName);
+          if (bytes.isEmpty && mounted) {
+            AnxToast.show(L10n.of(context).settingsNarrateEmptyAudioResult);
+          }
         } else {
           await tts.speak(content: text);
         }
@@ -444,6 +448,11 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
           DropdownMenuItem(
               value: 'openai',
               child: Text(L10n.of(context).settingsNarrateOpenAiTts)),
+          DropdownMenuItem(
+              value: 'stepaudio',
+              child: Text(L10n.of(context).settingsNarrateStepAudioTts)),
+          DropdownMenuItem(
+              value: 'mimo', child: Text(L10n.of(context).settingsNarrateMimoTts)),
         ],
         onChanged: (value) async {
           if (value != null && value != currentServiceId) {

@@ -10,7 +10,12 @@ function rangeIsEmpty(range) {
     return range.collapsed || range.toString().trim() === ''
 }
 
-const quoteChars = new Set(['"', "'", '“', '”', '‘', '’'])
+// CJK closing quotes/brackets are included so a sentence keeps its closing
+// marks instead of leaving them stranded at the start of the next sentence.
+const quoteChars = new Set(['"', "'", '“', '”', '‘', '’', '」', '』', '）', '》', '】'])
+// Only closing marks may trail a terminator; opening quotes must stay with
+// the sentence they introduce.
+const closingQuoteChars = new Set(['"', '”', '’', '」', '』', '）', '》', '】'])
 
 const isLocalLink = href => {
     if (!href) return false
@@ -30,6 +35,12 @@ const shouldSkipTextNode = node => {
 
 const getRangeText = range => {
     const fragment = range.cloneContents()
+    // A <br> separates text nodes but contributes no text of its own, which
+    // would join adjacent lines into one word ("endstart"). Replace it with
+    // a space in the cloned fragment so line breaks survive extraction.
+    for (const br of fragment.querySelectorAll('br')) {
+        br.replaceWith(br.ownerDocument.createTextNode(' '))
+    }
     const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT)
     let text = ''
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -59,7 +70,7 @@ const isSentenceTerminator = (char, nextChar) => {
 
 const advancePastQuotes = (text, index) => {
     let end = index
-    while (end < text.length && quoteChars.has(text[end])) end++
+    while (end < text.length && closingQuoteChars.has(text[end])) end++
     return end
 }
 
@@ -327,6 +338,10 @@ export class TTS {
 
     from(range) {
         this.#lastMark = null
+        // First sentence whose END is at or after the anchor's start, so the
+        // sentence containing the anchor is read from its beginning.
+        // Note: END_TO_START compares the ARGUMENT's end with THIS's start,
+        // so this reads anchor.start - range_.end <= 0.
         const entry = this.#list.find(range_ =>
             range.compareBoundaryPoints(Range.END_TO_START, range_) <= 0)
         if (entry?.[1]) this.highlight(entry[1].cloneRange())

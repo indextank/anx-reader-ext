@@ -858,6 +858,32 @@
   "settingsNarrateOpenAiModelDescription": "OpenAI TTS model (e.g. gpt-4o-mini-tts)",
   "settingsNarrateOpenAiVoiceDescription": "Voice name (e.g. alloy)",
   "settingsNarrateOpenAiInstructionsDescription": "Optional instructions for the voice style",
+  "settingsNarrateStepAudioTts": "StepAudio TTS",
+  "settingsNarrateStepAudioHelpText": "StepFun StepAudio provides neural TTS voices. Configure your StepFun API key, model and voice to use this service.",
+  "settingsNarrateStepAudioUrlDescription": "StepAudio TTS endpoint (base URL or full URL)",
+  "settingsNarrateStepAudioKeyDescription": "StepFun API Key",
+  "settingsNarrateStepAudioModelDescription": "StepAudio TTS model (e.g. step-tts-2)",
+  "settingsNarrateStepAudioVoiceDescription": "Voice ID (e.g. cixingnansheng)",
+  "settingsNarrateStepAudioFormatDescription": "Audio format (mp3 or wav)",
+  "settingsNarrateStepAudioNormalizationDescription": "Text normalization: enhanced is recommended for long-form reading (better numbers), standard has lower latency",
+  "settingsNarrateMimoTts": "MiMo TTS",
+  "settingsNarrateMimoHelpText": "Xiaomi MiMo provides neural TTS voices. Configure your MiMo API key and voice to use this service.",
+  "settingsNarrateMimoUrlDescription": "MiMo TTS endpoint (base URL or full URL)",
+  "settingsNarrateMimoKeyDescription": "MiMo API Key",
+  "settingsNarrateMimoModelDescription": "MiMo TTS model (e.g. mimo-v2.5-tts)",
+  "settingsNarrateMimoVoiceDescription": "Preset voice ID",
+  "settingsNarrateMimoFormatDescription": "Audio format (mp3 or wav)",
+  "settingsNarrateMimoInstructionDescription": "Optional voice/style description sent as the user message",
+  "settingsNarrateTimeoutDescription": "Request timeout in seconds",
+  "settingsNarrateEmptyAudioResult": "No audio was returned. Please check your configuration.",
+  "ttsSegmentsSkipped": "Skipped {n} paragraph(s) because speech synthesis failed; reading continues.",
+  "@ttsSegmentsSkipped": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
   "translateBingWeb": "Bing Web Translate",
   "translateGoogleWeb": "Google Web Translate",
   "translateMicrosoftAzure": "Microsoft Azure API",
