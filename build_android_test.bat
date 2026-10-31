@@ -35,19 +35,13 @@ for /f "tokens=1 delims=+" %%v in ("%FULLVER%") do set "VER=%%v"
 echo Version: %FULLVER%  (marketing %VER%)
 
 rem ---- rN: from arg or auto-detect max existing + 1 ----
+rem (regex anchors the trailing -rN.apk; cmd string replace is
+rem  case-insensitive and would match the R in "Anx-Reader")
 if not "%~1"=="" (
   set "RN=%~1"
 ) else (
-  set /a RN=0
-  for /f "delims=" %%f in ('dir /b "%OUTDIR%\Anx-Reader-android-%VER%-*-r*.apk" 2^>nul') do (
-    set "cand=0"
-    set "tail=%%f"
-    set "tail=!tail:*-r=!"
-    set "tail=!tail:.apk=!"
-    set /a cand=!tail! 2>nul
-    if !cand! GTR !RN! set /a RN=!cand!
-  )
-  set /a RN+=1
+  set "RN=1"
+  for /f "usebackq delims=" %%n in (`powershell -NoProfile -Command "(Get-ChildItem '%OUTDIR%\Anx-Reader-android-%VER%-*-r*.apk' -ErrorAction SilentlyContinue | Where-Object { $_.Name -cmatch '-r(\d+)\.apk$' } | ForEach-Object { [int]$Matches[1] } | Measure-Object -Maximum).Maximum + 1"`) do set "RN=%%n"
 )
 echo Revision: r%RN%
 
