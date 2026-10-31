@@ -1775,6 +1775,26 @@ class Prefs extends ChangeNotifier {
       selectedSearchEngineId = SearchEngine.builtinEngines.first.id;
     }
   }
+
+  // ---- Settings sync (anx/settings.v1.enc) ----
+
+  bool get settingsSyncEnabled {
+    return prefs.getBool('settingsSyncEnabled') ?? true;
+  }
+
+  set settingsSyncEnabled(bool enabled) {
+    prefs.setBool('settingsSyncEnabled', enabled);
+    notifyListeners();
+  }
+
+  List<String> get settingsSyncExcludedCategories {
+    return prefs.getStringList('settingsSyncExcludedCategories') ?? [];
+  }
+
+  set settingsSyncExcludedCategories(List<String> categories) {
+    prefs.setStringList('settingsSyncExcludedCategories', categories);
+    notifyListeners();
+  }
 }
 
 ReadingInfoEnum _decodeReadingInfoEnum(
