@@ -12,6 +12,7 @@ import 'package:anx_reader/providers/sync_status.dart';
 import 'package:anx_reader/providers/tb_groups.dart';
 import 'package:anx_reader/service/sync/sync_client_factory.dart';
 import 'package:anx_reader/service/sync/sync_client_base.dart';
+import 'package:anx_reader/service/sync/settings_sync_manager.dart';
 import 'package:anx_reader/service/database_sync_manager.dart';
 import 'package:anx_reader/dao/database.dart';
 import 'package:anx_reader/utils/get_path/databases_path.dart';
@@ -330,6 +331,17 @@ class Sync extends _$Sync {
       }
 
       await syncFiles();
+
+      // Settings sync runs independently; its failure must not affect the
+      // database/file sync that already succeeded above.
+      try {
+        await SettingsSyncManager(
+          onUserMessage: (_) => AnxToast.show(
+              L10n.of(navigatorKey.currentContext!).settingsSyncDecryptFailed),
+        ).sync(finalDirection);
+      } catch (e, s) {
+        AnxLog.warning('Settings sync failed\n$e\n$s');
+      }
 
       imageCache.clear();
       imageCache.clearLiveImages();

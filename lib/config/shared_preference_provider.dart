@@ -1781,6 +1781,12 @@ class Prefs extends ChangeNotifier {
 
   // ---- Settings sync (anx/settings.v1.enc) ----
 
+  /// Notify listeners that settings were changed in bulk (e.g. by the
+  /// settings sync applying remote values).
+  void notifySettingsChanged() {
+    notifyListeners();
+  }
+
   bool get settingsSyncEnabled {
     return prefs.getBool('settingsSyncEnabled') ?? true;
   }

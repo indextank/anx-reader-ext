@@ -221,7 +221,7 @@ class SettingsSyncManager {
     await prefs.setString(statePrefsKey, jsonEncode(newState));
 
     if (direction != SyncDirection.upload) {
-      Prefs().notifyListeners();
+      Prefs().notifySettingsChanged();
     }
     AnxLog.info(
         'Settings sync done (${uploadCategories.length} categories)');
