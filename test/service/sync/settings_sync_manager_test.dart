@@ -3,7 +3,6 @@ import 'dart:io' as io;
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/enums/sync_direction.dart';
-import 'package:anx_reader/service/sync/settings_sync_catalog.dart';
 import 'in_memory_sync_client.dart';
 import 'package:anx_reader/service/sync/settings_sync_crypto.dart';
 import 'package:anx_reader/service/sync/settings_sync_manager.dart';
