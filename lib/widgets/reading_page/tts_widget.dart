@@ -1,6 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
+import 'package:anx_reader/providers/tts_reading_position_provider.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
 import 'package:anx_reader/service/tts/online_tts.dart';
 import 'package:anx_reader/service/tts/tts_factory.dart';
@@ -12,19 +13,20 @@ import 'package:anx_reader/page/book_player/epub_player.dart';
 import 'package:anx_reader/page/settings_page/narrate.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/more_settings.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
 import 'dart:async';
 
-class TtsWidget extends StatefulWidget {
+class TtsWidget extends ConsumerStatefulWidget {
   const TtsWidget({super.key, required this.epubPlayerKey});
 
   final GlobalKey<EpubPlayerState> epubPlayerKey;
 
   @override
-  State<TtsWidget> createState() => _TtsWidgetState();
+  ConsumerState<TtsWidget> createState() => _TtsWidgetState();
 }
 
-class _TtsWidgetState extends State<TtsWidget> {
+class _TtsWidgetState extends ConsumerState<TtsWidget> {
   double volume = TtsHandler().volume;
   double pitch = TtsHandler().pitch;
   double rate = TtsHandler().rate;
@@ -41,12 +43,22 @@ class _TtsWidgetState extends State<TtsWidget> {
     AnxToast.show(L10n.of(context).ttsSegmentsSkipped(1));
   }
 
+  void _onReadingPositionChanged() {
+    final tts = _onlineTts;
+    if (tts == null || !mounted) return;
+    final position = tts.readingPositionNotifier.value;
+    if (position != null) {
+      ref.read(ttsReadingPositionProvider.notifier).update(position);
+    }
+  }
+
   @override
   void initState() {
     final current = TtsFactory().current;
     if (current is OnlineTts) {
       _onlineTts = current;
       current.skippedSegmentsNotifier.addListener(_onSegmentsSkipped);
+      current.readingPositionNotifier.addListener(_onReadingPositionChanged);
     }
     if (TtsHandler().ttsStateNotifier.value != TtsStateEnum.playing) {
       TtsHandler()
@@ -66,6 +78,7 @@ class _TtsWidgetState extends State<TtsWidget> {
   @override
   void dispose() {
     _onlineTts?.skippedSegmentsNotifier.removeListener(_onSegmentsSkipped);
+    _onlineTts?.readingPositionNotifier.removeListener(_onReadingPositionChanged);
     super.dispose();
   }
 

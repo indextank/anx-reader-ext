@@ -435,6 +435,24 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
     );
   }
 
+  /// Whether the sentence at [cfi] is on the currently displayed page.
+  /// Used by the TTS resume logic to decide between continuing in place
+  /// and restarting from the current page.
+  Future<bool> ttsCfiOnCurrentPage(String cfi) async {
+    final result = await webViewController.callAsyncJavaScript(
+      functionBody: 'return await ttsCfiOnCurrentPage(${jsonEncode(cfi)})',
+    );
+    return result.value == true;
+  }
+
+  /// Cfi of the reader's current location; used as the page token stored
+  /// with the TTS reading position.
+  Future<String> ttsCurrentPageCfi() async => _jsString(
+        await webViewController.callAsyncJavaScript(
+          functionBody: 'return ttsCurrentPageCfi()',
+        ),
+      );
+
   Future<bool> isFootNoteOpen() async =>
       (await webViewController.evaluate("window.isFootNoteOpen()"));
 

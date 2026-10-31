@@ -29,6 +29,11 @@ class MimoTtsProvider extends TtsServiceProvider {
   @override
   TtsService get service => TtsService.mimo;
 
+  /// MiMo documents no speed parameter; the pipeline applies the rate via
+  /// playback speed instead so the slider works in real time.
+  @override
+  bool get supportsRateParameter => false;
+
   @override
   String getLabel(BuildContext context) =>
       L10n.of(context).settingsNarrateMimoTts;

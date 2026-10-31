@@ -6,6 +6,7 @@ import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
 import 'package:anx_reader/service/tts/tts_service.dart';
 import 'package:anx_reader/service/tts/tts_service_provider.dart';
+import 'package:anx_reader/service/tts/models/tts_reading_position.dart';
 import 'package:anx_reader/service/tts/models/tts_segment.dart';
 import 'package:anx_reader/service/tts/models/tts_sentence.dart';
 import 'package:anx_reader/service/tts/models/tts_text_splitter.dart';
@@ -77,6 +78,14 @@ class OnlineTts extends BaseTts {
   /// the UI can listen here to surface the loss to the user.
   final ValueNotifier<int> skippedSegmentsNotifier = ValueNotifier<int>(0);
 
+  /// Last-read sentence cfi and the page token displayed at that time.
+  /// Updated as each segment is dequeued; consumed on resume to decide
+  /// between continuing in place and restarting from the current page.
+  final ValueNotifier<TtsReadingPositionState?> readingPositionNotifier =
+      ValueNotifier<TtsReadingPositionState?>(null);
+
+  String? _lastReadCfi;
+
   @override
   void updateTtsState(TtsStateEnum newState) {
     ttsStateNotifier.value = newState;
@@ -113,8 +122,16 @@ class OnlineTts extends BaseTts {
   @override
   set rate(double rate) {
     Prefs().ttsRate = rate;
-    // Clear pending audio so it will be re-fetched with new rate
+    // Clear pending audio so it will be re-fetched with new settings
     _clearPendingAudio();
+    // Engines without a server-side speed parameter follow the slider via
+    // playback speed; apply it right away so the change is audible on the
+    // currently playing segment too.
+    if (!backend.supportsRateParameter && _player != null) {
+      _player!.setPlaybackRate(rate.clamp(0.5, 2.0)).catchError((Object e) {
+        AnxLog.info('setPlaybackRate failed: $e');
+      });
+    }
   }
 
   @override
@@ -150,12 +167,24 @@ class OnlineTts extends BaseTts {
     await _player!.setReleaseMode(ReleaseMode.stop);
     await _player!.setPlayerMode(PlayerMode.mediaPlayer);
     await _player!.setVolume(volume);
+    await _applyEnginePlaybackRate(_player!);
 
     _playerCompleteSubscription = _player!.onPlayerComplete.listen((_) {
       _playbackCompleter?.complete();
     });
 
     return _player!;
+  }
+
+  /// Engines without a server-side speed parameter (e.g. MiMo) follow the
+  /// UI rate slider through player playback speed instead.
+  Future<void> _applyEnginePlaybackRate(AudioPlayer player) async {
+    if (backend.supportsRateParameter) return;
+    try {
+      await player.setPlaybackRate(rate.clamp(0.5, 2.0));
+    } catch (e) {
+      AnxLog.info('setPlaybackRate failed: $e');
+    }
   }
 
   Future<void> _disposePlayer() async {
@@ -376,8 +405,19 @@ class OnlineTts extends BaseTts {
         _currentSegment = segment;
         _currentVoiceText = segment.sentence.text;
 
-        // Highlight current sentence
-        await _highlightSegment(segment);
+        // The sentence was already highlighted (and the page followed) by
+        // the ttsNext() call of the previous segment's completion, so no
+        // extra webview roundtrip happens between two segments — the page
+        // turns the moment the last character of a page finishes.
+        // Record the reading position for resume.
+        final segmentCfi = segment.sentence.cfi;
+        if (segmentCfi != null && segmentCfi.isNotEmpty) {
+          _lastReadCfi = segmentCfi;
+          readingPositionNotifier.value = TtsReadingPositionState(
+            lastReadCfi: segmentCfi,
+            pageToken: _currentPageToken(),
+          );
+        }
 
         // Handle silent segment
         if (segment.isSilent) {
@@ -420,13 +460,9 @@ class OnlineTts extends BaseTts {
     }
   }
 
-  Future<void> _highlightSegment(TtsSegment segment) async {
+  String _currentPageToken() {
     final state = epubPlayerKey.currentState;
-    final cfi = segment.sentence.cfi;
-    if (state == null || cfi == null || cfi.isEmpty) return;
-    try {
-      await state.ttsHighlightByCfi(cfi);
-    } catch (_) {}
+    return state?.chapterTitle ?? '';
   }
 
   // ============ Public API ============
@@ -466,13 +502,68 @@ class OnlineTts extends BaseTts {
   @override
   Future<void> pause() async {
     await _player?.pause();
+    await _capturePageToken();
     updateTtsState(TtsStateEnum.paused);
   }
 
   @override
   Future<void> resume() async {
-    await _player?.resume();
+    final action = await _resolveResumeAction();
+    if (action == TtsResumeAction.restartFromCurrentPageStart) {
+      // The reader moved away from the page that was being read: discard
+      // the paused queue and start from the current page's beginning
+      // instead of jumping back to the old position.
+      await stop();
+      await speak();
+      return;
+    }
+    final player = _player;
+    if (player != null) {
+      await _applyEnginePlaybackRate(player);
+      await player.resume();
+    }
     updateTtsState(TtsStateEnum.playing);
+  }
+
+  /// Branch rule lives in [resolveResumeAction] (pure, tested); here we
+  /// only gather its input: whether the last-read sentence is still on
+  /// the currently displayed page.
+  Future<TtsResumeAction> _resolveResumeAction() async {
+    final cfi = _lastReadCfi;
+    if (cfi == null || cfi.isEmpty) {
+      return resolveResumeAction(
+          lastReadCfi: null, lastReadPositionVisible: false);
+    }
+    var visible = false;
+    final state = epubPlayerKey.currentState;
+    if (state != null) {
+      try {
+        visible = await state.ttsCfiOnCurrentPage(cfi);
+      } catch (e) {
+        AnxLog.info('Resume visibility check failed: $e');
+      }
+    }
+    return resolveResumeAction(
+        lastReadCfi: cfi, lastReadPositionVisible: visible);
+  }
+
+  /// Refresh the stored page token from the reader (off the playback
+  /// critical path) so the persisted position knows which page it
+  /// belonged to.
+  Future<void> _capturePageToken() async {
+    final current = readingPositionNotifier.value;
+    if (current == null) return;
+    final state = epubPlayerKey.currentState;
+    if (state == null) return;
+    try {
+      final token = await state.ttsCurrentPageCfi();
+      if (token.isNotEmpty) {
+        readingPositionNotifier.value = TtsReadingPositionState(
+          lastReadCfi: current.lastReadCfi,
+          pageToken: token,
+        );
+      }
+    } catch (_) {}
   }
 
   @override

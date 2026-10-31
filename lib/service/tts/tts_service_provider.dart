@@ -36,6 +36,12 @@ abstract class TtsServiceProvider extends ServiceProvider<dynamic> {
   /// oversized input. Engines with a documented limit override this.
   int get maxRequestChars => 800;
 
+  /// Whether the engine applies [speak]'s rate argument server-side.
+  /// Engines without a documented speed parameter must return false; the
+  /// playback pipeline then applies the rate via player playback speed so
+  /// the UI slider still works and takes effect immediately.
+  bool get supportsRateParameter => true;
+
   /// Generate speech audio from text.
   /// Only required for online TTS services.
   /// System TTS doesn't use this method.

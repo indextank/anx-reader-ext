@@ -2122,6 +2122,33 @@ window.ttsHighlightByCfi = cfi => {
   return reader.view.tts.highlightCfi(cfi)
 }
 
+// Whether the sentence at the given cfi is on the currently displayed
+// page (used by the Dart resume logic to branch between continuing in
+// place and restarting from the current page start).
+window.ttsCfiOnCurrentPage = async cfi => {
+  try {
+    const resolved = await reader.view.resolveNavigation(cfi)
+    if (!resolved || !resolved.anchor) return false
+    const contents = reader.view.renderer.getContents()
+    const content = contents.find(c => c.index === resolved.index) || contents[0]
+    if (!content || !content.doc) return false
+    const range = resolved.anchor(content.doc)
+    const rects = range && range.getClientRects && range.getClientRects()
+    if (!rects || !rects.length) return false
+    const rect = Array.from(rects).find(r => r.width > 0 && r.height > 0) || rects[0]
+    const view = content.doc.defaultView
+    const w = view ? view.innerWidth : 0
+    if (!w) return false
+    return rect.left >= -1 && rect.right <= w + 1
+  } catch (e) {
+    console.error('ttsCfiOnCurrentPage failed', e)
+    return false
+  }
+}
+
+// Cfi of the reader's current location; page token for the TTS position.
+window.ttsCurrentPageCfi = () => reader.view.lastLocation?.cfi ?? ''
+
 window.ttsNextSection = async () => {
   await nextSection()
   initTts()
