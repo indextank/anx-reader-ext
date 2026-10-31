@@ -8,6 +8,7 @@ import 'package:anx_reader/enums/sync_protocol.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/providers/sync.dart';
+import 'package:anx_reader/service/sync/settings_sync_catalog.dart';
 import 'package:anx_reader/service/sync/sync_client_factory.dart';
 import 'package:anx_reader/utils/platform_utils.dart';
 import 'package:anx_reader/utils/save_file_to_download.dart';
@@ -123,6 +124,43 @@ class _SyncSettingState extends ConsumerState<SyncSetting> {
                 onPressed: (context) {
                   ref.read(syncProvider.notifier).showBackupManagementDialog();
                 })
+          ],
+        ),
+        SettingsSection(
+          title: Text(L10n.of(context).settingsSyncAppSettingsTitle),
+          tiles: [
+            SettingsTile.switchTile(
+              title: Text(L10n.of(context).settingsSyncAppSettingsTitle),
+              description: Text(L10n.of(context).settingsSyncAppSettingsHint),
+              leading: const Icon(Icons.settings_suggest_outlined),
+              initialValue: Prefs().settingsSyncEnabled,
+              enabled: Prefs().webdavStatus,
+              onToggle: (bool value) {
+                setState(() {
+                  Prefs().settingsSyncEnabled = value;
+                });
+              },
+            ),
+            ...SettingsSyncCategory.values.map((category) {
+              final excluded = Prefs().settingsSyncExcludedCategories;
+              return SettingsTile.switchTile(
+                title: Text(_settingsSyncCategoryLabel(context, category)),
+                leading: Icon(_settingsSyncCategoryIcon(category)),
+                initialValue: !excluded.contains(category.name),
+                enabled: Prefs().webdavStatus && Prefs().settingsSyncEnabled,
+                onToggle: (bool value) {
+                  setState(() {
+                    final list = [...Prefs().settingsSyncExcludedCategories];
+                    if (value) {
+                      list.remove(category.name);
+                    } else {
+                      list.add(category.name);
+                    }
+                    Prefs().settingsSyncExcludedCategories = list;
+                  });
+                },
+              );
+            }),
           ],
         ),
         SettingsSection(
@@ -466,4 +504,28 @@ void showWebdavDialog(BuildContext context) {
       );
     },
   );
+}
+
+String _settingsSyncCategoryLabel(
+    BuildContext context, SettingsSyncCategory category) {
+  final l10n = L10n.of(context);
+  return switch (category) {
+    SettingsSyncCategory.appearance => l10n.settingsSyncCategoryAppearance,
+    SettingsSyncCategory.reading => l10n.settingsSyncCategoryReading,
+    SettingsSyncCategory.tts => l10n.settingsSyncCategoryTts,
+    SettingsSyncCategory.translate => l10n.settingsSyncCategoryTranslate,
+    SettingsSyncCategory.ai => l10n.settingsSyncCategoryAi,
+    SettingsSyncCategory.advanced => l10n.settingsSyncCategoryAdvanced,
+  };
+}
+
+IconData _settingsSyncCategoryIcon(SettingsSyncCategory category) {
+  return switch (category) {
+    SettingsSyncCategory.appearance => Icons.palette_outlined,
+    SettingsSyncCategory.reading => Icons.menu_book_outlined,
+    SettingsSyncCategory.tts => Icons.record_voice_over_outlined,
+    SettingsSyncCategory.translate => Icons.translate_outlined,
+    SettingsSyncCategory.ai => Icons.auto_awesome_outlined,
+    SettingsSyncCategory.advanced => Icons.tune_outlined,
+  };
 }
