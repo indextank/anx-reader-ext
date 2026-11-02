@@ -1,7 +1,10 @@
 import 'package:anx_reader/enums/sync_protocol.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/service/sync/sync_connection_tester.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:flutter/material.dart';
 
 class SyncTestHelper {
@@ -116,16 +119,17 @@ class SyncTestHelper {
         builder: (context) => AlertDialog(
           title: Row(
             children: [
-              const Icon(Icons.check_circle, color: Colors.green),
-              const SizedBox(width: 8),
+              Icon(Icons.check_circle, color: context.appTheme.colors.success),
+              SizedBox(width: AppSpacing.tokens.s8),
               Text(L10n.of(context).commonSuccess),
             ],
           ),
           content: Text(result.message),
           actions: [
-            TextButton(
+            AppButton(
+              label: L10n.of(context).commonOk,
+              variant: AppButtonVariant.text,
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(L10n.of(context).commonOk),
             ),
           ],
         ),
@@ -136,16 +140,17 @@ class SyncTestHelper {
         builder: (context) => AlertDialog(
           title: Row(
             children: [
-              const Icon(Icons.error, color: Colors.red),
-              const SizedBox(width: 8),
+              Icon(Icons.error, color: context.appTheme.colors.error),
+              SizedBox(width: AppSpacing.tokens.s8),
               Text(L10n.of(context).commonFailed),
             ],
           ),
           content: Text(result.message),
           actions: [
-            TextButton(
+            AppButton(
+              label: L10n.of(context).commonOk,
+              variant: AppButtonVariant.text,
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(L10n.of(context).commonOk),
             ),
           ],
         ),

@@ -3,23 +3,23 @@ import 'dart:math';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/dao/book.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/hint_key.dart';
+import 'package:anx_reader/enums/sync_direction.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/page/book_detail.dart';
-import 'package:anx_reader/providers/sync.dart';
 import 'package:anx_reader/providers/book_list.dart';
-import 'package:anx_reader/enums/sync_direction.dart';
+import 'package:anx_reader/providers/sync.dart';
 import 'package:anx_reader/providers/sync_status.dart';
+import 'package:anx_reader/service/book.dart';
 import 'package:anx_reader/service/convert_to_epub/txt/convert_from_txt.dart';
 import 'package:anx_reader/service/md5_service.dart';
-import 'package:anx_reader/service/book.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/get_path/get_base_path.dart';
 import 'package:anx_reader/utils/share_file.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/bookshelf/book_cover.dart';
-import 'package:anx_reader/widgets/delete_confirm.dart';
-import 'package:anx_reader/widgets/icon_and_text.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,322 +27,361 @@ import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
 import 'package:path/path.dart' as p;
 
-class BookBottomSheet extends ConsumerWidget {
+class BookBottomSheet extends ConsumerStatefulWidget {
   const BookBottomSheet({
     super.key,
     required this.book,
+    this.onDelete,
+    this.onReplace,
+    this.fileLength,
   });
 
   final Book book;
+  final Future<void> Function(Book book)? onDelete;
+  final Future<void> Function(Book book, File newFile)? onReplace;
+  final Future<int> Function(File file)? fileLength;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    Future<void> handleDelete(BuildContext context) async {
-      Navigator.pop(context);
-      await bookDao.updateBook(Book(
-        id: book.id,
-        title: book.title,
-        coverPath: book.coverPath,
-        filePath: book.filePath,
-        lastReadPosition: book.lastReadPosition,
-        readingPercentage: book.readingPercentage,
-        author: book.author,
-        isDeleted: true,
-        description: book.description,
-        rating: book.rating,
-        md5: book.md5,
-        createTime: book.createTime,
-        updateTime: DateTime.now(),
-      ));
-      ref.read(bookListProvider.notifier).refresh();
-      File(book.fileFullPath).delete();
-      File(book.coverFullPath).delete();
-    }
+  ConsumerState<BookBottomSheet> createState() => _BookBottomSheetState();
+}
 
-    void handleDetail(BuildContext context) {
-      Navigator.pop(context);
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => BookDetail(book: book),
-        ),
-      );
-    }
+class _BookBottomSheetState extends ConsumerState<BookBottomSheet> {
+  bool _isReplacing = false;
+  bool _isReleasing = false;
 
-    void handleUpload(BuildContext context) {
-      Future<void> core() async {
-        await ref.read(syncProvider.notifier).releaseBook(book);
-        ref.read(syncStatusProvider.notifier).refresh();
+  Book get book => widget.book;
+
+  Future<void> _deleteBook() async {
+    final onDelete = widget.onDelete;
+    if (onDelete != null) {
+      await onDelete(book);
+      return;
+    }
+    await bookDao.updateBook(book.copyWith(
+      isDeleted: true,
+      updateTime: DateTime.now(),
+    ));
+    await ref.read(bookListProvider.notifier).refresh();
+    final bookFile = File(book.fileFullPath);
+    if (await bookFile.exists()) await bookFile.delete();
+    final coverFile = File(book.coverFullPath);
+    if (await coverFile.exists()) await coverFile.delete();
+  }
+
+  Future<void> _handleDelete() async {
+    final l10n = L10n.of(context);
+    final confirmed = await AppDialog.confirm(
+      context,
+      title: l10n.commonDelete,
+      message: book.title,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription:
+          l10n.bookBottomSheetDeleteDangerDescription(book.title),
+      onConfirm: _deleteBook,
+    );
+    if (confirmed && mounted) Navigator.pop(context);
+  }
+
+  void _handleDetail() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => BookDetail(book: book)),
+    );
+  }
+
+  Future<void> _releaseBook() async {
+    if (_isReleasing) return;
+    setState(() => _isReleasing = true);
+    try {
+      await ref.read(syncProvider.notifier).releaseBook(book);
+      await ref.read(syncStatusProvider.notifier).refresh();
+    } catch (_) {
+      if (mounted) {
+        AppFeedback.showError(
+          context,
+          onRetry: () => _handleUpload(),
+        );
       }
+    } finally {
+      _isReleasing = false;
+      if (mounted) setState(() {});
+    }
+  }
 
-      if (Prefs().shouldShowHint(HintKey.releaseLocalSpace)) {
-        SmartDialog.show(
-          builder: (context) => AlertDialog(
-            title: Text(L10n.of(context).bookSyncStatusReleaseSpaceDialogTitle),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
+  Future<void> _handleUpload() async {
+    if (_isReleasing) return;
+    if (!Prefs().shouldShowHint(HintKey.releaseLocalSpace)) {
+      await _releaseBook();
+      return;
+    }
+
+    await SmartDialog.show(
+      builder: (dialogContext) => AppDialog(
+        title: L10n.of(dialogContext).bookSyncStatusReleaseSpaceDialogTitle,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+                L10n.of(dialogContext).bookSyncStatusReleaseSpaceDialogContent),
+            Row(
               children: [
-                Text(L10n.of(context).bookSyncStatusReleaseSpaceDialogContent),
-                Row(
-                  children: [
-                    StatefulBuilder(builder: (context, setState) {
-                      return Checkbox(
-                          value: !Prefs()
-                              .shouldShowHint(HintKey.releaseLocalSpace),
-                          onChanged: (value) {
-                            value = !(value ?? false);
-                            Prefs()
-                                .setShowHint(HintKey.releaseLocalSpace, value);
-                            setState(() {});
-                          });
-                    }),
-                    Text(L10n.of(context).bookSyncStatusDoNotShowAgain),
-                  ],
-                )
+                StatefulBuilder(
+                  builder: (context, setStateDialog) => Checkbox(
+                    value: !Prefs().shouldShowHint(HintKey.releaseLocalSpace),
+                    onChanged: (value) {
+                      Prefs().setShowHint(
+                        HintKey.releaseLocalSpace,
+                        !(value ?? false),
+                      );
+                      setStateDialog(() {});
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    L10n.of(dialogContext).bookSyncStatusDoNotShowAgain,
+                  ),
+                ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  SmartDialog.dismiss();
-                },
-                child: Text(L10n.of(context).commonCancel),
-              ),
-              TextButton(
-                onPressed: () {
-                  SmartDialog.dismiss();
-                  core();
-                },
-                child: Text(L10n.of(context).commonConfirm),
-              ),
-            ],
+          ],
+        ),
+        actions: [
+          AppButton(
+            label: L10n.of(dialogContext).commonCancel,
+            variant: AppButtonVariant.text,
+            onPressed: () => SmartDialog.dismiss(),
           ),
-        );
-      } else {
-        ref.read(syncProvider.notifier).releaseBook(book);
-      }
-    }
+          AppButton(
+            label: L10n.of(dialogContext).commonConfirm,
+            onPressed: () async {
+              await SmartDialog.dismiss();
+              await _releaseBook();
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
-    Future<void> handleShare() async {
+  Future<void> _handleShare() async {
+    try {
       await shareFile(
         title: '${book.title}.${book.filePath.split('.').last}',
         filePath: book.fileFullPath,
       );
+    } catch (_) {
+      if (mounted) AppFeedback.showError(context);
     }
+  }
 
-    String formatSize(int bytes) {
-      if (bytes <= 0) return '0 B';
-      const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
-      var i = (log(bytes) / log(1024)).floor();
-      return '${(bytes / pow(1024, i)).toStringAsFixed(2)} ${suffixes[i]}';
-    }
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    final i = (log(bytes) / log(1024)).floor();
+    return '${(bytes / pow(1024, i)).toStringAsFixed(2)} ${suffixes[i]}';
+  }
 
-    Future<void> handleReplace(BuildContext context) async {
-      FilePickerResult? result;
-      try {
-        result = await FilePicker.platform.pickFiles(
-          type: FileType.any,
-          allowMultiple: false,
-        );
-      } catch (e) {
-        if (!context.mounted) return;
-        AnxToast.show(L10n.of(context).filePickerFailed(e.toString()));
-        return;
-      }
-
-      if (result == null) return;
-      PlatformFile newFile = result.files.first;
-      String extension =
+  Future<void> _handleReplace() async {
+    if (_isReplacing) return;
+    setState(() => _isReplacing = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      if (result == null || !mounted) return;
+      final newFile = result.files.first;
+      var extension =
           p.extension(newFile.name).replaceAll('.', '').toLowerCase();
       if (!allowBookExtensions.contains(extension)) {
-        AnxToast.show(
-            L10n.of(context).bookBottomSheetUnsupportedFileFormat(extension));
+        AppFeedback.showError(
+          context,
+          message:
+              L10n.of(context).bookBottomSheetUnsupportedFileFormat(extension),
+        );
         return;
       }
 
-      File newFileObj = File(newFile.path!);
-
-      if (!context.mounted) return;
-
-      int newSize = await newFileObj.length();
-      int oldSize = 0;
-      if (await File(book.fileFullPath).exists()) {
-        oldSize = await File(book.fileFullPath).length();
+      Future<int> fileLength(File file) async {
+        final readLength = widget.fileLength;
+        if (readLength != null) return readLength(file);
+        return await file.exists() ? await file.length() : 0;
       }
 
-      bool? confirm = await SmartDialog.show(
-        builder: (context) => AlertDialog(
-          title: Text(L10n.of(context).commonAttention),
+      final newFileObj = File(newFile.path!);
+      final newSize = await fileLength(newFileObj);
+      final oldFile = File(book.fileFullPath);
+      final oldSize = await fileLength(oldFile);
+      if (!mounted) return;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AppDialog(
+          title: L10n.of(dialogContext).commonAttention,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(L10n.of(context)
-                  .bookBottomSheetOriginalFileSize(formatSize(oldSize))),
-              Text(L10n.of(context)
-                  .bookBottomSheetNewFileSize(formatSize(newSize))),
-              const SizedBox(height: 10),
+              Text(L10n.of(dialogContext)
+                  .bookBottomSheetOriginalFileSize(_formatSize(oldSize))),
+              Text(L10n.of(dialogContext)
+                  .bookBottomSheetNewFileSize(_formatSize(newSize))),
+              SizedBox(height: AppSpacing.tokens.s8),
               Text(
-                L10n.of(context).bookBottomSheetReplaceWarning,
-                style: const TextStyle(color: Colors.red),
+                L10n.of(dialogContext).bookBottomSheetReplaceWarning,
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.error,
+                ),
               ),
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () {
-                SmartDialog.dismiss(result: false);
-              },
-              child: Text(L10n.of(context).commonCancel),
+            AppButton(
+              label: L10n.of(dialogContext).commonCancel,
+              variant: AppButtonVariant.text,
+              onPressed: () => Navigator.pop(dialogContext, false),
             ),
-            TextButton(
-              onPressed: () {
-                SmartDialog.dismiss(result: true);
-              },
-              child: Text(L10n.of(context).commonConfirm),
+            AppButton(
+              label: L10n.of(dialogContext).commonConfirm,
+              onPressed: () => Navigator.pop(dialogContext, true),
             ),
           ],
         ),
       );
+      if (confirmed != true || !mounted) return;
 
-      if (confirm != true) return;
-
-      try {
-        String extension = p.extension(newFile.name);
-        File fileToProcess = newFileObj;
-
-        // Convert TXT to EPUB if needed
-        if (extension.toLowerCase() == '.txt') {
-          fileToProcess = await convertFromTxt(newFileObj);
-          extension = '.epub';
-        }
-
-        String title = book.title;
-        String nameWithoutExtension =
-            '${title.length > 20 ? title.substring(0, 20) : title}-${DateTime.now().millisecondsSinceEpoch}'
-                .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
-                .replaceAll('\n', '')
-                .replaceAll('\r', '')
-                .trim();
-        String newFileName = '$nameWithoutExtension$extension';
-        String newRelativePath = 'file/$newFileName';
-        String newDestPath = getBasePath(newRelativePath);
-
-        // Copy new file
-        await fileToProcess.copy(newDestPath);
-
-        // Calculate MD5
-        String? newMd5 = await MD5Service.calculateFileMd5(newDestPath);
-
-        // Update DB
-        await bookDao.updateBook(book.copyWith(
-          filePath: newRelativePath,
-          md5: newMd5,
-          updateTime: DateTime.now(),
-        ));
-
-        // Delete old file if path is different
-        if (book.fileFullPath != newDestPath) {
-          final oldFile = File(book.fileFullPath);
-          if (await oldFile.exists()) {
-            await oldFile.delete();
-          }
-        }
-
-        // Clean up temporary file if TXT conversion happened
-        if (fileToProcess != newFileObj) {
-          if (await fileToProcess.exists()) {
-            await fileToProcess.delete();
-          }
-        }
-
-        ref.read(bookListProvider.notifier).refresh();
-        if (context.mounted) Navigator.pop(context);
-
-        if (Prefs().webdavStatus) {
-          ref.read(syncProvider.notifier).syncData(SyncDirection.upload, ref);
-        }
-      } catch (e) {
-        AnxToast.show(
-            L10n.of(context).bookBottomSheetReplaceFailed(e.toString()));
+      final onReplace = widget.onReplace;
+      if (onReplace != null) {
+        await onReplace(book, newFileObj);
+        if (mounted) Navigator.pop(context);
+        return;
       }
-    }
 
-    final actions = [
-      {
-        "icon": EvaIcons.share,
-        "text": L10n.of(context).shareFile,
-        "onTap": () => handleShare()
-      },
-      {
-        "icon": EvaIcons.refresh,
-        "text": L10n.of(context).bookBottomSheetReplaceFile,
-        "onTap": () => handleReplace(context)
-      },
-      {
-        "icon": EvaIcons.cloud_upload,
-        "text": L10n.of(context).bookSyncStatusReleaseSpace,
-        "onTap": () => handleUpload(context)
-      },
-      {
-        "icon": EvaIcons.more_vertical,
-        "text": L10n.of(context).notesPageDetail,
-        "onTap": () => handleDetail(context)
-      },
+      File fileToProcess = newFileObj;
+      if (extension == 'txt') {
+        fileToProcess = await convertFromTxt(newFileObj);
+        extension = 'epub';
+      }
+      final title = book.title;
+      final nameWithoutExtension =
+          '${title.length > 20 ? title.substring(0, 20) : title}-${DateTime.now().millisecondsSinceEpoch}'
+              .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+              .replaceAll('\n', '')
+              .replaceAll('\r', '')
+              .trim();
+      final newRelativePath = 'file/$nameWithoutExtension.$extension';
+      final newDestPath = getBasePath(newRelativePath);
+      await fileToProcess.copy(newDestPath);
+      final newMd5 = await MD5Service.calculateFileMd5(newDestPath);
+      await bookDao.updateBook(book.copyWith(
+        filePath: newRelativePath,
+        md5: newMd5,
+        updateTime: DateTime.now(),
+      ));
+      if (book.fileFullPath != newDestPath && await oldFile.exists()) {
+        await oldFile.delete();
+      }
+      if (fileToProcess != newFileObj && await fileToProcess.exists()) {
+        await fileToProcess.delete();
+      }
+      await ref.read(bookListProvider.notifier).refresh();
+      if (mounted) Navigator.pop(context);
+      if (Prefs().webdavStatus) {
+        await ref
+            .read(syncProvider.notifier)
+            .syncData(SyncDirection.upload, ref);
+      }
+    } catch (_) {
+      if (mounted) AppFeedback.showError(context);
+    } finally {
+      _isReplacing = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
+    final pending = _isReplacing || _isReleasing;
+    final actions =
+        <({IconData icon, String text, Future<void> Function() onTap})>[
+      (
+        icon: EvaIcons.share,
+        text: l10n.shareFile,
+        onTap: _handleShare,
+      ),
+      (
+        icon: EvaIcons.refresh,
+        text: l10n.bookBottomSheetReplaceFile,
+        onTap: _handleReplace,
+      ),
+      (
+        icon: EvaIcons.cloud_upload,
+        text: l10n.bookSyncStatusReleaseSpace,
+        onTap: _handleUpload,
+      ),
+      (
+        icon: EvaIcons.more_vertical,
+        text: l10n.notesPageDetail,
+        onTap: () async => _handleDetail(),
+      ),
     ];
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      height: 100,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          BookCover(book: book, width: 40),
-          const SizedBox(width: 10),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Text(book.title,
-                  style: Theme.of(context).textTheme.titleMedium),
+    return AppSafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: AppBookshelfTokens.bottomSheetPadding,
+        child: Row(
+          children: [
+            BookCover(
+              book: book,
+              width: AppBookshelfTokens.bottomSheetCoverWidth,
+              height: AppBookshelfTokens.bottomSheetCoverHeight,
             ),
-          ),
-          DeleteConfirm(
-            delete: () {
-              handleDelete(context);
-            },
-            deleteIcon: IconAndText(
-              icon: const Icon(EvaIcons.trash),
-              text: L10n.of(context).commonDelete,
-            ),
-            confirmIcon: IconAndText(
-              icon: const Icon(
-                EvaIcons.checkmark_circle_2,
-                color: Colors.red,
+            SizedBox(width: AppBookshelfTokens.bottomSheetSpacing),
+            Expanded(
+              child: Text(
+                book.title,
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-              text: L10n.of(context).commonConfirm,
             ),
-          ),
-          PopupMenuButton(
-              itemBuilder: (context) {
-                return actions.map((action) {
-                  return PopupMenuItem(
-                      onTap: () {
-                        (action["onTap"] as Function())();
-                      },
+            AppIconButton(
+              icon: EvaIcons.trash,
+              variant: AppButtonVariant.danger,
+              semanticLabel: l10n.commonDelete,
+              tooltip: l10n.commonDelete,
+              enabled: !pending,
+              onPressed: _handleDelete,
+            ),
+            PopupMenuButton<Future<void> Function()>(
+              tooltip: l10n.more,
+              enabled: !pending,
+              icon: pending
+                  ? const AppLoadingIndicator(
+                      size: AppLoadingIndicatorSize.button,
+                    )
+                  : const Icon(EvaIcons.more_vertical),
+              onSelected: (action) => action(),
+              itemBuilder: (context) => actions
+                  .map(
+                    (action) => PopupMenuItem(
+                      value: action.onTap,
                       child: Row(
                         children: [
-                          Icon(action["icon"] as IconData),
-                          const SizedBox(width: 8),
-                          Text(action["text"] as String),
+                          Icon(action.icon),
+                          SizedBox(width: AppSpacing.tokens.s8),
+                          Expanded(child: Text(action.text)),
                         ],
-                      ));
-                }).toList();
-              },
-              child: IconAndText(
-                icon: const Icon(EvaIcons.more_vertical),
-                text: L10n.of(context).more,
-              ))
-        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
       ),
     );
   }

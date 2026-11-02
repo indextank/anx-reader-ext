@@ -12,7 +12,8 @@ void main() {
       AnxLog.logFile = null;
     });
 
-    test('file logging tolerates null destination and restores after clear', () {
+    test('file logging tolerates null destination and restores after clear',
+        () {
       AnxLog.logFile = null;
       expect(() => AnxLog.writeToFile('ignored\n'), returnsNormally);
       expect(AnxLog.clear, returnsNormally);
@@ -50,7 +51,9 @@ void main() {
       }
     });
 
-    test('Requesty is present with expected provider defaults and config mapping', () {
+    test(
+        'Requesty is present with expected provider defaults and config mapping',
+        () {
       final requesty = buildDefaultAiServices().singleWhere(
         (service) => service.identifier == 'requesty',
       );

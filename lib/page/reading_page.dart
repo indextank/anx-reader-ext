@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/dao/reading_time.dart';
 import 'package:anx_reader/dao/theme.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
@@ -20,7 +22,6 @@ import 'package:anx_reader/providers/sync.dart';
 import 'package:anx_reader/service/ai/index.dart';
 import 'package:anx_reader/service/ai/prompt_generate.dart';
 import 'package:anx_reader/utils/env_var.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/utils/ui/status_bar.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/ai/ai_stream.dart';
@@ -65,6 +66,53 @@ final GlobalKey<ReadingPageState> readingPageKey =
     GlobalKey<ReadingPageState>();
 final epubPlayerKey = GlobalKey<EpubPlayerState>();
 
+class ReadingChapterCopyButton extends StatelessWidget {
+  const ReadingChapterCopyButton({
+    super.key,
+    required this.contentLoader,
+    this.clipboardWriter,
+  });
+
+  final Future<String?> Function() contentLoader;
+  final Future<void> Function(String text)? clipboardWriter;
+
+  Future<void> _copy(BuildContext context) async {
+    final l10n = L10n.of(context);
+    try {
+      final content = await contentLoader();
+      final length = content?.length ?? 0;
+      if (length > 0) {
+        final writer = clipboardWriter;
+        if (writer != null) {
+          await writer(content!);
+        } else {
+          await Clipboard.setData(ClipboardData(text: content!));
+        }
+      }
+      if (!context.mounted) return;
+      AppFeedback.showSuccess(
+        context,
+        message: l10n.readingPageCopiedCharacters(length),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      AppFeedback.showError(
+        context,
+        message: l10n.readingPageErrorCopyingContent,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppIconButton(
+      tooltip: L10n.of(context).readingPageCopyChapterContent,
+      onPressed: () => _copy(context),
+      child: const Icon(Icons.copy),
+    );
+  }
+}
+
 class ReadingPageState extends ConsumerState<ReadingPage>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   static const empty = SizedBox.shrink();
@@ -100,7 +148,10 @@ class ReadingPageState extends ConsumerState<ReadingPage>
 
     if (widget.book.isDeleted) {
       Navigator.pop(context);
-      AnxToast.show(L10n.of(context).bookDeleted);
+      AppFeedback.showInfo(
+        context,
+        message: L10n.of(context).bookDeleted,
+      );
       return;
     }
     if (Prefs().hideStatusBar) {
@@ -527,8 +578,8 @@ class ReadingPageState extends ConsumerState<ReadingPage>
           await epubPlayerKey.currentState!.previousContent(2000);
       final prompt = generatePromptSummaryThePreviousContent(previousContent);
       SmartDialog.show(
-        builder: (context) => AlertDialog(
-          title: Text(L10n.of(context).readingPageSummaryPreviousContent),
+        builder: (context) => AppDialog(
+          title: L10n.of(context).readingPageSummaryPreviousContent,
           content: AiStream(
             prompt: prompt,
           ),
@@ -542,7 +593,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
 
   List<Widget> _buildAiChatTrailing(BuildContext context) {
     return [
-      IconButton(
+      AppIconButton(
         onPressed: () {
           setState(() {
             Prefs().aiPanelPosition =
@@ -553,22 +604,22 @@ class ReadingPageState extends ConsumerState<ReadingPage>
             _rebuildAiChat();
           });
         },
-        icon: Icon(
+        tooltip: Prefs().aiPanelPosition == AiPanelPositionEnum.right
+            ? L10n.of(context).aiShowAtBottom
+            : L10n.of(context).aiShowAtRight,
+        child: Icon(
           Prefs().aiPanelPosition == AiPanelPositionEnum.right
               ? Icons.arrow_downward
               : Icons.arrow_forward,
         ),
-        tooltip: Prefs().aiPanelPosition == AiPanelPositionEnum.right
-            ? L10n.of(context).aiShowAtBottom
-            : L10n.of(context).aiShowAtRight,
       ),
-      IconButton(
+      AppIconButton(
         onPressed: () {
           setState(() {
             _aiChat = null;
           });
         },
-        icon: const Icon(Icons.close),
+        child: const Icon(Icons.close),
       ),
     ];
   }
@@ -662,8 +713,9 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   constraints: BoxConstraints(
                     maxHeight: MediaQuery.of(context).size.height * 0.8,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
+                  child: AppSafeArea(
+                    top: false,
+                    minimum: AppReadingTokens.aiPopupPadding,
                     child: AiChatStream(
                       key: aiChatKey,
                       initialMessage: content,
@@ -707,9 +759,8 @@ class ReadingPageState extends ConsumerState<ReadingPage>
 
   @override
   Widget build(BuildContext context) {
-    var aiButton = IconButton(
+    var aiButton = AppIconButton(
       tooltip: L10n.of(context).aiChat,
-      icon: const Icon(Icons.auto_awesome),
       onPressed: () async {
         // Determine if should show as split based on display mode
         final displayMode = Prefs().aiChatDisplayMode;
@@ -738,6 +789,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
         showOrHideAppBarAndBottomBar(false);
         showAiChat();
       },
+      child: const Icon(Icons.auto_awesome),
     );
     Offstage controller = Offstage(
       offstage: bottomBarOffstage,
@@ -753,15 +805,15 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   onVerticalDragUpdate: (details) {},
                   onVerticalDragEnd: (details) {},
                   child: Container(
-                    color: Colors.black.withAlpha(30),
+                    color: AppReadingTokens.scrim(context),
                   )),
             ),
             Column(
               children: [
                 AppBar(
                   title: Text(_book.title, overflow: TextOverflow.ellipsis),
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back),
+                  leading: AppIconButton(
+                    child: const Icon(Icons.arrow_back),
                     onPressed: () {
                       // close reading page
                       Navigator.pop(context);
@@ -769,27 +821,11 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   ),
                   actions: [
                     if (EnvVar.enableAIFeature) aiButton,
-                    IconButton(
-                      icon: const Icon(Icons.copy),
-                      tooltip: L10n.of(context).readingPageCopyChapterContent,
-                      onPressed: () async {
-                        try {
-                          var content = await epubPlayerKey.currentState
-                              ?.theChapterContent();
-                          var len = content?.length ?? 0;
-                          if (len > 0) {
-                            await Clipboard.setData(
-                                ClipboardData(text: content!));
-                          }
-                          AnxToast.show(L10n.of(context)
-                              .readingPageCopiedCharacters(len));
-                        } catch (e) {
-                          AnxToast.show(
-                              L10n.of(context).readingPageErrorCopyingContent);
-                        }
-                      },
+                    ReadingChapterCopyButton(
+                      contentLoader: () async =>
+                          epubPlayerKey.currentState?.theChapterContent(),
                     ),
-                    IconButton(
+                    AppIconButton(
                         tooltip: L10n.of(context).readingPageBookmark,
                         onPressed: () {
                           if (bookmarkExists) {
@@ -800,12 +836,12 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                             epubPlayerKey.currentState!.addBookmarkHere();
                           }
                         },
-                        icon: bookmarkExists
+                        child: bookmarkExists
                             ? const Icon(Icons.bookmark)
                             : const Icon(Icons.bookmark_border)),
-                    IconButton(
+                    AppIconButton(
                       tooltip: L10n.of(context).readingPageBookDetails,
-                      icon: const Icon(EvaIcons.more_vertical),
+                      child: const Icon(EvaIcons.more_vertical),
                       onPressed: () {
                         Navigator.push(
                           context,
@@ -821,7 +857,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                 BottomSheet(
                   onClosing: () {},
                   enableDrag: false,
-                  builder: (context) => SafeArea(
+                  builder: (context) => AppSafeArea(
                     top: false,
                     child: Container(
                       constraints: const BoxConstraints(maxWidth: 600),
@@ -840,27 +876,27 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceAround,
                                   children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.toc),
+                                    AppIconButton(
                                       onPressed: tocHandler,
+                                      child: const Icon(Icons.toc),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(EvaIcons.edit),
+                                    AppIconButton(
                                       onPressed: noteHandler,
+                                      child: const Icon(EvaIcons.edit),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.data_usage),
+                                    AppIconButton(
                                       onPressed: progressHandler,
+                                      child: const Icon(Icons.data_usage),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.color_lens),
+                                    AppIconButton(
                                       onPressed: () {
                                         styleHandler(setState);
                                       },
+                                      child: const Icon(Icons.color_lens),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(EvaIcons.headphones),
+                                    AppIconButton(
                                       onPressed: ttsHandler,
+                                      child: const Icon(EvaIcons.headphones),
                                     ),
                                   ],
                                 ),
@@ -898,7 +934,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     MediaQuery.of(context).size.width * 0.8,
                     420,
                   ),
-                  child: SafeArea(
+                  child: AppSafeArea(
                     child: TocWidget(
                       epubPlayerKey: epubPlayerKey,
                       hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
@@ -1052,9 +1088,14 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   // its State (expanded flag) is never destroyed mid-session.
                   if (bottomBarOffstage)
                     const Positioned(
-                      right: 16,
-                      bottom: 24,
-                      child: TtsFab(),
+                      right: 0,
+                      bottom: 0,
+                      child: AppSafeArea(
+                        top: false,
+                        avoidViewInsets: false,
+                        minimum: AppReadingTokens.ttsFabSafePadding,
+                        child: TtsFab(),
+                      ),
                     ),
                 ],
               ),

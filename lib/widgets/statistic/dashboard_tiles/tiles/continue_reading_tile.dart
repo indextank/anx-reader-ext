@@ -1,10 +1,12 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/providers/last_read_book_provider.dart';
 import 'package:anx_reader/service/book.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/utils/date/relative_time_formatter.dart';
 import 'package:anx_reader/widgets/bookshelf/book_cover.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -37,26 +39,26 @@ class ContinueReadingTile extends StatisticsDashboardTileBase {
 
   @override
   Widget buildContent(BuildContext context, WidgetRef ref) {
-    final asyncValue = ref.watch(lastReadBookProvider);
-
-    return AsyncSkeletonWrapper<LastReadBookData?>(
-      asyncValue: asyncValue,
-      mock: LastReadBookData(
-        book: Book.mock(),
-        lastReadDate: DateTime.now(),
-      ),
+    Future<void> retry() => ref.read(lastReadBookProvider.notifier).refresh();
+    return DashboardAsyncValue<LastReadBookData?>(
+      value: ref.watch(lastReadBookProvider),
+      mock: LastReadBookData(book: Book.mock(), lastReadDate: DateTime.now()),
+      onRetry: retry,
       builder: (data, _) {
         if (data == null) {
-          return _EmptyState(
-            onRefresh: () => ref.read(lastReadBookProvider.notifier).refresh(),
+          return AppEmptyState(
+            compact: true,
+            icon: Icons.menu_book_outlined,
+            title: L10n.of(context).tileContinueReadingEmptyState,
+            actionLabel: L10n.of(context).commonRefresh,
+            onAction: () => retry(),
           );
         }
         final book = data.book;
-        final heroTag = 'continue_reading_${book.id}';
         return _ContinueReadingContent(
           book: book,
           lastReadDate: data.lastReadDate,
-          heroTag: heroTag,
+          heroTag: 'continue_reading_${book.id}',
         );
       },
     );
@@ -70,10 +72,12 @@ class ContinueReadingTile extends StatisticsDashboardTileBase {
         );
     final book = data?.book;
     if (book == null) return;
-    final heroTag = 'continue_reading_${book.id}';
-    // Don't pass cfi parameter, let the book open from its saved position
-    // This allows reading progress to be saved (same behavior as bookshelf)
-    pushToReadingPage(ref, context, book, heroTag: heroTag);
+    pushToReadingPage(
+      ref,
+      context,
+      book,
+      heroTag: 'continue_reading_${book.id}',
+    );
   }
 }
 
@@ -94,18 +98,17 @@ class _ContinueReadingContent extends StatelessWidget {
     final subtitle = lastReadDate == null
         ? L10n.of(context).tileContinueReadingNoTimestamp
         : RelativeTimeFormatter.format(lastReadDate!);
-
     return Row(
       children: [
         Hero(
           tag: heroTag,
           child: BookCover(
             book: book,
-            width: 60,
-            radius: 8,
+            width: AppStatisticsTokens.continueCoverWidth,
+            radius: AppStatisticsTokens.continueCoverRadius,
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: AppStatisticsTokens.continueSpacing),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,53 +120,23 @@ class _ContinueReadingContent extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleMedium,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: AppStatisticsTokens.continueTextSpacing),
               Text(
                 book.author,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall,
               ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: theme.textTheme.labelSmall,
-              ),
-              const SizedBox(height: 6),
+              const SizedBox(height: AppStatisticsTokens.continueTextSpacing),
+              Text(subtitle, style: theme.textTheme.labelSmall),
+              const SizedBox(
+                  height: AppStatisticsTokens.continueProgressSpacing),
               LinearProgressIndicator(
                 value: book.readingPercentage.clamp(0, 1),
-                minHeight: 6,
+                minHeight: AppStatisticsTokens.progressHeight,
               ),
             ],
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onRefresh});
-
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = L10n.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.menu_book_outlined, size: 32),
-        const SizedBox(height: 8),
-        Text(
-          l10n.tileContinueReadingEmptyState,
-          style: Theme.of(context).textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-        TextButton.icon(
-          onPressed: onRefresh,
-          icon: const Icon(Icons.refresh),
-          label: Text(l10n.commonRefresh),
         ),
       ],
     );

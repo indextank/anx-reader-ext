@@ -1,15 +1,16 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/lang_list.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/service/translate/index.dart';
-import 'package:anx_reader/utils/toast/common.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
+import 'package:anx_reader/theme/app_motion.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:anx_reader/widgets/settings/service_config_form.dart';
 import 'package:anx_reader/widgets/settings/settings_section.dart';
 import 'package:anx_reader/widgets/settings/settings_tile.dart';
 import 'package:anx_reader/widgets/settings/settings_title.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
 class TranslateSetting extends StatefulWidget {
   const TranslateSetting({super.key});
@@ -19,113 +20,99 @@ class TranslateSetting extends StatefulWidget {
 }
 
 class _TranslateSettingState extends State<TranslateSetting> {
-  Widget autoTranslateSelection() {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      trailing: Switch(
-        value: Prefs().autoTranslateSelection,
-        onChanged: (bool value) => setState(() {
-          Prefs().autoTranslateSelection = value;
-        }),
+  @override
+  Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
+    return AppSafeArea(
+      top: false,
+      child: settingsSections(
+        sections: [
+          SettingsSection(
+            title: Text(l10n.underlineTranslation),
+            tiles: [
+              CustomSettingsTile(
+                child: _ConfigCard(
+                  tip: l10n.underlineTranslationTip,
+                  isWarning: false,
+                  child: TranslationConfig(setState: () => setState(() {})),
+                ),
+              ),
+              SettingsTile.switchTile(
+                title: Text(l10n.readingPageAutoTranslateSelection),
+                initialValue: Prefs().autoTranslateSelection,
+                onToggle: (value) {
+                  setState(() => Prefs().autoTranslateSelection = value);
+                },
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: Text(l10n.fullTextTranslation),
+            tiles: [
+              CustomSettingsTile(
+                child: _ConfigCard(
+                  tip: l10n.fullTextTranslationTip,
+                  isWarning: true,
+                  child: FullTextTranslationConfig(
+                      setState: () => setState(() {})),
+                ),
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: Text(l10n.translationServiceConfiguration),
+            tiles: [
+              for (final service in TranslateService.activeValues)
+                CustomSettingsTile(
+                    child: TranslateSettingItem(service: service)),
+            ],
+          ),
+        ],
       ),
-      title: Text(L10n.of(context).readingPageAutoTranslateSelection),
     );
   }
+}
+
+class _ConfigCard extends StatelessWidget {
+  const _ConfigCard({
+    required this.child,
+    required this.tip,
+    required this.isWarning,
+  });
+
+  final Widget child;
+  final String tip;
+  final bool isWarning;
 
   @override
   Widget build(BuildContext context) {
-    return settingsSections(
-      sections: [
-        SettingsSection(
-          title: Text(L10n.of(context).underlineTranslation),
-          tiles: [
-            CustomSettingsTile(
-              child: FilledContainer(
-                margin: const EdgeInsets.all(2.0),
-                color: Theme.of(context).cardColor,
-                radius: 28,
-                child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Column(
-                    children: [
-                      TranslationConfig(
-                        setState: () => setState(() {}),
-                      ),
-                      Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.blue),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              L10n.of(context).underlineTranslationTip,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+    final semanticColors = context.appTheme.colors;
+    final color = isWarning ? semanticColors.warning : semanticColors.info;
+    return AppCard(
+      margin: AppSpacing.all4,
+      padding: AppSpacing.all12,
+      child: Column(
+        children: [
+          child,
+          SizedBox(height: AppSpacing.tokens.s8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline, color: color),
+              SizedBox(width: AppSpacing.tokens.s8),
+              Expanded(
+                child: Text(
+                  tip,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: color),
                 ),
               ),
-            ),
-            CustomSettingsTile(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: autoTranslateSelection(),
-              ),
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: Text(L10n.of(context).fullTextTranslation),
-          tiles: [
-            CustomSettingsTile(
-              child: FilledContainer(
-                margin: const EdgeInsets.all(2.0),
-                color: Theme.of(context).cardColor,
-                radius: 28,
-                child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Column(
-                    children: [
-                      FullTextTranslationConfig(
-                        setState: () => setState(() {}),
-                      ),
-                      Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.orange),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              L10n.of(context).fullTextTranslationTip,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: Text(L10n.of(context).translationServiceConfiguration),
-          tiles: [
-            for (var service in TranslateService.activeValues)
-              CustomSettingsTile(
-                child: TranslateSettingItem(service: service),
-              ),
-          ],
-        ),
-      ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -135,74 +122,24 @@ class TranslationConfig extends StatelessWidget {
 
   final VoidCallback setState;
 
-  static const currentServiceTextStyle = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.bold,
-  );
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            TextButton(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  builder: (context) => const TranslateServicePicker(),
-                ).then((value) {
-                  setState();
-                });
-              },
-              child: Text(
-                Prefs().translateService.getLabel(context),
-                style: currentServiceTextStyle,
-              ),
-            ),
-            Text(L10n.of(context).settingsTranslateCurrentService),
-          ],
-        ),
-        const Divider(),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: TextButton(
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    builder: (context) => const TranslateLangPicker(
-                        isFrom: true, isWebView: false),
-                  ).then((value) {
-                    setState();
-                  });
-                },
-                child: Text(Prefs().translateFrom.getNative(context)),
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios),
-            Expanded(
-              child: TextButton(
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    builder: (context) => const TranslateLangPicker(
-                        isFrom: false, isWebView: false),
-                  ).then((value) {
-                    setState();
-                  });
-                },
-                child: Text(
-                  Prefs().translateTo.getNative(context),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+    return _TranslationConfigBody(
+      serviceLabel: Prefs().translateService.getLabel(context),
+      fromLabel: Prefs().translateFrom.getNative(context),
+      toLabel: Prefs().translateTo.getNative(context),
+      onServicePressed: () => _showPicker(
+        context,
+        const TranslateServicePicker(),
+      ).then((_) => setState()),
+      onFromPressed: () => _showPicker(
+        context,
+        const TranslateLangPicker(isFrom: true),
+      ).then((_) => setState()),
+      onToPressed: () => _showPicker(
+        context,
+        const TranslateLangPicker(isFrom: false),
+      ).then((_) => setState()),
     );
   }
 }
@@ -212,69 +149,79 @@ class FullTextTranslationConfig extends StatelessWidget {
 
   final VoidCallback setState;
 
-  static const currentServiceTextStyle = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.bold,
+  @override
+  Widget build(BuildContext context) {
+    return _TranslationConfigBody(
+      serviceLabel: Prefs().fullTextTranslateService.getLabel(context),
+      fromLabel: Prefs().fullTextTranslateFrom.getNative(context),
+      toLabel: Prefs().fullTextTranslateTo.getNative(context),
+      onServicePressed: () => _showPicker(
+        context,
+        const FullTextTranslateServicePicker(),
+      ).then((_) => setState()),
+      onFromPressed: () => _showPicker(
+        context,
+        const TranslateLangPicker(isFrom: true, isWebView: true),
+      ).then((_) => setState()),
+      onToPressed: () => _showPicker(
+        context,
+        const TranslateLangPicker(isFrom: false, isWebView: true),
+      ).then((_) => setState()),
+    );
+  }
+}
+
+Future<void> _showPicker(BuildContext context, Widget picker) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => AppSafeArea(top: false, child: picker),
   );
+}
+
+class _TranslationConfigBody extends StatelessWidget {
+  const _TranslationConfigBody({
+    required this.serviceLabel,
+    required this.fromLabel,
+    required this.toLabel,
+    required this.onServicePressed,
+    required this.onFromPressed,
+    required this.onToPressed,
+  });
+
+  final String serviceLabel;
+  final String fromLabel;
+  final String toLabel;
+  final VoidCallback onServicePressed;
+  final VoidCallback onFromPressed;
+  final VoidCallback onToPressed;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            TextButton(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  builder: (context) => const FullTextTranslateServicePicker(),
-                ).then((value) {
-                  setState();
-                });
-              },
-              child: Text(
-                Prefs().fullTextTranslateService.getLabel(context),
-                style: currentServiceTextStyle,
-              ),
-            ),
-            Text(L10n.of(context).settingsTranslateCurrentService),
-          ],
+        AppButton(
+          label: serviceLabel,
+          variant: AppButtonVariant.text,
+          onPressed: onServicePressed,
         ),
+        Text(L10n.of(context).settingsTranslateCurrentService),
         const Divider(),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
-              child: TextButton(
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    builder: (context) => const TranslateLangPicker(
-                        isFrom: true, isWebView: true),
-                  ).then((value) {
-                    setState();
-                  });
-                },
-                child: Text(Prefs().fullTextTranslateFrom.getNative(context)),
+              child: AppButton(
+                label: fromLabel,
+                variant: AppButtonVariant.text,
+                onPressed: onFromPressed,
               ),
             ),
             const Icon(Icons.arrow_forward_ios),
             Expanded(
-              child: TextButton(
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    builder: (context) => const TranslateLangPicker(
-                        isFrom: false, isWebView: true),
-                  ).then((value) {
-                    setState();
-                  });
-                },
-                child: Text(
-                  Prefs().fullTextTranslateTo.getNative(context),
-                  textAlign: TextAlign.center,
-                ),
+              child: AppButton(
+                label: toLabel,
+                variant: AppButtonVariant.text,
+                onPressed: onToPressed,
               ),
             ),
           ],
@@ -293,8 +240,8 @@ class TranslateServicePicker extends StatelessWidget {
       itemCount: TranslateService.activeValues.length,
       itemBuilder: (context, index) {
         final service = TranslateService.activeValues.elementAt(index);
-        return ListTile(
-          title: Text(service.getLabel(context)),
+        return AppListTile(
+          title: service.getLabel(context),
           onTap: () {
             Prefs().translateService = service;
             Navigator.pop(context);
@@ -312,11 +259,10 @@ class FullTextTranslateServicePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final services =
         TranslateService.activeValues.where((s) => !s.isWebView).toList();
-
     return ListView.builder(
       itemCount: services.length,
-      itemBuilder: (context, index) => ListTile(
-        title: Text(services[index].getLabel(context)),
+      itemBuilder: (context, index) => AppListTile(
+        title: services[index].getLabel(context),
         onTap: () {
           Prefs().fullTextTranslateService = services[index];
           Navigator.pop(context);
@@ -327,8 +273,11 @@ class FullTextTranslateServicePicker extends StatelessWidget {
 }
 
 class TranslateLangPicker extends StatelessWidget {
-  const TranslateLangPicker(
-      {super.key, required this.isFrom, this.isWebView = false});
+  const TranslateLangPicker({
+    super.key,
+    required this.isFrom,
+    this.isWebView = false,
+  });
 
   final bool isFrom;
   final bool isWebView;
@@ -337,27 +286,27 @@ class TranslateLangPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.builder(
       itemCount: LangListEnum.values.length,
-      itemBuilder: (context, index) => ListTile(
-        title: Text(LangListEnum.values[index].getNative(context)),
-        subtitle: Text(LangListEnum.values[index].name[0].toUpperCase() +
-            LangListEnum.values[index].name.substring(1)),
-        onTap: () {
-          if (isWebView) {
-            if (isFrom) {
-              Prefs().fullTextTranslateFrom = LangListEnum.values[index];
+      itemBuilder: (context, index) {
+        final language = LangListEnum.values[index];
+        return AppListTile(
+          title: language.getNative(context),
+          subtitle: language.name[0].toUpperCase() + language.name.substring(1),
+          onTap: () {
+            if (isWebView) {
+              if (isFrom) {
+                Prefs().fullTextTranslateFrom = language;
+              } else {
+                Prefs().fullTextTranslateTo = language;
+              }
+            } else if (isFrom) {
+              Prefs().translateFrom = language;
             } else {
-              Prefs().fullTextTranslateTo = LangListEnum.values[index];
+              Prefs().translateTo = language;
             }
-          } else {
-            if (isFrom) {
-              Prefs().translateFrom = LangListEnum.values[index];
-            } else {
-              Prefs().translateTo = LangListEnum.values[index];
-            }
-          }
-          Navigator.pop(context);
-        },
-      ),
+            Navigator.pop(context);
+          },
+        );
+      },
     );
   }
 }
@@ -372,76 +321,98 @@ class TranslateSettingItem extends StatefulWidget {
 }
 
 class _TranslateSettingItemState extends State<TranslateSettingItem> {
+  static const testText = 'Hello, world!';
   bool isExpanded = false;
-  static const testText = "Hello, world!";
-  static const languageTextStyle = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.bold,
-  );
-
   Map<String, dynamic> _currentConfig = {};
 
   @override
   void initState() {
     super.initState();
-    _loadConfig();
-  }
-
-  void _loadConfig() {
     _currentConfig = getTranslateServiceConfig(widget.service);
-    setState(() {});
   }
 
-  Widget languageText(String text) {
-    return Expanded(
-      child: Text(
-        text,
-        style: languageTextStyle,
-        textAlign: TextAlign.center,
+  Future<void> _saveConfig() async {
+    saveTranslateServiceConfig(widget.service, _currentConfig);
+  }
+
+  Future<void> _test() async {
+    await _saveConfig();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AppDialog(
+        title: L10n.of(context).commonTest,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      Prefs().translateFrom.getNative(context),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios),
+                  Expanded(
+                    child: Text(
+                      Prefs().translateTo.getNative(context),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const Text(testText),
+              const Icon(Icons.arrow_downward),
+              translateText(testText, service: widget.service),
+            ],
+          ),
+        ),
+        actions: [
+          AppButton(
+            label: L10n.of(context).commonOk,
+            variant: AppButtonVariant.text,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
       ),
     );
   }
 
-  void _saveConfig() {
-    try {
-      saveTranslateServiceConfig(widget.service, _currentConfig);
-      AnxToast.show(L10n.of(context).commonSaved);
-    } catch (e) {
-      AnxToast.show(L10n.of(context).commonFailed);
-    }
+  Future<void> _saveAndCollapse() async {
+    await _saveConfig();
+    if (!mounted) return;
+    setState(() => isExpanded = false);
+    AppFeedback.showSuccess(context, message: L10n.of(context).commonSaved);
   }
 
   @override
   Widget build(BuildContext context) {
     final configItems = getTranslateServiceConfigItems(context, widget.service);
-
-    return Card(
-      margin: const EdgeInsets.all(10),
-      color: isExpanded
-          ? Theme.of(context).colorScheme.secondaryContainer
-          : Colors.transparent,
-      shadowColor: Colors.transparent,
+    return AppCard(
+      margin: AppSpacing.all8,
+      padding: AppSpacing.zero,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.translate_outlined),
-            title: Text(widget.service.getLabel(context)),
-            onTap: () {
-              setState(() {
-                isExpanded = !isExpanded;
-              });
-            },
+            title: widget.service.getLabel(context),
+            onTap: () => setState(() => isExpanded = !isExpanded),
           ),
           AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.bounceInOut,
+            duration: AppMotion.tokens.normal,
+            curve: Curves.easeInOut,
             alignment: Alignment.topCenter,
             child: isExpanded
                 ? Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: AppSpacing.all16,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         ServiceConfigForm(
                           configItems: configItems,
@@ -451,60 +422,22 @@ class _TranslateSettingItemState extends State<TranslateSettingItem> {
                           },
                         ),
                         const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
+                        Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: AppSpacing.tokens.s8,
+                          runSpacing: AppSpacing.tokens.s8,
                           children: [
-                            TextButton(
-                              onPressed: () {
-                                _saveConfig();
-                                SmartDialog.show(
-                                  useSystem: true,
-                                  animationType:
-                                      SmartAnimationType.centerFade_otherSlide,
-                                  builder: (context) => AlertDialog(
-                                    title: const Center(
-                                      child: Icon(Icons.check_circle),
-                                    ),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            languageText(
-                                              Prefs()
-                                                  .translateFrom
-                                                  .getNative(context),
-                                            ),
-                                            const Icon(Icons.arrow_forward_ios),
-                                            languageText(
-                                              Prefs()
-                                                  .translateTo
-                                                  .getNative(context),
-                                            ),
-                                          ],
-                                        ),
-                                        const Divider(),
-                                        const Text(testText),
-                                        const Icon(Icons.arrow_downward),
-                                        translateText(testText,
-                                            service: widget.service),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Text(L10n.of(context).commonTest),
+                            AppSubmitButton(
+                              label: L10n.of(context).commonTest,
+                              variant: AppButtonVariant.text,
+                              feedbackMode: AppSubmitFeedbackMode.inline,
+                              onSubmit: _test,
                             ),
-                            TextButton(
-                              onPressed: () {
-                                _saveConfig();
-                                setState(() {
-                                  isExpanded = !isExpanded;
-                                });
-                              },
-                              child: Text(L10n.of(context).commonSave),
+                            AppSubmitButton(
+                              label: L10n.of(context).commonSave,
+                              variant: AppButtonVariant.text,
+                              feedbackMode: AppSubmitFeedbackMode.inline,
+                              onSubmit: _saveAndCollapse,
                             ),
                           ],
                         ),

@@ -1,6 +1,8 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/providers/reading_streak_provider.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -25,14 +27,14 @@ class ReadingStreakTile extends StatisticsDashboardTileBase {
 
   @override
   Widget buildContent(BuildContext context, WidgetRef ref) {
-    final asyncValue = ref.watch(readingStreakProvider);
-    return AsyncSkeletonWrapper<ReadingStreakData>(
-      asyncValue: asyncValue,
+    return DashboardAsyncValue<ReadingStreakData>(
+      value: ref.watch(readingStreakProvider),
       mock: const ReadingStreakData(
         currentStreak: 4,
         longestStreak: 12,
         lastReadingDay: null,
       ),
+      onRetry: () async => ref.invalidate(readingStreakProvider),
       builder: (data, _) => _ReadingStreakContent(data: data),
     );
   }
@@ -56,7 +58,6 @@ class _ReadingStreakContent extends StatelessWidget {
     final subtitle = hasReadToday
         ? l10n.tileReadingStreakSubtitleActive
         : l10n.tileReadingStreakSubtitleInactive;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -64,7 +65,7 @@ class _ReadingStreakContent extends StatelessWidget {
         Row(
           children: [
             Icon(Icons.local_fire_department, color: fireColor),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppStatisticsTokens.librarySpacing),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -76,18 +77,14 @@ class _ReadingStreakContent extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  Text(subtitle, style: theme.textTheme.bodySmall),
                 ],
               ),
-            )
+            ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppStatisticsTokens.librarySpacing),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _StatPill(
               label: l10n.tileReadingStreakBestLabel,
@@ -96,10 +93,7 @@ class _ReadingStreakContent extends StatelessWidget {
           ],
         ),
         const Spacer(),
-        Text(
-          encouragement,
-          style: theme.textTheme.bodyMedium,
-        ),
+        Text(encouragement, style: theme.textTheme.bodyMedium),
       ],
     );
   }
@@ -122,10 +116,10 @@ class _StatPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: AppStatisticsTokens.streakPillPadding,
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: AppRadius.border20,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,8 +127,9 @@ class _StatPill extends StatelessWidget {
           Text(label, style: theme.textTheme.labelSmall),
           Text(
             value,
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),

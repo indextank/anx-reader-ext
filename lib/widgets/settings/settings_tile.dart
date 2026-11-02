@@ -1,3 +1,5 @@
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 
 abstract class AbstractSettingsTile extends StatelessWidget {
@@ -125,143 +127,73 @@ class AndroidSettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const scaleFactor = 0.6;
+    final theme = Theme.of(context);
+    final canActivate = tileType == SettingsTileType.switchTile
+        ? onToggle != null || onPressed != null
+        : onPressed != null;
+    final subtitle = value ?? description;
+    final foreground =
+        enabled ? theme.textTheme.titleMedium?.color : theme.disabledColor;
 
-    final cantShowAnimation = tileType == SettingsTileType.switchTile
-        ? onToggle == null && onPressed == null
-        : onPressed == null;
+    Widget? buildTrailing() {
+      if (tileType == SettingsTileType.switchTile) {
+        final switchWidget = Switch(
+          value: initialValue,
+          onChanged: enabled ? onToggle : null,
+          activeThumbColor: enabled ? activeSwitchColor : theme.disabledColor,
+        );
+        if (trailing == null) return switchWidget;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(child: trailing!),
+            SizedBox(width: AppSpacing.tokens.s8),
+            switchWidget,
+          ],
+        );
+      }
+      if (tileType == SettingsTileType.navigationTile) {
+        return trailing ?? const Icon(Icons.chevron_right_sharp);
+      }
+      return trailing;
+    }
 
-    return IgnorePointer(
-      ignoring: !enabled,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: cantShowAnimation
-              ? null
-              : () {
-                  if (tileType == SettingsTileType.switchTile) {
-                    onToggle?.call(!initialValue);
-                  } else {
-                    onPressed?.call(context);
-                  }
-                },
-          highlightColor: Theme.of(context).listTileTheme.selectedColor,
-          child: Row(
-            children: [
-              if (leading != null)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 8),
-                  child: IconTheme(
-                    data: IconTheme.of(context).copyWith(
-                      color: enabled
-                          ? Theme.of(context).iconTheme.color
-                          : Theme.of(context).disabledColor,
-                    ),
-                    child: leading!,
-                  ),
-                ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsetsDirectional.only(
-                    start: 10,
-                    end: 8,
-                    bottom: 19 * scaleFactor,
-                    top: 19 * scaleFactor,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      DefaultTextStyle(
-                        style: TextStyle(
-                          color: enabled
-                              ? Theme.of(context).textTheme.bodyLarge!.color!
-                              : Theme.of(context).disabledColor,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        child: title ?? Container(),
-                      ),
-                      if (value != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: DefaultTextStyle(
-                            style: TextStyle(
-                              color: enabled
-                                  ? Theme.of(context)
-                                      .textTheme
-                                      .bodySmall!
-                                      .color!
-                                  : Theme.of(context).disabledColor,
-                            ),
-                            child: value!,
-                          ),
-                        )
-                      else if (description != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: DefaultTextStyle(
-                            style: TextStyle(
-                              color: enabled
-                                  ? Theme.of(context)
-                                      .textTheme
-                                      .bodySmall!
-                                      .color!
-                                  : Theme.of(context).disabledColor,
-                            ),
-                            child: description!,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              if (trailing != null && tileType == SettingsTileType.switchTile)
-                Row(
-                  children: [
-                    trailing!,
-                    Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 8),
-                      child: Switch(
-                        value: initialValue,
-                        onChanged: onToggle,
-                        activeThumbColor: enabled
-                            ? activeSwitchColor
-                            : Theme.of(context).disabledColor,
-                      ),
-                    ),
-                  ],
-                )
-              else if (tileType == SettingsTileType.switchTile)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 16, end: 8),
-                  child: Switch(
-                    value: initialValue,
-                    onChanged: onToggle,
-                    activeThumbColor: enabled
-                        ? activeSwitchColor
-                        : Theme.of(context).disabledColor,
-                  ),
-                )
-              else if (tileType == SettingsTileType.navigationTile)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 8),
-                  child: trailing ??
-                      Icon(
-                        Icons.chevron_right_sharp,
-                        color: enabled
-                            ? Theme.of(context).iconTheme.color
-                            : Theme.of(context).disabledColor,
-                      ),
-                )
-              else if (trailing != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: trailing!,
-                )
-            ],
-          ),
+    return ListTile(
+      enabled: enabled,
+      leading: leading,
+      title: DefaultTextStyle(
+        style: (theme.textTheme.titleMedium ?? const TextStyle()).copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w400,
         ),
+        child: title ?? const SizedBox.shrink(),
       ),
+      subtitle: subtitle == null
+          ? null
+          : Padding(
+              padding: AppSpacing.only(top: AppSpacing.tokens.s4),
+              child: DefaultTextStyle(
+                style:
+                    (theme.textTheme.bodySmall ?? const TextStyle()).copyWith(
+                  color: enabled
+                      ? theme.colorScheme.onSurfaceVariant
+                      : theme.disabledColor,
+                ),
+                child: subtitle,
+              ),
+            ),
+      trailing: buildTrailing(),
+      onTap: !enabled || !canActivate
+          ? null
+          : () {
+              if (tileType == SettingsTileType.switchTile) {
+                onToggle?.call(!initialValue);
+              } else {
+                onPressed?.call(context);
+              }
+            },
+      contentPadding: AppSettingsTokens.tileContentPadding,
+      minTileHeight: AppSpacing.tokens.s48,
     );
   }
 }

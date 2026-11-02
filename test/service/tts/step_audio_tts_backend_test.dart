@@ -173,8 +173,8 @@ void main() {
       final result = await provider.speak('hello', null, 1.0, 1.0);
 
       expect(result, audio);
-      expect(captured!.url.toString(),
-          'https://api.stepfun.com/v1/audio/speech');
+      expect(
+          captured!.url.toString(), 'https://api.stepfun.com/v1/audio/speech');
       expect(captured!.headers['Authorization'], 'Bearer test-api-key');
 
       final body = jsonDecode(captured!.body) as Map<String, dynamic>;
@@ -227,8 +227,7 @@ void main() {
       expect(result, isEmpty);
     });
 
-    test('times out when the server exceeds the configured timeout',
-        () async {
+    test('times out when the server exceeds the configured timeout', () async {
       await _initPrefsWith({..._baseConfig, 'timeout': 1});
       final client = MockClient((request) async {
         await Future<void>.delayed(const Duration(seconds: 10));
@@ -259,8 +258,7 @@ void main() {
       );
     });
 
-    test('returns an empty result for blank text without a request',
-        () async {
+    test('returns an empty result for blank text without a request', () async {
       final notCalled = MockClient((request) async {
         fail('no HTTP request should be made for blank text');
       });

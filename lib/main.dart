@@ -14,18 +14,20 @@ import 'package:anx_reader/service/book_player/book_player_server.dart';
 import 'package:anx_reader/service/network/http_proxy_overrides.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/utils/get_path/macos_migration.dart';
-import 'package:anx_reader/utils/color_scheme.dart';
 import 'package:anx_reader/utils/error/common.dart';
 import 'package:anx_reader/utils/get_path/get_base_path.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/utils/window_position_validator.dart';
 import 'package:anx_reader/providers/sync.dart';
+import 'package:anx_reader/providers/ui_settings.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_text_scaler.dart';
+import 'package:anx_reader/theme/app_theme.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:heroine/heroine.dart';
-import 'package:provider/provider.dart' as provider;
 import 'package:window_manager/window_manager.dart';
 import 'package:webview_cef/webview_cef.dart' as cef;
 
@@ -78,7 +80,7 @@ Future<void> main() async {
   );
 
   SmartDialog.config.custom = SmartConfigCustom(
-    maskColor: Colors.black.withAlpha(35),
+    maskColor: AppColors.scrim,
     useAnimation: !Prefs().eInkMode,
     animationType: SmartAnimationType.centerFade_otherSlide,
   );
@@ -119,8 +121,8 @@ class _MyAppState extends ConsumerState<MyApp>
     // 关闭窗口时先立即隐藏窗口：原先要等 Server/WebView2/数据库全部释放完
     // 才真正关闭窗口，期间窗口会长时间「无响应」（实测十几秒）。
     // 现在每一步都带超时兜底，任何一步卡住都不再拖住关闭流程。
-    await _shutdownStep('hide window',
-        () => windowManager.hide(), const Duration(seconds: 2));
+    await _shutdownStep(
+        'hide window', () => windowManager.hide(), const Duration(seconds: 2));
 
     await _shutdownStep(
         'stop local server', () => Server().stop(), const Duration(seconds: 3));
@@ -223,44 +225,52 @@ class _MyAppState extends ConsumerState<MyApp>
 
   @override
   Widget build(BuildContext context) {
-    return provider.MultiProvider(
-      providers: [
-        provider.ChangeNotifierProvider(
-          create: (_) => Prefs(),
-        ),
-      ],
-      child: provider.Consumer<Prefs>(
-        builder: (context, prefsNotifier, child) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            scrollBehavior: ScrollConfiguration.of(context).copyWith(
-              physics: const BouncingScrollPhysics(),
-              // dragDevices: {
-              //   PointerDeviceKind.touch,
-              //   PointerDeviceKind.mouse,
-              // },
-            ),
-            navigatorObservers: [
-              FlutterSmartDialog.observer,
-              heroineController
-            ],
-            builder: FlutterSmartDialog.init(),
-            navigatorKey: navigatorKey,
-            locale: prefsNotifier.locale,
-            localeListResolutionCallback: _resolveLocale,
-            localizationsDelegates: L10n.localizationsDelegates,
-            supportedLocales: L10n.supportedLocales,
-            title: 'Anx Reader',
-            themeMode: prefsNotifier.themeMode,
-            theme: colorSchema(prefsNotifier, context, Brightness.light),
-            darkTheme: colorSchema(prefsNotifier, context, Brightness.dark),
-            home: _needsMigration
-                ? _MigrationWrapper(
-                    migrationCheckResult: _migrationCheckResult!)
-                : const HomePage(),
-          );
-        },
+    final settings = ref.watch(uiSettingsProvider);
+    final dialogBuilder = FlutterSmartDialog.init();
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      scrollBehavior: ScrollConfiguration.of(context).copyWith(
+        physics: const BouncingScrollPhysics(),
       ),
+      navigatorObservers: [FlutterSmartDialog.observer, heroineController],
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        final textScaler = settings.textScale == 1.0
+            ? mediaQuery.textScaler
+            : AppTextScaler(
+                system: mediaQuery.textScaler,
+                userScale: settings.textScale,
+              );
+        return dialogBuilder(
+          context,
+          MediaQuery(
+            data: mediaQuery.copyWith(textScaler: textScaler),
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
+      navigatorKey: navigatorKey,
+      locale: settings.locale,
+      localeListResolutionCallback: _resolveLocale,
+      localizationsDelegates: L10n.localizationsDelegates,
+      supportedLocales: L10n.supportedLocales,
+      title: 'Anx Reader',
+      themeMode: settings.eInkMode ? ThemeMode.light : settings.themeMode,
+      theme: AppTheme.build(
+        brightness: Brightness.light,
+        seedColor: settings.themeColor,
+        trueDarkMode: settings.trueDarkMode,
+        eInkMode: settings.eInkMode,
+      ),
+      darkTheme: AppTheme.build(
+        brightness: Brightness.dark,
+        seedColor: settings.themeColor,
+        trueDarkMode: settings.trueDarkMode,
+        eInkMode: settings.eInkMode,
+      ),
+      home: _needsMigration
+          ? _MigrationWrapper(migrationCheckResult: _migrationCheckResult!)
+          : const HomePage(),
     );
   }
 

@@ -1,4 +1,6 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/constants/note_annotations.dart';
 import 'package:anx_reader/dao/book_note.dart';
 import 'package:anx_reader/enums/search_display_mode.dart';
@@ -8,7 +10,6 @@ import 'package:anx_reader/models/book_note.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/utils/env_var.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/book_share/excerpt_share_service.dart';
 import 'package:anx_reader/widgets/common/axis_flex.dart';
 import 'package:anx_reader/widgets/icon_and_text.dart';
@@ -155,27 +156,23 @@ class ExcerptMenuState extends State<ExcerptMenu> {
     return bookNote;
   }
 
-  Icon deleteIcon() {
-    return deleteConfirm
-        ? const Icon(
-            EvaIcons.close_circle,
-            color: Colors.red,
-          )
-        : const Icon(Icons.delete);
-  }
-
-  void deleteHandler() {
-    if (deleteConfirm) {
-      if (widget.id != null) {
-        bookNoteDao.deleteBookNoteById(widget.id!);
-        epubPlayerKey.currentState!.removeAnnotation(widget.annoCfi);
-      }
-      widget.onClose();
-    } else {
-      setState(() {
-        deleteConfirm = true;
-      });
-    }
+  Future<void> deleteHandler() async {
+    final l10n = L10n.of(context);
+    final deleted = await AppDialog.confirm(
+      context,
+      title: l10n.commonDelete,
+      message: widget.annoContent,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: widget.annoContent,
+      onConfirm: () async {
+        if (widget.id != null) {
+          await bookNoteDao.deleteBookNoteById(widget.id!);
+          epubPlayerKey.currentState!.removeAnnotation(widget.annoCfi);
+        }
+      },
+    );
+    if (deleted) widget.onClose();
   }
 
   Future<void> onColorSelected(String color, {bool close = true}) async {
@@ -208,14 +205,9 @@ class ExcerptMenuState extends State<ExcerptMenu> {
   }
 
   Widget iconButton({required Icon icon, required Function() onPressed}) {
-    return IconButton(
-      padding: const EdgeInsets.all(2),
-      constraints: const BoxConstraints(),
-      style: const ButtonStyle(
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      icon: icon,
+    return AppIconButton(
       onPressed: onPressed,
+      child: icon,
     );
   }
 
@@ -244,7 +236,7 @@ class ExcerptMenuState extends State<ExcerptMenu> {
   @override
   Widget build(BuildContext context) {
     Widget annotationMenu = Container(
-      padding: const EdgeInsets.all(6),
+      padding: AppReadingTokens.menuPadding,
       decoration: widget.decoration,
       child: AxisFlex(
         axis: widget.axis,
@@ -252,7 +244,7 @@ class ExcerptMenuState extends State<ExcerptMenu> {
         children: [
           iconButton(
             onPressed: deleteHandler,
-            icon: deleteIcon(),
+            icon: const Icon(Icons.delete),
           ),
           for (final type in notesType) typeButton(type.type, type.icon),
           for (String color in notesColors) colorButton(color),
@@ -272,7 +264,10 @@ class ExcerptMenuState extends State<ExcerptMenu> {
             compact: true,
             onTap: () {
               Clipboard.setData(ClipboardData(text: widget.annoContent));
-              AnxToast.show(L10n.of(context).notesPageCopied);
+              AppFeedback.showSuccess(
+                context,
+                message: L10n.of(context).notesPageCopied,
+              );
               widget.onClose();
             },
             icon: const Icon(EvaIcons.copy),

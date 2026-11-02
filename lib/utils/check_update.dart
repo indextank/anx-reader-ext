@@ -1,4 +1,5 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/utils/app_version.dart';
@@ -24,12 +25,15 @@ Future<void> checkUpdate(bool manualCheck) async {
   Prefs().lastShowUpdate = DateTime.now();
 
   BuildContext context = navigatorKey.currentContext!;
+  // 在 await 之前取好依赖，避免跨异步间隙使用 BuildContext。
+  final l10n = L10n.of(context);
+  final navigator = Navigator.of(context);
   Response response;
   try {
     response = await Dio().get('https://api.anx.anxcye.com/api/info/latest');
   } catch (e) {
     if (manualCheck) {
-      AnxToast.show(L10n.of(context).commonFailed);
+      AnxToast.show(l10n.commonFailed);
     }
     AnxLog.severe('Update: Failed to check for updates $e');
     return;
@@ -57,7 +61,7 @@ Future<void> checkUpdate(bool manualCheck) async {
 
   if (needUpdate) {
     if (manualCheck) {
-      Navigator.of(context).pop();
+      navigator.pop();
     }
     SmartDialog.show(
       builder: (BuildContext context) {
@@ -75,27 +79,30 @@ ${L10n.of(context).updateCurrentVersion} $currentVersion\n
 $body'''),
           ),
           actions: <Widget>[
-            TextButton(
+            AppButton(
+              label: L10n.of(context).commonCancel,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 SmartDialog.dismiss();
               },
-              child: Text(L10n.of(context).commonCancel),
             ),
-            TextButton(
+            AppButton(
+              label: L10n.of(context).updateViaGithub,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 launchUrl(
                     Uri.parse(
                         'https://github.com/Anxcye/anx-reader/releases/latest'),
                     mode: LaunchMode.externalApplication);
               },
-              child: Text(L10n.of(context).updateViaGithub),
             ),
-            TextButton(
+            AppButton(
+              label: L10n.of(context).updateViaOfficialWebsite,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 launchUrl(Uri.parse('https://anx.anxcye.com/download'),
                     mode: LaunchMode.externalApplication);
               },
-              child: Text(L10n.of(context).updateViaOfficialWebsite),
             ),
           ],
         );
@@ -103,7 +110,7 @@ $body'''),
     );
   } else {
     if (manualCheck) {
-      AnxToast.show(L10n.of(context).commonNoNewVersion);
+      AnxToast.show(l10n.commonNoNewVersion);
     }
   }
 }

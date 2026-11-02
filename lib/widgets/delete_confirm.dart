@@ -1,6 +1,8 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:flutter/material.dart';
 
+/// 内联二次确认：第一次点击进入确认态（danger 变体），再次点击才执行 [delete]。
 class DeleteConfirm extends StatefulWidget {
   const DeleteConfirm({
     super.key,
@@ -26,53 +28,42 @@ class DeleteConfirm extends StatefulWidget {
 class _DeleteConfirmState extends State<DeleteConfirm> {
   bool isDelete = false;
 
+  void _handlePressed() {
+    if (isDelete) {
+      widget.delete();
+      setState(() {
+        isDelete = false;
+      });
+    } else {
+      setState(() {
+        isDelete = true;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final deleteText = widget.deleteText ?? L10n.of(context).commonDelete;
+    final confirmText = widget.confirmText ?? L10n.of(context).commonConfirm;
+    final variant = isDelete ? AppButtonVariant.danger : AppButtonVariant.text;
+
     if (widget.useTextButton) {
       // Text button mode with default text from L10n
-      final deleteText = widget.deleteText ?? L10n.of(context).commonDelete;
-      final confirmText = widget.confirmText ?? L10n.of(context).commonConfirm;
-
-      return TextButton(
-        onPressed: () {
-          if (isDelete) {
-            widget.delete();
-            setState(() {
-              isDelete = false;
-            });
-          } else {
-            setState(() {
-              isDelete = true;
-            });
-          }
-        },
-        style: isDelete
-            ? TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              )
-            : null,
-        child: Text(isDelete ? confirmText : deleteText),
-      );
-    } else {
-      // Icon button mode with default icons
-      return IconButton(
-        onPressed: () {
-          if (isDelete) {
-            widget.delete();
-            setState(() {
-              isDelete = false;
-            });
-          } else {
-            setState(() {
-              isDelete = true;
-            });
-          }
-        },
-        icon: isDelete
-            ? (widget.confirmIcon ??
-                const Icon(Icons.check_circle_outline, color: Colors.red))
-            : (widget.deleteIcon ?? const Icon(Icons.delete_outline)),
+      return AppButton(
+        label: isDelete ? confirmText : deleteText,
+        variant: variant,
+        onPressed: _handlePressed,
       );
     }
+
+    // Icon button mode with default icons
+    return AppIconButton(
+      variant: variant,
+      tooltip: isDelete ? confirmText : deleteText,
+      onPressed: _handlePressed,
+      child: isDelete
+          ? (widget.confirmIcon ?? const Icon(Icons.check_circle_outline))
+          : (widget.deleteIcon ?? const Icon(Icons.delete_outline)),
+    );
   }
 }

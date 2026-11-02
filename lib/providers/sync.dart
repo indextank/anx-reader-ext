@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' as io;
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/sync_direction.dart';
 import 'package:anx_reader/enums/sync_trigger.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
@@ -104,7 +105,6 @@ class Sync extends _$Sync {
     return true;
   }
 
-
   Future<int> _nonDeletedBookCount() async {
     final books = await bookDao.selectNotDeleteBooks();
     return books.length;
@@ -119,7 +119,7 @@ class Sync extends _$Sync {
       return false;
     }
     final context = navigatorKey.currentContext;
-    if (context != null) {
+    if (context != null && context.mounted) {
       AnxToast.show(L10n.of(context).syncEmptyLibraryUploadRejected);
     } else {
       AnxLog.info('Rejected upload: local library has no non-deleted books');
@@ -230,17 +230,19 @@ class Sync extends _$Sync {
           actionsOverflowAlignment: OverflowBarAlignment.center,
           actionsOverflowButtonSpacing: 10,
           actions: [
-            TextButton(
+            AppButton(
+              label: L10n.of(context).webdavUpload,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 Navigator.of(context).pop(SyncDirection.upload);
               },
-              child: Text(L10n.of(context).webdavUpload),
             ),
-            FilledButton(
+            AppButton(
+              label: L10n.of(context).webdavDownload,
+              variant: AppButtonVariant.primary,
               onPressed: () {
                 Navigator.of(context).pop(SyncDirection.download);
               },
-              child: Text(L10n.of(context).webdavDownload),
             ),
           ],
         ),
@@ -258,11 +260,12 @@ class Sync extends _$Sync {
         content: Text(
             L10n.of(context).syncMismatchTip(currentDbVersion, remoteVersion)),
         actions: [
-          TextButton(
+          AppButton(
+            label: L10n.of(context).commonOk,
+            variant: AppButtonVariant.text,
             onPressed: () {
               SmartDialog.dismiss();
             },
-            child: Text(L10n.of(context).commonOk),
           ),
         ],
       ),
@@ -758,7 +761,9 @@ class Sync extends _$Sync {
                 if (backups.isEmpty)
                   Text(
                     L10n.of(context).noBackupsAvailable,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   )
                 else
                   SizedBox(
@@ -775,12 +780,13 @@ class Sync extends _$Sync {
                         return ListTile(
                           title: Text('Backup ${index + 1}'),
                           subtitle: Text(timestamp),
-                          trailing: ElevatedButton(
+                          trailing: AppButton(
+                            label: L10n.of(context).restore,
+                            variant: AppButtonVariant.secondary,
                             onPressed: () async {
                               // Navigator.of(context).pop();
                               await _restoreFromBackup(backup);
                             },
-                            child: Text(L10n.of(context).restore),
                           ),
                         );
                       },
@@ -790,9 +796,10 @@ class Sync extends _$Sync {
             ),
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: L10n.of(context).commonCancel,
+              variant: AppButtonVariant.text,
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(L10n.of(context).commonCancel),
             ),
           ],
         ),
@@ -815,13 +822,15 @@ class Sync extends _$Sync {
           title: Text(L10n.of(context).confirmRestore),
           content: Text(L10n.of(context).restoreWarning),
           actions: [
-            TextButton(
+            AppButton(
+              label: L10n.of(context).commonCancel,
+              variant: AppButtonVariant.text,
               onPressed: () => SmartDialog.dismiss(result: false),
-              child: Text(L10n.of(context).commonCancel),
             ),
-            FilledButton(
+            AppButton(
+              label: L10n.of(context).commonConfirm,
+              variant: AppButtonVariant.primary,
               onPressed: () => SmartDialog.dismiss(result: true),
-              child: Text(L10n.of(context).commonConfirm),
             ),
           ],
         ),
@@ -856,11 +865,12 @@ class Sync extends _$Sync {
         title: Text(L10n.of(context).webdavSyncAborted),
         content: Text(L10n.of(context).webdavSyncAbortedContent),
         actions: [
-          TextButton(
+          AppButton(
+            label: L10n.of(context).commonOk,
+            variant: AppButtonVariant.text,
             onPressed: () {
               SmartDialog.dismiss();
             },
-            child: Text(L10n.of(context).commonOk),
           ),
         ],
       ),

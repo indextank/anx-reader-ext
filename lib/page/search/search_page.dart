@@ -2,14 +2,16 @@ import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'dart:async';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/models/search_note_group.dart';
 import 'package:anx_reader/providers/search.dart';
 import 'package:anx_reader/service/book.dart';
-import 'package:anx_reader/utils/error_handler.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/book_notes/book_note_tile.dart';
 import 'package:anx_reader/widgets/bookshelf/book_item.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -50,12 +52,13 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   void _onQueryChanged(String value) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
+    _debounce = Timer(AppSearchTokens.debounce, () {
       ref.read(searchQueryProvider.notifier).state = value;
     });
   }
 
   void _clearQuery() {
+    _debounce?.cancel();
     _controller.clear();
     ref.read(searchQueryProvider.notifier).state = '';
   }
@@ -65,26 +68,25 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final query = ref.watch(searchQueryProvider);
     final asyncResult = ref.watch(searchResultProvider);
 
-    var appBar = AppBar(
+    final appBar = AppBar(
       forceMaterialTransparency: true,
       titleSpacing: 0,
       title: Padding(
-        padding: const EdgeInsets.only(right: 8.0),
-        child: TextField(
+        padding: AppSearchTokens.appBarPadding,
+        child: AppTextField(
           controller: _controller,
           focusNode: _focusNode,
-          decoration: InputDecoration(
-            hintText: L10n.of(context).searchBooksOrNotes,
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _controller.text.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: _clearQuery,
-                  ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(32)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-          ),
+          hintText: L10n.of(context).searchBooksOrNotes,
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _controller.text.isEmpty
+              ? null
+              : AppIconButton(
+                  icon: Icons.clear,
+                  tooltip: L10n.of(context).close,
+                  onPressed: _clearQuery,
+                ),
+          border: const OutlineInputBorder(borderRadius: AppRadius.border32),
+          contentPadding: AppSearchTokens.inputPadding,
           textInputAction: TextInputAction.search,
           onChanged: _onQueryChanged,
           onSubmitted: (value) {
@@ -97,38 +99,43 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     return Scaffold(
       appBar: appBar,
-      body: asyncResult.when(
-        data: (result) {
-          if (query.trim().isEmpty) {
-            return Center(
-              child: Text(
-                L10n.of(context).startTypingToSearch,
-              ),
-            );
-          }
-          return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
+      body: AppSafeArea(
+        top: false,
+        child: asyncResult.when(
+          data: (result) {
+            if (query.trim().isEmpty) {
+              return AppEmptyState(
+                icon: Icons.search,
+                message: L10n.of(context).startTypingToSearch,
+              );
+            }
+            return SingleChildScrollView(
+              padding: AppSearchTokens.bodyPadding,
               child: Column(
-                spacing: 24,
+                spacing: AppSearchTokens.sectionSpacing,
                 children: [
                   _SearchResult(
-                      title: L10n.of(context).books,
-                      empty: result.books.isEmpty,
-                      child: _SearchBookResult(books: result.books)),
+                    title: L10n.of(context).books,
+                    empty: result.books.isEmpty,
+                    child: _SearchBookResult(books: result.books),
+                  ),
                   _SearchResult(
-                      title: L10n.of(context).notes,
-                      empty: result.noteGroups.isEmpty,
-                      child: _SearchNoteResult(group: result.noteGroups)),
+                    title: L10n.of(context).notes,
+                    empty: result.noteGroups.isEmpty,
+                    child: _SearchNoteResult(group: result.noteGroups),
+                  ),
                 ],
               ),
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) {
-          return errorHandler(error);
-        },
+            );
+          },
+          loading: () => const Center(child: AppLoadingIndicator()),
+          error: (error, stack) => AppErrorState(
+            onRetry: () async {
+              ref.invalidate(searchResultProvider);
+              await ref.read(searchResultProvider.future);
+            },
+          ),
+        ),
       ),
     );
   }
@@ -157,18 +164,15 @@ class _SearchResult extends ConsumerWidget {
               .titleLarge!
               .copyWith(fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 6),
-        FilledContainer(
+        SizedBox(height: AppSearchTokens.titleSpacing),
+        SizedBox(
           width: double.infinity,
-          padding: const EdgeInsets.all(12.0),
-          child: empty
-              ? Center(
-                  child: Text(
-                    L10n.of(context).nothingHere,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                )
-              : child,
+          child: AppCard(
+            padding: AppSearchTokens.cardPadding,
+            child: empty
+                ? AppEmptyState(title: L10n.of(context).nothingHere)
+                : child,
+          ),
         ),
       ],
     );
@@ -182,12 +186,14 @@ class _SearchBookResult extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isMany = books.length > 6;
+    final isMany = books.length > AppSearchTokens.manyBooksThreshold;
     final manyFactor = isMany ? 2 : 1;
 
-    final coverWidth = Prefs().bookCoverWidth / 1.5;
-    final tileHeight = coverWidth * 2.1 + 55;
-    final booksSectionHeight = tileHeight * manyFactor + 32;
+    final coverWidth = Prefs().bookCoverWidth / AppSearchTokens.coverScale;
+    final tileHeight = coverWidth * AppSearchTokens.coverAspectRatio +
+        AppSearchTokens.tileExtraHeight;
+    final booksSectionHeight =
+        tileHeight * manyFactor + AppSearchTokens.sectionExtraHeight;
 
     return SizedBox(
       height: booksSectionHeight,
@@ -195,9 +201,9 @@ class _SearchBookResult extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: manyFactor,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 2.1 / 1,
+          mainAxisSpacing: AppSearchTokens.gridSpacing,
+          crossAxisSpacing: AppSearchTokens.gridSpacing,
+          childAspectRatio: AppSearchTokens.coverAspectRatio,
         ),
         itemBuilder: (context, index) {
           final book = books[index];
@@ -205,7 +211,7 @@ class _SearchBookResult extends ConsumerWidget {
         },
         itemCount: books.length,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: AppSearchTokens.gridPadding,
       ),
     );
   }
@@ -218,39 +224,42 @@ class _SearchNoteResult extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Column(spacing: 18, children: [
-      ...group.map((item) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.book.title,
-                style: Theme.of(context).textTheme.titleSmall,
+    return Column(
+      spacing: AppSearchTokens.noteGroupSpacing,
+      children: group.map((item) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              item.book.title,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            SizedBox(height: AppSearchTokens.noteTitleSpacing),
+            AppCard(
+              borderRadius: AppRadius.border16,
+              color: Theme.of(context).scaffoldBackgroundColor,
+              padding: AppSpacing.zero,
+              child: Column(
+                children: item.notes.map((note) {
+                  return Padding(
+                    padding: AppSearchTokens.notePadding,
+                    child: BookNoteTile(
+                      backgroundColor:
+                          Theme.of(context).scaffoldBackgroundColor,
+                      note: note,
+                      margin: AppSpacing.zero,
+                      onTap: () {
+                        pushToReadingPage(ref, context, item.book,
+                            cfi: note.cfi);
+                      },
+                    ),
+                  );
+                }).toList(),
               ),
-              SizedBox(height: 4),
-              FilledContainer(
-                  radius: 16,
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  child: Column(
-                    children: [
-                      ...item.notes.map(
-                        (note) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: BookNoteTile(
-                            backgroundColor:
-                                Theme.of(context).scaffoldBackgroundColor,
-                            note: note,
-                            margin: EdgeInsets.zero,
-                            onTap: () {
-                              pushToReadingPage(ref, context, item.book,
-                                  cfi: note.cfi);
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  )),
-            ],
-          ))
-    ]);
+            ),
+          ],
+        );
+      }).toList(),
+    );
   }
 }

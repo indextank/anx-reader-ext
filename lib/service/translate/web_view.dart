@@ -1,4 +1,5 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/lang_list.dart';
 import 'package:anx_reader/service/translate/index.dart';
 import 'package:flutter/foundation.dart';
@@ -48,8 +49,9 @@ abstract class WebViewTranslateProvider extends TranslateServiceProvider {
                 return Material(
                   color: Theme.of(context).cardColor.withAlpha(200),
                   shape: const CircleBorder(),
-                  child: IconButton(
-                    icon: const Icon(Icons.open_in_new, size: 20),
+                  child: AppIconButton(
+                    icon: Icons.open_in_new,
+                    tooltip: L10n.of(context).readingPageOpenExternalLinkTitle,
                     onPressed: () {
                       launchUrl(Uri.parse(url),
                           mode: LaunchMode.externalApplication);

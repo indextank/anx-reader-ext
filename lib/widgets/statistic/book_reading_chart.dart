@@ -1,12 +1,11 @@
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/utils/date/convert_seconds.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-/// Shared line chart used for reading trend visualisations.
-///
-/// [cumulativeValues] drive the actual line path, while [dailySeconds] and
-/// [dates] provide tooltip context.
 class BookReadingChart extends StatefulWidget {
   const BookReadingChart({
     super.key,
@@ -28,23 +27,20 @@ class BookReadingChart extends StatefulWidget {
 class _BookReadingChartState extends State<BookReadingChart> {
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     final formatter = DateFormat('M/d');
-
     final dataLength = widget.cumulativeValues.length;
+    if (dataLength == 0) return const AppEmptyState();
     final effectiveMaxY = widget.maxY ??
-        (dataLength == 0
-            ? 1
-            : widget.cumulativeValues.reduce((a, b) => a > b ? a : b) * 1.2);
-
+        widget.cumulativeValues.reduce((a, b) => a > b ? a : b) *
+            AppStatisticsTokens.chartMaxYFactor;
     return LineChart(
       LineChartData(
         lineTouchData: LineTouchData(
           enabled: true,
           touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (_) => Colors.transparent,
-            getTooltipItems: (List<LineBarSpot> touchedSpots) {
+            getTooltipColor: (_) => AppColors.transparent,
+            getTooltipItems: (touchedSpots) {
               return touchedSpots.map((spot) {
                 final index = spot.x.toInt();
                 if (index >= 0 && index < dataLength) {
@@ -52,10 +48,8 @@ class _BookReadingChartState extends State<BookReadingChart> {
                   final daily = widget.dailySeconds[index];
                   return LineTooltipItem(
                     '$label · ${convertSeconds(daily)}',
-                    TextStyle(
+                    AppStatisticsTokens.chartTooltipStyle.copyWith(
                       color: primaryColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
                     ),
                   );
                 }
@@ -64,13 +58,15 @@ class _BookReadingChartState extends State<BookReadingChart> {
             },
           ),
         ),
-        gridData: FlGridData(show: false),
-        titlesData: FlTitlesData(show: false),
+        gridData: const FlGridData(show: false),
+        titlesData: const FlTitlesData(show: false),
         borderData: FlBorderData(show: false),
         minX: 0,
         maxX: dataLength > 0 ? (dataLength - 1).toDouble() : 0,
         minY: 0,
-        maxY: effectiveMaxY <= 0 ? 1 : effectiveMaxY,
+        maxY: effectiveMaxY <= 0
+            ? AppStatisticsTokens.chartFallbackMaxY
+            : effectiveMaxY,
         lineBarsData: [
           LineChartBarData(
             spots: List.generate(
@@ -82,15 +78,15 @@ class _BookReadingChartState extends State<BookReadingChart> {
             ),
             isCurved: true,
             color: primaryColor,
-            barWidth: 2,
+            barWidth: AppStatisticsTokens.chartLineWidth,
             isStrokeCapRound: true,
-            dotData: FlDotData(show: false),
+            dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
               gradient: LinearGradient(
                 colors: [
-                  primaryColor.withAlpha(75),
-                  primaryColor.withAlpha(0),
+                  primaryColor.withAlpha(AppStatisticsTokens.chartAreaAlpha),
+                  AppColors.transparent,
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,

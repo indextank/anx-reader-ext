@@ -1,8 +1,10 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/chapter_split_presets.dart';
 import 'package:anx_reader/models/chapter_split_rule.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:flutter/material.dart';
 
 class ChapterSplitRulesPage extends StatefulWidget {
@@ -34,20 +36,24 @@ class _ChapterSplitRulesPageState extends State<ChapterSplitRulesPage> {
     final prefs = Prefs();
     final activeRule = prefs.activeChapterSplitRule;
     final storedId = prefs.chapterSplitSelectedRuleId;
-
+    if (!mounted) return;
     setState(() {
       _selectedRuleId = storedId ?? activeRule.id;
       _builtinRules = builtinChapterSplitRules
-          .map((rule) => _RuleEntry(
-                rule: rule,
-                evaluation: rule.evaluateSamples(),
-              ))
+          .map(
+            (rule) => _RuleEntry(
+              rule: rule,
+              evaluation: rule.evaluateSamples(),
+            ),
+          )
           .toList(growable: false);
       _customRules = prefs.chapterSplitCustomRules
-          .map((rule) => _RuleEntry(
-                rule: rule,
-                evaluation: rule.evaluateSamples(),
-              ))
+          .map(
+            (rule) => _RuleEntry(
+              rule: rule,
+              evaluation: rule.evaluateSamples(),
+            ),
+          )
           .toList(growable: false);
     });
   }
@@ -55,14 +61,9 @@ class _ChapterSplitRulesPageState extends State<ChapterSplitRulesPage> {
   Future<void> _onAddRule() async {
     final rule = await Navigator.of(context).push<ChapterSplitRule>(
       MaterialPageRoute(
-        builder: (context) => const ChapterSplitRuleEditorPage(),
-      ),
+          builder: (context) => const ChapterSplitRuleEditorPage()),
     );
-
-    if (rule == null) {
-      return;
-    }
-
+    if (rule == null) return;
     Prefs().saveCustomChapterSplitRule(rule);
     await _refreshRules();
   }
@@ -73,50 +74,30 @@ class _ChapterSplitRulesPageState extends State<ChapterSplitRulesPage> {
         builder: (context) => ChapterSplitRuleEditorPage(rule: rule),
       ),
     );
-
-    if (updatedRule == null) {
-      return;
-    }
-
+    if (updatedRule == null) return;
     Prefs().saveCustomChapterSplitRule(updatedRule);
     await _refreshRules();
   }
 
   Future<void> _onDeleteRule(ChapterSplitRule rule) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(L10n.of(context).deleteCustomRule),
-        content: Text(L10n.of(context).removeRule(rule.name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(L10n.of(context).commonCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: Text(L10n.of(context).commonDelete),
-          ),
-        ],
-      ),
+    final l10n = L10n.of(context);
+    await AppDialog.confirm(
+      context,
+      title: l10n.deleteCustomRule,
+      message: l10n.removeRule(rule.name),
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: l10n.removeRule(rule.name),
+      onConfirm: () async {
+        Prefs().deleteCustomChapterSplitRule(rule.id);
+        await _refreshRules();
+      },
     );
-
-    if (confirmed != true) {
-      return;
-    }
-
-    Prefs().deleteCustomChapterSplitRule(rule.id);
-    await _refreshRules();
   }
 
   void _onSelectRule(String id) {
     Prefs().selectChapterSplitRule(id);
-    setState(() {
-      _selectedRuleId = id;
-    });
+    setState(() => _selectedRuleId = id);
   }
 
   Widget _buildRuleSection({
@@ -124,24 +105,28 @@ class _ChapterSplitRulesPageState extends State<ChapterSplitRulesPage> {
     required List<_RuleEntry> rules,
     required bool allowActions,
   }) {
-    if (rules.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
+    if (rules.isEmpty && !allowActions) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: AppSpacing.symmetric(horizontal: 16, vertical: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          ...rules.map((entry) => _buildRuleTile(
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          SizedBox(height: AppSpacing.tokens.s12),
+          if (rules.isEmpty)
+            AppEmptyState(
+              title: title,
+              message: L10n.of(context).addCustomRule,
+              actionLabel: L10n.of(context).addCustomRule,
+              onAction: _onAddRule,
+            )
+          else
+            ...rules.map(
+              (entry) => _buildRuleTile(
                 entry: entry,
                 allowActions: allowActions,
-              )),
+              ),
+            ),
         ],
       ),
     );
@@ -154,121 +139,78 @@ class _ChapterSplitRulesPageState extends State<ChapterSplitRulesPage> {
     final rule = entry.rule;
     final evaluation = entry.evaluation;
     final isSelected = _selectedRuleId == rule.id;
-
-    return FilledContainer(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Radio<String>(
-                  value: rule.id,
-                  groupValue: _selectedRuleId,
-                  onChanged: (_) => _onSelectRule(rule.id),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        rule.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      SelectableText(
-                        rule.pattern,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(fontFamily: 'monospace'),
-                      ),
-                      if (!evaluation.isValid)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            evaluation.errorMessage ??
-                                L10n.of(context).invalidPattern,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if (allowActions)
-                  Column(
-                    children: [
-                      IconButton(
-                        tooltip: L10n.of(context).commonEdit,
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => _onEditRule(rule),
-                      ),
-                      IconButton(
-                        tooltip: L10n.of(context).commonDelete,
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => _onDeleteRule(rule),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-            const Divider(height: 20),
-            Text(
-              L10n.of(context).samples,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-            const SizedBox(height: 8),
-            ...evaluation.sampleMatches.map(
-              (sample) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
+    final l10n = L10n.of(context);
+    return AppCard(
+      margin: AppSpacing.only(bottom: 12),
+      padding: AppSpacing.all12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Radio<String>(value: rule.id),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      evaluation.isValid
-                          ? (sample.isMatch
-                              ? Icons.check_circle_outline
-                              : Icons.cancel_outlined)
-                          : Icons.error_outline,
-                      color: evaluation.isValid
-                          ? (sample.isMatch
-                              ? Colors.green
-                              : Theme.of(context).colorScheme.error)
-                          : Theme.of(context).colorScheme.error,
-                      size: 20,
+                    Text(rule.name,
+                        style: Theme.of(context).textTheme.titleMedium),
+                    SizedBox(height: AppSpacing.tokens.s4),
+                    SelectableText(
+                      rule.pattern,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(fontFamily: 'monospace'),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        sample.sample,
-                        style: Theme.of(context).textTheme.bodyMedium,
+                    if (!evaluation.isValid)
+                      Padding(
+                        padding: AppSpacing.only(top: 8),
+                        child: Text(
+                          evaluation.errorMessage ?? l10n.invalidPattern,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: context.appTheme.colors.error,
+                                  ),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
-            ),
-            if (evaluation.sampleMatches.isEmpty)
-              Text(L10n.of(context).noSamplesProvided),
-            if (isSelected)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  L10n.of(context).currentlyInUse,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: Theme.of(context).colorScheme.primary),
+              if (allowActions)
+                Column(
+                  children: [
+                    AppIconButton(
+                      tooltip: l10n.commonEdit,
+                      icon: Icons.edit_outlined,
+                      onPressed: () => _onEditRule(rule),
+                    ),
+                    AppIconButton(
+                      tooltip: l10n.commonDelete,
+                      icon: Icons.delete_outline,
+                      onPressed: () => _onDeleteRule(rule),
+                    ),
+                  ],
                 ),
+            ],
+          ),
+          const Divider(),
+          Text(l10n.samples, style: Theme.of(context).textTheme.labelMedium),
+          SizedBox(height: AppSpacing.tokens.s8),
+          _SampleMatches(evaluation: evaluation),
+          if (evaluation.sampleMatches.isEmpty) Text(l10n.noSamplesProvided),
+          if (isSelected)
+            Padding(
+              padding: AppSpacing.only(top: 8),
+              child: Text(
+                l10n.currentlyInUse,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -276,32 +218,39 @@ class _ChapterSplitRulesPageState extends State<ChapterSplitRulesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(L10n.of(context).chapterSplitting),
-      ),
-      body: ListView(
-        children: [
-          _buildRuleSection(
-            title: L10n.of(context).builtInRules,
-            rules: _builtinRules,
-            allowActions: false,
+      appBar: AppBar(title: Text(L10n.of(context).chapterSplitting)),
+      body: AppSafeArea(
+        top: false,
+        child: RadioGroup<String>(
+          groupValue: _selectedRuleId,
+          onChanged: (value) {
+            if (value != null) _onSelectRule(value);
+          },
+          child: ListView(
+            children: [
+              _buildRuleSection(
+                title: L10n.of(context).builtInRules,
+                rules: _builtinRules,
+                allowActions: false,
+              ),
+              _buildRuleSection(
+                title: L10n.of(context).customRules,
+                rules: _customRules,
+                allowActions: true,
+              ),
+              Padding(
+                padding: AppSpacing.horizontal16,
+                child: AppButton(
+                  label: L10n.of(context).addCustomRule,
+                  icon: Icons.add_circle_outline,
+                  variant: AppButtonVariant.outlined,
+                  onPressed: _onAddRule,
+                ),
+              ),
+              SizedBox(height: AppSpacing.tokens.s24),
+            ],
           ),
-          _buildRuleSection(
-            title: L10n.of(context).customRules,
-            rules: _customRules,
-            allowActions: true,
-          ),
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: OutlinedButton.icon(
-              onPressed: _onAddRule,
-              icon: const Icon(Icons.add_circle_outline),
-              label: Text(L10n.of(context).addCustomRule),
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
+        ),
       ),
     );
   }
@@ -319,14 +268,15 @@ class ChapterSplitRuleEditorPage extends StatefulWidget {
 
 class _ChapterSplitRuleEditorPageState
     extends State<ChapterSplitRuleEditorPage> {
-  late TextEditingController _nameController;
-  late TextEditingController _patternController;
-  late TextEditingController _samplesController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _patternController;
+  late final TextEditingController _samplesController;
   late bool _caseSensitive;
   late bool _multiLine;
   late String _ruleId;
   ChapterSplitRuleEvaluation? _evaluation;
   bool _localizedDefaultsApplied = false;
+
   @override
   void initState() {
     super.initState();
@@ -346,23 +296,16 @@ class _ChapterSplitRuleEditorPageState
       _caseSensitive = rule.caseSensitive;
       _multiLine = rule.multiLine;
     }
-
     _evaluate();
-
     _patternController.addListener(_evaluate);
     _samplesController.addListener(_evaluate);
-    _nameController.addListener(() {
-      setState(() {});
-    });
+    _nameController.addListener(() => setState(() {}));
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_localizedDefaultsApplied) {
-      return;
-    }
-
+    if (_localizedDefaultsApplied) return;
     if (widget.rule == null) {
       final l10n = L10n.of(context);
       if (_nameController.text.isEmpty) {
@@ -372,7 +315,6 @@ class _ChapterSplitRuleEditorPageState
         _samplesController.text = 'Chapter 1: Beginning';
       }
     }
-
     _localizedDefaultsApplied = true;
     _evaluate();
   }
@@ -386,62 +328,35 @@ class _ChapterSplitRuleEditorPageState
   }
 
   void _evaluate() {
-    final samples = _currentSamples;
     final rule = ChapterSplitRule(
       id: _ruleId,
       name: _nameController.text,
       pattern: _patternController.text,
-      samples: samples,
+      samples: _currentSamples,
       caseSensitive: _caseSensitive,
       multiLine: _multiLine,
       isBuiltin: false,
     );
-    setState(() {
-      _evaluation = rule.evaluateSamples();
-    });
+    setState(() => _evaluation = rule.evaluateSamples());
   }
 
-  List<String> get _currentSamples {
-    return _samplesController.text
-        .split('\n')
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
-  }
+  List<String> get _currentSamples => _samplesController.text
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
 
   bool get _canSave {
-    if (_nameController.text.trim().isEmpty) {
+    if (_nameController.text.trim().isEmpty ||
+        _patternController.text.trim().isEmpty ||
+        _currentSamples.isEmpty) {
       return false;
     }
-    if (_patternController.text.trim().isEmpty) {
-      return false;
-    }
-    if (_currentSamples.isEmpty) {
-      return false;
-    }
-    final evaluation = _evaluation;
-    return evaluation != null && evaluation.isValid;
+    return _evaluation?.isValid ?? false;
   }
 
-  void _onToggleCaseSensitive(bool? value) {
-    setState(() {
-      _caseSensitive = value ?? false;
-    });
-    _evaluate();
-  }
-
-  void _onToggleMultiLine(bool? value) {
-    setState(() {
-      _multiLine = value ?? true;
-    });
-    _evaluate();
-  }
-
-  void _onSave() {
-    if (!_canSave) {
-      return;
-    }
-
+  Future<void> _onSave() async {
+    if (!_canSave) return;
     final rule = ChapterSplitRule(
       id: _ruleId,
       name: _nameController.text.trim(),
@@ -451,125 +366,124 @@ class _ChapterSplitRuleEditorPageState
       multiLine: _multiLine,
       isBuiltin: false,
     );
-
-    Navigator.of(context).pop(rule);
+    if (mounted) Navigator.of(context).pop(rule);
   }
 
   @override
   Widget build(BuildContext context) {
     final evaluation = _evaluation;
-
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.rule == null
-            ? L10n.of(context).newCustomRule
-            : L10n.of(context).editCustomRule),
+        title: Text(
+          widget.rule == null ? l10n.newCustomRule : l10n.editCustomRule,
+        ),
         actions: [
-          TextButton(
-            onPressed: _canSave ? _onSave : null,
-            child: Text(L10n.of(context).commonSave),
+          AppSubmitButton(
+            label: l10n.commonSave,
+            variant: AppButtonVariant.text,
+            disabled: !_canSave,
+            onSubmit: _onSave,
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: L10n.of(context).ruleName,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _patternController,
-            decoration: InputDecoration(
-              labelText: L10n.of(context).regularExpression,
+      body: AppSafeArea(
+        top: false,
+        child: ListView(
+          padding: AppSpacing.all16,
+          children: [
+            AppTextField(controller: _nameController, label: l10n.ruleName),
+            SizedBox(height: AppSpacing.tokens.s16),
+            AppTextField(
+              controller: _patternController,
+              label: l10n.regularExpression,
               errorText: evaluation != null && !evaluation.isValid
-                  ? evaluation.errorMessage ?? L10n.of(context).invalidPattern
+                  ? evaluation.errorMessage ?? l10n.invalidPattern
                   : null,
-              helperText: L10n.of(context).dartStyleRegularExpression,
+              helperText: l10n.dartStyleRegularExpression,
+              maxLines: 3,
+              minLines: 1,
             ),
-            maxLines: 3,
-            minLines: 1,
-          ),
-          const SizedBox(height: 16),
-          Row(
+            SizedBox(height: AppSpacing.tokens.s16),
+            CheckboxListTile(
+              value: _caseSensitive,
+              onChanged: (value) {
+                setState(() => _caseSensitive = value ?? false);
+                _evaluate();
+              },
+              title: Text(l10n.caseSensitive),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: AppSpacing.zero,
+            ),
+            CheckboxListTile(
+              value: _multiLine,
+              onChanged: (value) {
+                setState(() => _multiLine = value ?? true);
+                _evaluate();
+              },
+              title: Text(l10n.multiLine),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: AppSpacing.zero,
+            ),
+            SizedBox(height: AppSpacing.tokens.s16),
+            AppTextField(
+              controller: _samplesController,
+              label: l10n.samplesOnePerLine,
+              minLines: 5,
+              maxLines: 10,
+            ),
+            SizedBox(height: AppSpacing.tokens.s24),
+            if (evaluation != null) ...[
+              Text(l10n.testResults,
+                  style: Theme.of(context).textTheme.titleMedium),
+              SizedBox(height: AppSpacing.tokens.s12),
+              _SampleMatches(evaluation: evaluation),
+              if (evaluation.sampleMatches.isEmpty) Text(l10n.noSamples),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SampleMatches extends StatelessWidget {
+  const _SampleMatches({required this.evaluation});
+
+  final ChapterSplitRuleEvaluation evaluation;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: evaluation.sampleMatches.map((sample) {
+        final color = evaluation.isValid && sample.isMatch
+            ? context.appTheme.colors.success
+            : context.appTheme.colors.error;
+        return Padding(
+          padding: AppSpacing.vertical4,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: CheckboxListTile(
-                  value: _caseSensitive,
-                  onChanged: _onToggleCaseSensitive,
-                  title: Text(L10n.of(context).caseSensitive),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
+              Icon(
+                evaluation.isValid
+                    ? (sample.isMatch
+                        ? Icons.check_circle_outline
+                        : Icons.cancel_outlined)
+                    : Icons.error_outline,
+                color: color,
+                size: AppSpacing.tokens.s20,
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: AppSpacing.tokens.s8),
               Expanded(
-                child: CheckboxListTile(
-                  value: _multiLine,
-                  onChanged: _onToggleMultiLine,
-                  title: Text(L10n.of(context).multiLine),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
+                child: Text(
+                  sample.sample,
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _samplesController,
-            decoration: InputDecoration(
-              labelText: L10n.of(context).samplesOnePerLine,
-              alignLabelWithHint: true,
-            ),
-            minLines: 5,
-            maxLines: 10,
-          ),
-          const SizedBox(height: 24),
-          if (evaluation != null)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  L10n.of(context).testResults,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 12),
-                ...evaluation.sampleMatches.map(
-                  (sample) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          evaluation.isValid
-                              ? (sample.isMatch
-                                  ? Icons.check_circle_outline
-                                  : Icons.cancel_outlined)
-                              : Icons.error_outline,
-                          color: evaluation.isValid
-                              ? (sample.isMatch
-                                  ? Colors.green
-                                  : Theme.of(context).colorScheme.error)
-                              : Theme.of(context).colorScheme.error,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(sample.sample),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (evaluation.sampleMatches.isEmpty)
-                  Text(L10n.of(context).noSamples),
-              ],
-            ),
-        ],
-      ),
+        );
+      }).toList(),
     );
   }
 }

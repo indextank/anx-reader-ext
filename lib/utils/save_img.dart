@@ -1,4 +1,5 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/utils/platform_utils.dart';
 import 'package:anx_reader/utils/save_file_to_download.dart';
@@ -25,11 +26,12 @@ class SaveImg {
             title: Text(L10n.of(context).storagePermissionDenied),
             content: Text(L10n.of(context).storagePermissionDenied),
             actions: [
-              TextButton(
+              AppButton(
+                label: L10n.of(context).gotoAuthorize,
+                variant: AppButtonVariant.text,
                 onPressed: () async {
                   openAppSettings();
                 },
-                child: Text(L10n.of(context).gotoAuthorize),
               )
             ],
           );
@@ -54,11 +56,12 @@ class SaveImg {
             title: Text(L10n.of(context).commonAttention),
             content: Text(L10n.of(context).galleryPermissionDenied),
             actions: [
-              TextButton(
+              AppButton(
+                label: L10n.of(context).gotoAuthorize,
+                variant: AppButtonVariant.text,
                 onPressed: () async {
                   openAppSettings();
                 },
-                child: Text(L10n.of(context).gotoAuthorize),
               )
             ],
           );

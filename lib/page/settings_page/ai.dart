@@ -1,24 +1,23 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
-import 'package:anx_reader/enums/ai_prompts.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/ai_chat_display_mode.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
+import 'package:anx_reader/enums/ai_prompts.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/settings_page/ai_provider_list_page.dart';
 import 'package:anx_reader/providers/ai_cache_count.dart';
 import 'package:anx_reader/providers/ai_providers.dart';
 import 'package:anx_reader/providers/user_prompts.dart';
 import 'package:anx_reader/service/ai/tools/ai_tool_registry.dart';
-import 'package:anx_reader/widgets/common/anx_button.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/common/anx_segmented_button.dart';
-import 'package:anx_reader/widgets/delete_confirm.dart';
 import 'package:anx_reader/widgets/settings/settings_section.dart';
 import 'package:anx_reader/widgets/settings/settings_tile.dart';
 import 'package:anx_reader/widgets/settings/settings_title.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 
 class AISettings extends ConsumerStatefulWidget {
   const AISettings({super.key});
@@ -28,18 +27,17 @@ class AISettings extends ConsumerStatefulWidget {
 }
 
 class _AISettingsState extends ConsumerState<AISettings> {
-  // User prompts state
   String? _expandedUserPromptId;
+  String? _userPromptValidationErrorId;
   final Map<String, TextEditingController> _userPromptNameControllers = {};
   final Map<String, TextEditingController> _userPromptContentControllers = {};
 
   @override
   void dispose() {
-    // Clean up user prompt controllers
-    for (var controller in _userPromptNameControllers.values) {
+    for (final controller in _userPromptNameControllers.values) {
       controller.dispose();
     }
-    for (var controller in _userPromptContentControllers.values) {
+    for (final controller in _userPromptContentControllers.values) {
       controller.dispose();
     }
     super.dispose();
@@ -48,127 +46,57 @@ class _AISettingsState extends ConsumerState<AISettings> {
   @override
   Widget build(BuildContext context) {
     final l10n = L10n.of(context);
-
-    List<Map<String, dynamic>> prompts = [
+    final prompts = [
       {
-        "identifier": AiPrompts.test,
-        "title": l10n.settingsAiPromptTest,
-        "variables": ["language_locale"],
+        'identifier': AiPrompts.test,
+        'title': l10n.settingsAiPromptTest,
+        'variables': ['language_locale'],
       },
       {
-        "identifier": AiPrompts.summaryTheChapter,
-        "title": l10n.settingsAiPromptSummaryTheChapter,
-        "variables": [],
+        'identifier': AiPrompts.summaryTheChapter,
+        'title': l10n.settingsAiPromptSummaryTheChapter,
+        'variables': <String>[],
       },
       {
-        "identifier": AiPrompts.summaryTheBook,
-        "title": l10n.settingsAiPromptSummaryTheBook,
-        "variables": [],
+        'identifier': AiPrompts.summaryTheBook,
+        'title': l10n.settingsAiPromptSummaryTheBook,
+        'variables': <String>[],
       },
       {
-        "identifier": AiPrompts.summaryThePreviousContent,
-        "title": l10n.settingsAiPromptSummaryThePreviousContent,
-        "variables": ["previous_content"],
+        'identifier': AiPrompts.summaryThePreviousContent,
+        'title': l10n.settingsAiPromptSummaryThePreviousContent,
+        'variables': ['previous_content'],
       },
       {
-        "identifier": AiPrompts.translate,
-        "title": l10n.settingsAiPromptTranslateAndDictionary,
-        "variables": ["text", "to_locale", "from_locale", "contextText"],
+        'identifier': AiPrompts.translate,
+        'title': l10n.settingsAiPromptTranslateAndDictionary,
+        'variables': ['text', 'to_locale', 'from_locale', 'contextText'],
       },
       {
-        "identifier": AiPrompts.fullTextTranslate,
-        "title": l10n.settingsAiPromptFullTextTranslate,
-        "variables": ["text", "to_locale", "from_locale"],
+        'identifier': AiPrompts.fullTextTranslate,
+        'title': l10n.settingsAiPromptFullTextTranslate,
+        'variables': ['text', 'to_locale', 'from_locale'],
       },
       {
-        "identifier": AiPrompts.mindmap,
-        "title": l10n.settingsAiPromptMindmap,
-        "variables": [],
-      }
+        'identifier': AiPrompts.mindmap,
+        'title': l10n.settingsAiPromptMindmap,
+        'variables': <String>[],
+      },
     ];
 
-    var promptTile = CustomSettingsTile(
+    final promptTile = CustomSettingsTile(
       child: ListView.builder(
         physics: const NeverScrollableScrollPhysics(),
         shrinkWrap: true,
         itemCount: prompts.length,
         itemBuilder: (context, index) {
+          final prompt = prompts[index];
           return SettingsTile.navigation(
-            title: Text(prompts[index]["title"]),
-            onPressed: (context) {
-              SmartDialog.show(builder: (context) {
-                final controller = TextEditingController(
-                  text: Prefs().getAiPrompt(
-                    AiPrompts.values[index],
-                  ),
-                );
-
-                return AlertDialog(
-                  title: Text(L10n.of(context).commonEdit),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        maxLines: 10,
-                        controller: controller,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      Wrap(
-                        children: [
-                          for (var variable in prompts[index]["variables"])
-                            TextButton(
-                              onPressed: () {
-                                // insert the variables at the cursor
-                                if (controller.selection.start == -1 ||
-                                    controller.selection.end == -1) {
-                                  return;
-                                }
-
-                                TextSelection.fromPosition(
-                                  TextPosition(
-                                    offset: controller.selection.start,
-                                  ),
-                                );
-
-                                controller.text = controller.text.replaceRange(
-                                  controller.selection.start,
-                                  controller.selection.end,
-                                  '{{$variable}}',
-                                );
-                              },
-                              child: Text(
-                                '{{$variable}}',
-                              ),
-                            ),
-                        ],
-                      )
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        Prefs().deleteAiPrompt(AiPrompts.values[index]);
-                        controller.text = Prefs().getAiPrompt(
-                          AiPrompts.values[index],
-                        );
-                      },
-                      child: Text(L10n.of(context).commonReset),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Prefs().saveAiPrompt(
-                          AiPrompts.values[index],
-                          controller.text,
-                        );
-                      },
-                      child: Text(L10n.of(context).commonSave),
-                    ),
-                  ],
-                );
-              });
-            },
+            title: Text(prompt['title'] as String),
+            onPressed: (context) => _showPromptEditor(
+              AiPrompts.values[index],
+              prompt['variables'] as List<String>,
+            ),
           );
         },
       ),
@@ -176,7 +104,6 @@ class _AISettingsState extends ConsumerState<AISettings> {
 
     final toolDefs = AiToolRegistry.definitions;
     final enabledToolIds = Prefs().enabledAiToolIds;
-
     final toolsTile = CustomSettingsTile(
       child: Column(
         children: [
@@ -198,104 +125,103 @@ class _AISettingsState extends ConsumerState<AISettings> {
             ),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton(
+            child: AppButton(
+              label: l10n.commonReset,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 Prefs().resetEnabledAiTools();
                 setState(() {});
               },
-              child: Text(l10n.commonReset),
             ),
           ),
         ],
       ),
     );
 
-    return settingsSections(sections: [
-      SettingsSection(
-        title: Text(L10n.of(context).settingsAiServices),
-        tiles: [
-          SettingsTile.navigation(
-            title: Text(l10n.settingsAiProviders),
-            description: _buildProviderDescription(),
-            onPressed: (context) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AiProviderListPage(),
-                ),
-              );
-            },
-          ),
-          CustomSettingsTile(
-              child: _AiRpmTile(setState: () => setState(() {}))),
-          // SettingsTile.navigation(
-          //   leading: const Icon(Icons.chat),
-          //   title: Text(L10n.of(context).aiChat),
-          //   onPressed: (context) {
-          //     Navigator.push(
-          //       context,
-          //       CupertinoPageRoute(
-          //         builder: (context) => const AiChatPage(),
-          //       ),
-          //     );
-          //   },
-          // ),
-        ],
-      ),
-      SettingsSection(
-        title: Text(L10n.of(context).settingsAiChatDisplay),
-        tiles: [
-          aiChatDisplayModeTile(),
-          if (Prefs().aiChatDisplayMode != AiChatDisplayMode.popup)
-            aiPanelPositionTile(),
-        ],
-      ),
-      SettingsSection(
-        title: Text(L10n.of(context).settingsAiPrompt),
-        tiles: [
-          promptTile,
-        ],
-      ),
-      SettingsSection(
-        title: Text(L10n.of(context).settingsAiUserPrompts),
-        tiles: [
-          userPromptsTile(),
-        ],
-      ),
-      SettingsSection(
-        title: Text(l10n.settingsAiTools),
-        tiles: [
-          toolsTile,
-        ],
-      ),
-      SettingsSection(
-        title: Text(L10n.of(context).settingsAiCache),
-        tiles: [
-          CustomSettingsTile(
-            child: ListTile(
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(L10n.of(context).settingsAiCacheSize),
-                  Text(
-                    L10n.of(context).settingsAiCacheCurrentSize(ref
-                        .watch(aiCacheCountProvider)
-                        .when(
-                            data: (value) => value,
-                            loading: () => 0,
-                            error: (error, stack) => 0)),
-                  ),
-                ],
+    return AppSafeArea(
+      top: false,
+      child: settingsSections(
+        sections: [
+          SettingsSection(
+            title: Text(l10n.settingsAiServices),
+            tiles: [
+              SettingsTile.navigation(
+                title: Text(l10n.settingsAiProviders),
+                description: _buildProviderDescription(),
+                onPressed: (context) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AiProviderListPage(),
+                    ),
+                  );
+                },
               ),
-              subtitle: Row(
-                children: [
-                  Text(Prefs().maxAiCacheCount.toString()),
-                  Expanded(
+              CustomSettingsTile(
+                child: _AiRpmTile(onChanged: () => setState(() {})),
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: Text(l10n.settingsAiChatDisplay),
+            tiles: [
+              aiChatDisplayModeTile(),
+              if (Prefs().aiChatDisplayMode != AiChatDisplayMode.popup)
+                aiPanelPositionTile(),
+            ],
+          ),
+          SettingsSection(
+            title: Text(l10n.settingsAiPrompt),
+            tiles: [promptTile],
+          ),
+          SettingsSection(
+            title: Text(l10n.settingsAiUserPrompts),
+            tiles: [userPromptsTile()],
+          ),
+          SettingsSection(
+            title: Text(l10n.settingsAiTools),
+            tiles: [toolsTile],
+          ),
+          SettingsSection(
+            title: Text(l10n.settingsAiCache),
+            tiles: [
+              CustomSettingsTile(child: _buildCacheTile()),
+              SettingsTile.navigation(
+                title: Text(l10n.settingsAiCacheClear),
+                onPressed: (context) => _clearCache(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCacheTile() {
+    final l10n = L10n.of(context);
+    return AppAsyncValue<int>(
+      value: ref.watch(aiCacheCountProvider),
+      onRetry: _refreshCache,
+      dataBuilder: (context, count) => Column(
+        children: [
+          AppListTile(
+            title: l10n.settingsAiCacheSize,
+            trailing: Text(l10n.settingsAiCacheCurrentSize(count)),
+          ),
+          Padding(
+            padding: AppSpacing.horizontal16,
+            child: Row(
+              children: [
+                Text(Prefs().maxAiCacheCount.toString()),
+                Expanded(
+                  child: Semantics(
+                    label: l10n.settingsAiCacheSize,
+                    value: Prefs().maxAiCacheCount.toString(),
                     child: Slider(
                       value: Prefs().maxAiCacheCount.toDouble(),
                       min: 0,
-                      max: 1000,
-                      divisions: 100,
+                      max: AppSettingsAiTokens.cacheSliderMax,
+                      divisions: AppSettingsAiTokens.cacheSliderDivisions,
                       label: Prefs().maxAiCacheCount.toString(),
                       onChanged: (value) {
                         Prefs().maxAiCacheCount = value.toInt();
@@ -303,55 +229,45 @@ class _AISettingsState extends ConsumerState<AISettings> {
                       },
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          SettingsTile.navigation(
-              title: Text(L10n.of(context).settingsAiCacheClear),
-              onPressed: (context) {
-                SmartDialog.show(
-                  builder: (context) => AlertDialog(
-                    title: Text(L10n.of(context).commonConfirm),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          SmartDialog.dismiss();
-                        },
-                        child: Text(L10n.of(context).commonCancel),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          ref.read(aiCacheCountProvider.notifier).clearCache();
-                          SmartDialog.dismiss();
-                        },
-                        child: Text(L10n.of(context).commonConfirm),
-                      ),
-                    ],
-                  ),
-                );
-              }),
         ],
       ),
-    ]);
+    );
   }
 
-  // Build description showing current selected provider
+  Future<void> _refreshCache() async {
+    ref.invalidate(aiCacheCountProvider);
+    await ref.read(aiCacheCountProvider.future);
+  }
+
+  Future<void> _clearCache() async {
+    final l10n = L10n.of(context);
+    await AppDialog.confirm(
+      context,
+      title: l10n.settingsAiCacheClear,
+      message: l10n.settingsAiCacheClear,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: l10n.settingsAiCache,
+      onConfirm: () => ref.read(aiCacheCountProvider.notifier).clearCache(),
+    );
+  }
+
   Widget? _buildProviderDescription() {
     final provider =
         ref.read(aiProvidersProvider.notifier).getSelectedProvider();
-    if (provider == null) {
-      return null;
-    }
+    if (provider == null) return null;
     return Text(provider.title);
   }
 
-  // AI chat display mode configuration
   AbstractSettingsTile aiChatDisplayModeTile() {
     final l10n = L10n.of(context);
     return CustomSettingsTile(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: AppSettingsAiTokens.sectionPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -359,38 +275,44 @@ class _AISettingsState extends ConsumerState<AISettings> {
               l10n.settingsAiChatDisplayMode,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: AnxSegmentedButton<AiChatDisplayMode>(
-                    segments: [
-                      SegmentButtonItem(
-                        value: AiChatDisplayMode.adaptive,
-                        label: l10n.settingsAiChatDisplayModeAdaptive,
-                        icon: const Icon(Icons.auto_awesome, size: 18),
-                      ),
-                      SegmentButtonItem(
-                        value: AiChatDisplayMode.split,
-                        label: l10n.settingsAiChatDisplayModeSplit,
-                        icon: const Icon(Icons.splitscreen, size: 18),
-                      ),
-                      SegmentButtonItem(
-                        value: AiChatDisplayMode.popup,
-                        label: l10n.settingsAiChatDisplayModePopup,
-                        icon: const Icon(Icons.open_in_new, size: 18),
-                      ),
-                    ],
-                    selected: {Prefs().aiChatDisplayMode},
-                    onSelectionChanged: (Set<AiChatDisplayMode> selected) {
-                      if (selected.isNotEmpty) {
-                        Prefs().aiChatDisplayMode = selected.first;
-                        setState(() {});
-                      }
-                    },
+            SizedBox(height: AppSpacing.tokens.s12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: AnxSegmentedButton<AiChatDisplayMode>(
+                segments: [
+                  SegmentButtonItem(
+                    value: AiChatDisplayMode.adaptive,
+                    label: l10n.settingsAiChatDisplayModeAdaptive,
+                    icon: const Icon(
+                      Icons.auto_awesome,
+                      size: AppSettingsAiTokens.segmentedIconSize,
+                    ),
                   ),
-                ),
-              ],
+                  SegmentButtonItem(
+                    value: AiChatDisplayMode.split,
+                    label: l10n.settingsAiChatDisplayModeSplit,
+                    icon: const Icon(
+                      Icons.splitscreen,
+                      size: AppSettingsAiTokens.segmentedIconSize,
+                    ),
+                  ),
+                  SegmentButtonItem(
+                    value: AiChatDisplayMode.popup,
+                    label: l10n.settingsAiChatDisplayModePopup,
+                    icon: const Icon(
+                      Icons.open_in_new,
+                      size: AppSettingsAiTokens.segmentedIconSize,
+                    ),
+                  ),
+                ],
+                selected: {Prefs().aiChatDisplayMode},
+                onSelectionChanged: (selected) {
+                  if (selected.isNotEmpty) {
+                    Prefs().aiChatDisplayMode = selected.first;
+                    setState(() {});
+                  }
+                },
+              ),
             ),
           ],
         ),
@@ -398,12 +320,11 @@ class _AISettingsState extends ConsumerState<AISettings> {
     );
   }
 
-  // AI panel position configuration (only shown when not in popup mode)
   AbstractSettingsTile aiPanelPositionTile() {
     final l10n = L10n.of(context);
     return CustomSettingsTile(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: AppSettingsAiTokens.sectionPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -411,33 +332,33 @@ class _AISettingsState extends ConsumerState<AISettings> {
               l10n.settingsAiPanelPosition,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: AnxSegmentedButton<AiPanelPositionEnum>(
-                    segments: [
-                      SegmentButtonItem(
-                        value: AiPanelPositionEnum.bottom,
-                        label: l10n.settingsAiPanelPositionBottom,
-                        icon: const Icon(Icons.vertical_align_bottom, size: 18),
-                      ),
-                      SegmentButtonItem(
-                        value: AiPanelPositionEnum.right,
-                        label: l10n.settingsAiPanelPositionRight,
-                        icon: const Icon(Icons.border_right, size: 18),
-                      ),
-                    ],
-                    selected: {Prefs().aiPanelPosition},
-                    onSelectionChanged: (Set<AiPanelPositionEnum> selected) {
-                      if (selected.isNotEmpty) {
-                        Prefs().aiPanelPosition = selected.first;
-                        setState(() {});
-                      }
-                    },
+            SizedBox(height: AppSpacing.tokens.s12),
+            AnxSegmentedButton<AiPanelPositionEnum>(
+              segments: [
+                SegmentButtonItem(
+                  value: AiPanelPositionEnum.bottom,
+                  label: l10n.settingsAiPanelPositionBottom,
+                  icon: const Icon(
+                    Icons.vertical_align_bottom,
+                    size: AppSettingsAiTokens.segmentedIconSize,
+                  ),
+                ),
+                SegmentButtonItem(
+                  value: AiPanelPositionEnum.right,
+                  label: l10n.settingsAiPanelPositionRight,
+                  icon: const Icon(
+                    Icons.border_right,
+                    size: AppSettingsAiTokens.segmentedIconSize,
                   ),
                 ),
               ],
+              selected: {Prefs().aiPanelPosition},
+              onSelectionChanged: (selected) {
+                if (selected.isNotEmpty) {
+                  Prefs().aiPanelPosition = selected.first;
+                  setState(() {});
+                }
+              },
             ),
           ],
         ),
@@ -445,41 +366,43 @@ class _AISettingsState extends ConsumerState<AISettings> {
     );
   }
 
-  // User prompts management methods
   AbstractSettingsTile userPromptsTile() {
     final userPrompts = ref.watch(userPromptsProvider);
-    ref.read(userPromptsProvider.notifier);
-
+    final l10n = L10n.of(context);
     return CustomSettingsTile(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top button and hint
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: AppSettingsAiTokens.userPromptPadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
                   width: double.infinity,
-                  child: AnxButton(
+                  child: AppButton(
+                    label: l10n.settingsAiUserPromptsAdd,
                     onPressed: _showAddPromptDialog,
-                    child: Text(L10n.of(context).settingsAiUserPromptsAdd),
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: AppSpacing.tokens.s8),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.info_outline,
-                        size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.info_outline,
+                      size: AppSpacing.tokens.s16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    SizedBox(width: AppSpacing.tokens.s4),
                     Expanded(
                       child: Text(
-                        L10n.of(context).settingsAiUserPromptsHint,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        l10n.settingsAiUserPromptsHint,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                     ),
                   ],
@@ -487,17 +410,10 @@ class _AISettingsState extends ConsumerState<AISettings> {
               ],
             ),
           ),
-
-          // Prompts list
           if (userPrompts.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Center(
-                child: Text(
-                  L10n.of(context).settingsAiUserPromptsEmpty,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ),
+            AppEmptyState(
+              title: l10n.commonEmpty,
+              message: l10n.settingsAiUserPromptsEmpty,
             )
           else
             ListView.builder(
@@ -506,11 +422,9 @@ class _AISettingsState extends ConsumerState<AISettings> {
               itemCount: userPrompts.length,
               itemBuilder: (context, index) {
                 final prompt = userPrompts[index];
-                final isExpanded = _expandedUserPromptId == prompt.id;
-
                 return _buildUserPromptItem(
                   prompt,
-                  isExpanded,
+                  _expandedUserPromptId == prompt.id,
                   index,
                   userPrompts.length,
                 );
@@ -522,14 +436,12 @@ class _AISettingsState extends ConsumerState<AISettings> {
   }
 
   Widget _buildUserPromptItem(
-    prompt,
+    dynamic prompt,
     bool isExpanded,
     int index,
     int totalCount,
   ) {
     final notifier = ref.read(userPromptsProvider.notifier);
-
-    // Initialize controllers
     _userPromptNameControllers.putIfAbsent(
       prompt.id,
       () => TextEditingController(text: prompt.name),
@@ -540,73 +452,54 @@ class _AISettingsState extends ConsumerState<AISettings> {
     );
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
+      duration: AppSettingsAiTokens.userPromptAnimationDuration,
       curve: Curves.easeInOut,
       alignment: Alignment.topCenter,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.withAlpha(100)),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: AppCard(
+        margin: AppSettingsAiTokens.userPromptCardMargin,
+        padding: AppSettingsAiTokens.userPromptPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Title row: Switch + Name + Action buttons
             Row(
               children: [
                 Switch(
                   value: prompt.enabled,
-                  onChanged: (_) {
-                    notifier.toggleEnabled(prompt.id);
-                  },
+                  onChanged: (_) => notifier.toggleEnabled(prompt.id),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: AppSpacing.tokens.s8),
                 Expanded(
                   child: Text(
                     prompt.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-
-                // Edit button
-                IconButton(
-                  icon: Icon(isExpanded ? Icons.expand_less : Icons.edit),
+                AppIconButton(
+                  icon: isExpanded ? Icons.expand_less : Icons.edit,
                   onPressed: () {
                     setState(() {
                       _expandedUserPromptId = isExpanded ? null : prompt.id;
+                      _userPromptValidationErrorId = null;
                     });
                   },
                   tooltip: L10n.of(context).commonEdit,
                 ),
-
-                // Move up button
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward, size: 20),
+                AppIconButton(
+                  icon: Icons.arrow_upward,
                   onPressed: index > 0
                       ? () => notifier.movePrompt(prompt.id, true)
                       : null,
                 ),
-
-                // Move down button
-                IconButton(
-                  icon: const Icon(Icons.arrow_downward, size: 20),
+                AppIconButton(
+                  icon: Icons.arrow_downward,
                   onPressed: index < totalCount - 1
                       ? () => notifier.movePrompt(prompt.id, false)
                       : null,
                 ),
               ],
             ),
-
-            // Expanded edit area
             if (isExpanded) ...[
-              const Divider(height: 16),
+              const Divider(),
               _buildEditForm(prompt),
             ],
           ],
@@ -615,7 +508,8 @@ class _AISettingsState extends ConsumerState<AISettings> {
     );
   }
 
-  Widget _buildEditForm(prompt) {
+  Widget _buildEditForm(dynamic prompt) {
+    final l10n = L10n.of(context);
     final notifier = ref.read(userPromptsProvider.notifier);
     final nameController = _userPromptNameControllers[prompt.id]!;
     final contentController = _userPromptContentControllers[prompt.id]!;
@@ -623,72 +517,56 @@ class _AISettingsState extends ConsumerState<AISettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Name input
-        TextField(
+        AppTextField(
           controller: nameController,
-          decoration: InputDecoration(
-            labelText: L10n.of(context).settingsAiUserPromptsName,
-            border: const OutlineInputBorder(),
-          ),
+          label: l10n.settingsAiUserPromptsName,
           maxLength: 50,
         ),
-        const SizedBox(height: 12),
-
-        // Content input
-        TextField(
+        SizedBox(height: AppSpacing.tokens.s12),
+        AppTextField(
           controller: contentController,
-          decoration: InputDecoration(
-            labelText: L10n.of(context).settingsAiUserPromptsContent,
-            border: const OutlineInputBorder(),
-            alignLabelWithHint: true,
-          ),
+          label: l10n.settingsAiUserPromptsContent,
           maxLines: 8,
           minLines: 5,
           maxLength: 2000,
         ),
-        const SizedBox(height: 12),
-
-        // Action buttons
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+        if (_userPromptValidationErrorId == prompt.id) ...[
+          SizedBox(height: AppSpacing.tokens.s12),
+          AppInlineFeedback(message: l10n.commonInputCannotBeEmpty),
+        ],
+        SizedBox(height: AppSpacing.tokens.s12),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: AppSpacing.tokens.s8,
+          runSpacing: AppSpacing.tokens.s8,
           children: [
-            // Delete button (uses default L10n text)
-            DeleteConfirm(
-              delete: () {
-                notifier.deletePrompt(prompt.id);
-                _userPromptNameControllers.remove(prompt.id)?.dispose();
-                _userPromptContentControllers.remove(prompt.id)?.dispose();
-                setState(() {
-                  _expandedUserPromptId = null;
-                });
-              },
-              useTextButton: true,
+            AppButton(
+              label: l10n.commonDelete,
+              variant: AppButtonVariant.text,
+              onPressed: () => _deleteUserPrompt(prompt),
             ),
-
-            // Save button
-            TextButton(
+            AppButton(
+              label: l10n.commonSave,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 final name = nameController.text.trim();
                 final content = contentController.text.trim();
-
                 if (name.isEmpty || content.isEmpty) {
-                  AnxToast.show(L10n.of(context).commonInputCannotBeEmpty);
+                  setState(() => _userPromptValidationErrorId = prompt.id);
                   return;
                 }
-
-                final updatedPrompt = prompt.copyWith(
-                  name: name,
-                  content: content,
+                notifier.updatePrompt(
+                  prompt.copyWith(name: name, content: content),
                 );
-                notifier.updatePrompt(updatedPrompt);
-
                 setState(() {
                   _expandedUserPromptId = null;
+                  _userPromptValidationErrorId = null;
                 });
-
-                AnxToast.show(L10n.of(context).commonSaveSuccess);
+                AppFeedback.showSuccess(
+                  context,
+                  message: l10n.commonSaveSuccess,
+                );
               },
-              child: Text(L10n.of(context).commonSave),
             ),
           ],
         ),
@@ -696,87 +574,239 @@ class _AISettingsState extends ConsumerState<AISettings> {
     );
   }
 
-  void _showAddPromptDialog() {
+  Future<void> _deleteUserPrompt(dynamic prompt) async {
+    final l10n = L10n.of(context);
     final notifier = ref.read(userPromptsProvider.notifier);
-    final nameController = TextEditingController();
-    final contentController = TextEditingController();
+    await AppDialog.confirm(
+      context,
+      title: l10n.commonDelete,
+      message: prompt.name,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: l10n.settingsAiUserPromptsContent,
+      onConfirm: () async {
+        notifier.deletePrompt(prompt.id);
+        _userPromptNameControllers.remove(prompt.id)?.dispose();
+        _userPromptContentControllers.remove(prompt.id)?.dispose();
+        if (!mounted) return;
+        setState(() {
+          _expandedUserPromptId = null;
+          _userPromptValidationErrorId = null;
+        });
+      },
+    );
+  }
 
-    SmartDialog.show(
-      builder: (context) => AlertDialog(
-        title: Text(L10n.of(context).settingsAiUserPromptsAdd),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: L10n.of(context).settingsAiUserPromptsName,
-                  border: const OutlineInputBorder(),
-                ),
-                maxLength: 50,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: contentController,
-                decoration: InputDecoration(
-                  labelText: L10n.of(context).settingsAiUserPromptsContent,
-                  border: const OutlineInputBorder(),
-                  alignLabelWithHint: true,
-                ),
-                maxLines: 8,
-                minLines: 5,
-                maxLength: 2000,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              SmartDialog.dismiss();
-              nameController.dispose();
-              contentController.dispose();
-            },
-            child: Text(L10n.of(context).commonCancel),
-          ),
-          TextButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              final content = contentController.text.trim();
-
-              if (name.isEmpty || content.isEmpty) {
-                AnxToast.show(L10n.of(context).commonInputCannotBeEmpty);
-                return;
-              }
-
-              notifier.addPrompt(name: name, content: content);
-
-              SmartDialog.dismiss();
-              nameController.dispose();
-              contentController.dispose();
-
-              AnxToast.show(L10n.of(context).commonAddSuccess);
-            },
-            child: Text(L10n.of(context).commonConfirm),
-          ),
-        ],
+  void _showPromptEditor(AiPrompts identifier, List<String> variables) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _PromptEditorDialog(
+        initialValue: Prefs().getAiPrompt(identifier),
+        variables: variables,
+        onReset: () {
+          Prefs().deleteAiPrompt(identifier);
+          return Prefs().getAiPrompt(identifier);
+        },
+        onSave: (value) => Prefs().saveAiPrompt(identifier, value),
       ),
+    );
+  }
+
+  Future<void> _showAddPromptDialog() async {
+    final notifier = ref.read(userPromptsProvider.notifier);
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (context) => _AddUserPromptDialog(
+        onAdd: (name, content) => notifier.addPrompt(
+          name: name,
+          content: content,
+        ),
+      ),
+    );
+    if (added == true && mounted) {
+      AppFeedback.showSuccess(
+        context,
+        message: L10n.of(context).commonAddSuccess,
+      );
+    }
+  }
+}
+
+class _PromptEditorDialog extends StatefulWidget {
+  const _PromptEditorDialog({
+    required this.initialValue,
+    required this.variables,
+    required this.onReset,
+    required this.onSave,
+  });
+
+  final String initialValue;
+  final List<String> variables;
+  final String Function() onReset;
+  final void Function(String value) onSave;
+
+  @override
+  State<_PromptEditorDialog> createState() => _PromptEditorDialogState();
+}
+
+class _PromptEditorDialogState extends State<_PromptEditorDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
+    return AppDialog(
+      title: l10n.commonEdit,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(controller: _controller, maxLines: 10),
+            Wrap(
+              children: [
+                for (final variable in widget.variables)
+                  AppButton(
+                    label: '{{$variable}}',
+                    variant: AppButtonVariant.text,
+                    size: AppButtonSize.small,
+                    onPressed: () => _insertVariable(variable),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        AppButton(
+          label: l10n.commonReset,
+          variant: AppButtonVariant.text,
+          onPressed: () {
+            setState(() => _controller.text = widget.onReset());
+          },
+        ),
+        AppSubmitButton(
+          label: l10n.commonSave,
+          feedbackMode: AppSubmitFeedbackMode.inline,
+          onSubmit: () async {
+            widget.onSave(_controller.text);
+            if (mounted) Navigator.pop(context);
+          },
+        ),
+      ],
+    );
+  }
+
+  void _insertVariable(String variable) {
+    if (_controller.selection.start == -1 || _controller.selection.end == -1) {
+      return;
+    }
+    final selection = _controller.selection;
+    _controller.text = _controller.text.replaceRange(
+      selection.start,
+      selection.end,
+      '{{$variable}}',
+    );
+  }
+}
+
+class _AddUserPromptDialog extends StatefulWidget {
+  const _AddUserPromptDialog({required this.onAdd});
+
+  final void Function(String name, String content) onAdd;
+
+  @override
+  State<_AddUserPromptDialog> createState() => _AddUserPromptDialogState();
+}
+
+class _AddUserPromptDialogState extends State<_AddUserPromptDialog> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _contentController = TextEditingController();
+  bool _showValidationError = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
+    return AppDialog(
+      title: l10n.settingsAiUserPromptsAdd,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(
+              controller: _nameController,
+              label: l10n.settingsAiUserPromptsName,
+              maxLength: 50,
+            ),
+            SizedBox(height: AppSpacing.tokens.s12),
+            AppTextField(
+              controller: _contentController,
+              label: l10n.settingsAiUserPromptsContent,
+              maxLines: 8,
+              minLines: 5,
+              maxLength: 2000,
+            ),
+            if (_showValidationError) ...[
+              SizedBox(height: AppSpacing.tokens.s12),
+              AppInlineFeedback(message: l10n.commonInputCannotBeEmpty),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        AppButton(
+          label: l10n.commonCancel,
+          variant: AppButtonVariant.text,
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        AppSubmitButton(
+          label: l10n.commonConfirm,
+          feedbackMode: AppSubmitFeedbackMode.inline,
+          onSubmit: () async {
+            final name = _nameController.text.trim();
+            final content = _contentController.text.trim();
+            if (name.isEmpty || content.isEmpty) {
+              setState(() => _showValidationError = true);
+              return;
+            }
+            widget.onAdd(name, content);
+            if (mounted) Navigator.pop(context, true);
+          },
+        ),
+      ],
     );
   }
 }
 
 class _AiRpmTile extends StatefulWidget {
-  const _AiRpmTile({required this.setState});
+  const _AiRpmTile({required this.onChanged});
 
-  final VoidCallback setState;
+  final VoidCallback onChanged;
 
   @override
   State<_AiRpmTile> createState() => _AiRpmTileState();
 }
 
 class _AiRpmTileState extends State<_AiRpmTile> {
-  late TextEditingController _controller;
+  late final TextEditingController _controller;
 
   @override
   void initState() {
@@ -794,28 +824,19 @@ class _AiRpmTileState extends State<_AiRpmTile> {
   @override
   Widget build(BuildContext context) {
     final l10n = L10n.of(context);
-    return ListTile(
-      title: Text(l10n.settingsAiRpm),
-      subtitle: Text(
-        l10n.settingsAiRpmTip,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-      ),
+    return AppListTile(
+      title: l10n.settingsAiRpm,
+      subtitle: l10n.settingsAiRpmTip,
       trailing: SizedBox(
-        width: 80,
-        child: TextField(
+        width: AppSettingsAiTokens.rpmFieldWidth,
+        child: AppTextField(
           controller: _controller,
+          hintText: '0',
           keyboardType: TextInputType.number,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          textAlign: TextAlign.center,
-          decoration: const InputDecoration(
-            hintText: '0',
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            isDense: true,
-          ),
           onChanged: (value) {
             Prefs().aiRpm = int.tryParse(value) ?? 0;
-            widget.setState();
+            widget.onChanged();
           },
         ),
       ),

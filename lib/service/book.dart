@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:anx_reader/dao/book.dart';
 import 'package:anx_reader/dao/theme.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/sync_direction.dart';
 import 'package:anx_reader/enums/sync_trigger.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
@@ -19,6 +20,7 @@ import 'package:anx_reader/providers/book_list.dart';
 import 'package:anx_reader/providers/toc_search.dart';
 import 'package:anx_reader/service/convert_to_epub/txt/convert_from_txt.dart';
 import 'package:anx_reader/service/md5_service.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/webView/anx_headless_webview.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/utils/get_path/get_base_path.dart';
@@ -83,10 +85,12 @@ void _checkDuplicatesAndShowDialog(
   );
 
   try {
+    // 在 await 之前取好 Navigator，避免跨异步间隙使用 BuildContext。
+    final navigator = Navigator.of(context);
     final filePaths = supportedFiles.map((f) => f.path).toList();
     final checkResults = await MD5Service.checkImportFiles(filePaths);
 
-    Navigator.of(context).pop();
+    navigator.pop();
 
     List<File> duplicateFiles = [];
     List<File> uniqueFiles = [];
@@ -126,6 +130,85 @@ void _checkDuplicatesAndShowDialog(
   }
 }
 
+/// 导入对话框中的单行书目。
+///
+/// 仅为可测试性提升为顶层函数（原为 `_showImportDialog` 内的闭包），行为保持一致。
+@visibleForTesting
+Widget importDialogBookItem(
+  BuildContext context,
+  String filePath,
+  Widget icon, {
+  bool isDuplicate = false,
+  String? duplicateTitle,
+  String? errorMessage,
+}) {
+  final theme = Theme.of(context);
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: icon,
+          ),
+          Expanded(
+            child: Text(
+              path.basename(filePath),
+              style: TextStyle(
+                fontWeight: FontWeight.w300,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          if (errorMessage != null)
+            AppIconButton(
+              icon: Icons.info_outline,
+              tooltip: L10n.of(context).commonError,
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text(L10n.of(context).commonError),
+                    content: SelectableText(errorMessage),
+                    actions: [
+                      AppButton(
+                        label: L10n.of(context).commonOk,
+                        variant: AppButtonVariant.text,
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+      if (isDuplicate && duplicateTitle != null)
+        Padding(
+          padding: AppSpacing.only(left: 28, top: 4),
+          child: Text(
+            L10n.of(context).duplicateOf(duplicateTitle),
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      if (errorMessage != null)
+        Padding(
+          padding: AppSpacing.only(left: 28, top: 4),
+          child: Text(
+            'Error: ${errorMessage.length > 50 ? "${errorMessage.substring(0, 50)}..." : errorMessage}',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
 void _showImportDialog(
   List<File> uniqueFiles,
   List<File> duplicateFiles,
@@ -141,81 +224,6 @@ void _showImportDialog(
 
   BuildContext context = navigatorKey.currentContext!;
 
-  Widget bookItem(
-    String filePath,
-    Widget icon, {
-    bool isDuplicate = false,
-    String? duplicateTitle,
-    String? errorMessage,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: icon,
-            ),
-            Expanded(
-              child: Text(
-                path.basename(filePath),
-                style: TextStyle(
-                  fontWeight: FontWeight.w300,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            if (errorMessage != null)
-              IconButton(
-                icon: const Icon(Icons.info_outline, size: 16),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: Text(L10n.of(context).commonError),
-                      content: SelectableText(errorMessage),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: Text(L10n.of(context).commonOk),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
-        if (isDuplicate && duplicateTitle != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 28, top: 2),
-            child: Text(
-              L10n.of(context).duplicateOf(duplicateTitle),
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-        if (errorMessage != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 28, top: 2),
-            child: Text(
-              'Error: ${errorMessage.length > 50 ? "${errorMessage.substring(0, 50)}..." : errorMessage}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.red,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   final supportedFiles = [...uniqueFiles, ...duplicateFiles];
   bool skipDuplicates = true;
 
@@ -230,7 +238,7 @@ void _showImportDialog(
         return StatefulBuilder(builder: (context, setState) {
           return AlertDialog(
             title: Text(L10n.of(context).importNBooksSelected(fileList.length)),
-            contentPadding: const EdgeInsets.all(16),
+            contentPadding: AppSpacing.all16,
             content: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,15 +251,17 @@ void _showImportDialog(
                   // show unique files
                   for (var file in uniqueFiles)
                     file.path == currentHandlingFile
-                        ? bookItem(
+                        ? importDialogBookItem(
+                            context,
                             file.path,
                             Container(
-                              padding: const EdgeInsets.all(3),
+                              padding: AppSpacing.all4,
                               width: 20,
                               height: 20,
                               child: const CircularProgressIndicator(),
                             ))
-                        : bookItem(
+                        : importDialogBookItem(
+                            context,
                             file.path,
                             errorFiles.contains(file.path)
                                 ? const Icon(Icons.error)
@@ -269,7 +279,8 @@ void _showImportDialog(
                         .importNBooksNotSupport(unsupportedFiles.length))
                   ],
                   for (var file in unsupportedFiles)
-                    bookItem(file.path, const Icon(Icons.error)),
+                    importDialogBookItem(
+                        context, file.path, const Icon(Icons.error)),
 
                   // show duplicate files
                   if (duplicateFiles.isNotEmpty) ...[
@@ -279,7 +290,8 @@ void _showImportDialog(
                   ],
                   for (var file in duplicateFiles)
                     if (skipDuplicates)
-                      bookItem(
+                      importDialogBookItem(
+                        context,
                         file.path,
                         const Icon(Icons.double_arrow_rounded),
                         isDuplicate: true,
@@ -287,10 +299,11 @@ void _showImportDialog(
                       )
                     else
                       file.path == currentHandlingFile
-                          ? bookItem(
+                          ? importDialogBookItem(
+                              context,
                               file.path,
                               Container(
-                                padding: const EdgeInsets.all(3),
+                                padding: AppSpacing.all4,
                                 width: 20,
                                 height: 20,
                                 child: const CircularProgressIndicator(),
@@ -298,7 +311,8 @@ void _showImportDialog(
                               isDuplicate: true,
                               duplicateTitle: duplicateInfo[file.path]?.title,
                             )
-                          : bookItem(
+                          : importDialogBookItem(
+                              context,
                               file.path,
                               errorFiles.contains(file.path)
                                   ? const Icon(Icons.error)
@@ -333,18 +347,26 @@ void _showImportDialog(
               ),
             ),
             actions: [
-              TextButton(
+              AppButton(
+                label: L10n.of(context).commonCancel,
+                variant: AppButtonVariant.text,
                 onPressed: () {
                   Navigator.pop(context);
                   for (var file in supportedFiles) {
                     file.deleteSync();
                   }
                 },
-                child: Text(L10n.of(context).commonCancel),
               ),
               if (uniqueFiles.isNotEmpty ||
                   (duplicateFiles.isNotEmpty && !skipDuplicates))
-                TextButton(
+                AppButton(
+                    label: finished
+                        ? L10n.of(context).commonOk
+                        : L10n.of(context).importImportNBooks(
+                            uniqueFiles.length +
+                                (skipDuplicates ? 0 : duplicateFiles.length) -
+                                errorFiles.length),
+                    variant: AppButtonVariant.text,
                     onPressed: () async {
                       if (finished) {
                         Navigator.of(context).pop('dialog');
@@ -391,13 +413,7 @@ void _showImportDialog(
                       ref.read(syncProvider.notifier).syncData(
                           SyncDirection.upload, ref,
                           trigger: SyncTrigger.auto);
-                    },
-                    child: Text(finished
-                        ? L10n.of(context).commonOk
-                        : L10n.of(context).importImportNBooks(
-                            uniqueFiles.length +
-                                (skipDuplicates ? 0 : duplicateFiles.length) -
-                                errorFiles.length))),
+                    }),
             ],
           );
         });

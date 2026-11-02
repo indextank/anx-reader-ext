@@ -1,14 +1,15 @@
 import 'dart:convert';
 
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/providers/tb_groups.dart';
 import 'package:anx_reader/service/ai/tools/models/bookshelf_organize_plan.dart';
 import 'package:anx_reader/service/ai/tools/models/bookshelf_organize_plan_group.dart';
 import 'package:anx_reader/service/bookshelf/bookshelf_organize_service.dart';
+import 'package:anx_reader/theme/app_ai_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/ai_reasoning_parser.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/ai/tool_tiles/tool_tile_base.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -36,6 +37,8 @@ class _OrganizeBookshelfStepTileState
   BookshelfOrganizePlan? _plan;
   String? _parseError;
   bool _didInitialSync = false;
+  int _outputGeneration = 0;
+  int _applyGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -95,8 +98,8 @@ class _OrganizeBookshelfStepTileState
       _parseError = parseError;
       _requiresConfirmation = requiresConfirmation;
       if (!initial) {
+        _outputGeneration++;
         _applied = false;
-        _isApplying = false;
       }
     }
 
@@ -110,7 +113,10 @@ class _OrganizeBookshelfStepTileState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = ToolTileBase.statusColorFor(widget.step.status);
+    final statusColor = ToolTileBase.statusColorFor(
+      context,
+      widget.step.status,
+    );
 
     return ToolTileBase(
       title: widget.step.name,
@@ -127,8 +133,10 @@ class _OrganizeBookshelfStepTileState
     }
 
     if (_plan == null) {
-      return Text(L10n.of(context).noReorganizationPlanGenerated,
-          style: theme.textTheme.bodyMedium);
+      return Text(
+        L10n.of(context).noReorganizationPlanGenerated,
+        style: theme.textTheme.bodyMedium,
+      );
     }
 
     final groupLookup = _resolveGroupNames();
@@ -138,62 +146,59 @@ class _OrganizeBookshelfStepTileState
       children: [
         if (_plan!.summary != null)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
+            padding: AppAiTokens.toolCardBottomMargin,
             child: Text(_plan!.summary!, style: theme.textTheme.bodyMedium),
           ),
-        Container(
-          constraints: const BoxConstraints(maxHeight: 200),
+        ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxHeight: AppAiTokens.toolOutputMaxHeight,
+          ),
           child: SingleChildScrollView(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 ..._plan!.groups.map(
-                    (group) => _buildGroupBlock(group, groupLookup, theme)),
+                  (group) => _buildGroupBlock(group, groupLookup, theme),
+                ),
               ],
             ),
           ),
         ),
-        if (_plan!.groups.isNotEmpty) const SizedBox(height: 8),
+        if (_plan!.groups.isNotEmpty) SizedBox(height: AppSpacing.tokens.s8),
         if (_plan!.ungroupedBooks.isNotEmpty) _buildUngroupedBlock(theme),
         if (_plan!.cleanupGroupIds.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 8.0),
+            padding: AppAiTokens.feedbackTopPadding,
             child: _buildCleanupSection(groupLookup, theme),
           ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+        SizedBox(height: AppSpacing.tokens.s8),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: AppSpacing.tokens.s8,
+          runSpacing: AppSpacing.tokens.s8,
           children: [
-            TextButton.icon(
-              onPressed: widget.step.output == null
-                  ? null
-                  : () {
-                      Clipboard.setData(
-                          ClipboardData(text: widget.step.output!));
-                      AnxToast.show(L10n.of(context).planCopied);
-                    },
-              icon: const Icon(Icons.copy, size: 14),
-              label: Text(L10n.of(context).copyJson),
+            AppButton(
+              label: L10n.of(context).copyJson,
+              icon: Icons.copy,
+              variant: AppButtonVariant.text,
+              size: AppButtonSize.small,
+              enabled: widget.step.output != null,
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: widget.step.output!));
+                AppFeedback.showInfo(
+                  context,
+                  message: L10n.of(context).planCopied,
+                );
+              },
             ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: _canApplyPlan ? _applyPlan : null,
-              child: _isApplying
-                  ? SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          theme.colorScheme.onPrimary,
-                        ),
-                      ),
-                    )
-                  : Text(
-                      _applied
-                          ? L10n.of(context).completed
-                          : L10n.of(context).applyToBookshelf,
-                    ),
+            AppButton(
+              label: _applied
+                  ? L10n.of(context).completed
+                  : L10n.of(context).applyToBookshelf,
+              enabled: _canApplyPlan,
+              isLoading: _isApplying,
+              size: AppButtonSize.small,
+              onPressed: _confirmApplyPlan,
             ),
           ],
         ),
@@ -221,73 +226,79 @@ class _OrganizeBookshelfStepTileState
       chips.add(_buildChip(theme, L10n.of(context).renameFrom(current)));
     }
 
-    return FilledContainer(
-      width: double.infinity,
+    return AppCard(
       color: theme.colorScheme.surfaceContainer,
-      padding: const EdgeInsets.all(8),
-      margin: const EdgeInsets.only(bottom: 8),
-      radius: 10,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title ?? L10n.of(context).groupWithId(group.groupId),
-            style: theme.textTheme.titleSmall,
-          ),
-          if (chips.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: chips,
-              ),
+      padding: AppAiTokens.toolContentPadding,
+      margin: AppAiTokens.toolCardBottomMargin,
+      borderRadius: AppAiTokens.toolCardContentRadius,
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title ?? L10n.of(context).groupWithId(group.groupId),
+              style: theme.textTheme.titleSmall,
             ),
-          if (group.books.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: group.books
-                    .map(
-                      (book) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4.0),
-                        child: Text(
-                          '• ${book.title}${book.author != null ? ' — ${book.author}' : ''}',
-                          style: theme.textTheme.bodySmall,
+            if (chips.isNotEmpty)
+              Padding(
+                padding: AppSpacing.only(top: AppSpacing.tokens.s4),
+                child: Wrap(
+                  spacing: AppAiTokens.chipSpacing,
+                  runSpacing: AppSpacing.tokens.s4,
+                  children: chips,
+                ),
+              ),
+            if (group.books.isNotEmpty)
+              Padding(
+                padding: AppAiTokens.toolContentTopPadding,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: group.books
+                      .map(
+                        (book) => Padding(
+                          padding: AppSpacing.only(
+                            bottom: AppSpacing.tokens.s4,
+                          ),
+                          child: Text(
+                            '• ${book.title}${book.author != null ? ' — ${book.author}' : ''}',
+                            style: theme.textTheme.bodySmall,
+                          ),
                         ),
-                      ),
-                    )
-                    .toList(),
+                      )
+                      .toList(),
+                ),
               ),
-            ),
-          if (group.books.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6.0),
-              child: Text(
-                L10n.of(context).noBooksAssignedInThisPlan,
-                style: theme.textTheme.bodySmall,
+            if (group.books.isEmpty)
+              Padding(
+                padding: AppAiTokens.toolContentTopPadding,
+                child: Text(
+                  L10n.of(context).noBooksAssignedInThisPlan,
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildUngroupedBlock(ThemeData theme) {
-    return FilledContainer(
+    return AppCard(
       color: theme.colorScheme.surface,
-      padding: const EdgeInsets.all(8),
-      radius: 10,
+      padding: AppAiTokens.toolContentPadding,
+      borderRadius: AppAiTokens.toolCardContentRadius,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(L10n.of(context).booksToUngroup,
-              style: theme.textTheme.titleSmall),
-          const SizedBox(height: 4),
+          Text(
+            L10n.of(context).booksToUngroup,
+            style: theme.textTheme.titleSmall,
+          ),
+          SizedBox(height: AppSpacing.tokens.s4),
           ..._plan!.ungroupedBooks.map(
             (book) => Padding(
-              padding: const EdgeInsets.only(bottom: 4.0),
+              padding: AppSpacing.only(bottom: AppSpacing.tokens.s4),
               child: Text(
                 '• ${book.title}${book.author != null ? ' — ${book.author}' : ''}',
                 style: theme.textTheme.bodySmall,
@@ -303,16 +314,18 @@ class _OrganizeBookshelfStepTileState
     _GroupNameLookup lookup,
     ThemeData theme,
   ) {
-    return FilledContainer(
+    return AppCard(
       color: theme.colorScheme.surfaceContainer,
-      padding: const EdgeInsets.all(8),
-      radius: 10,
+      padding: AppAiTokens.toolContentPadding,
+      borderRadius: AppAiTokens.toolCardContentRadius,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(L10n.of(context).groupsToRemove,
-              style: theme.textTheme.titleSmall),
-          const SizedBox(height: 4),
+          Text(
+            L10n.of(context).groupsToRemove,
+            style: theme.textTheme.titleSmall,
+          ),
+          SizedBox(height: AppSpacing.tokens.s4),
           ..._plan!.cleanupGroupIds.map((id) {
             final name = lookup[id];
             return Text(
@@ -329,9 +342,9 @@ class _OrganizeBookshelfStepTileState
 
   Widget _buildChip(ThemeData theme, String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: AppAiTokens.toolChipPadding,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppAiTokens.toolChipRadius,
         color: theme.colorScheme.secondaryContainer,
       ),
       child: Text(
@@ -341,28 +354,53 @@ class _OrganizeBookshelfStepTileState
     );
   }
 
-  Future<void> _applyPlan() async {
-    if (_plan == null) {
-      return;
-    }
+  Future<void> _confirmApplyPlan() async {
+    if (!_canApplyPlan) return;
+    final plan = _plan!;
+    final l10n = L10n.of(context);
+    await AppDialog.confirm(
+      context,
+      title: l10n.applyToBookshelf,
+      message: plan.summary ?? l10n.applyToBookshelf,
+      isDangerous: true,
+      dangerDescription: '${l10n.booksToUngroup}: '
+          '${plan.ungroupedBooks.length}; ${l10n.groupsToRemove}: '
+          '${plan.cleanupGroupIds.length}',
+      onConfirm: () => _applyPlan(plan),
+    );
+  }
+
+  Future<void> _applyPlan(BookshelfOrganizePlan plan) async {
+    if (_isApplying || _applied) return;
+    final outputGeneration = _outputGeneration;
+    final applyGeneration = ++_applyGeneration;
     setState(() {
       _isApplying = true;
     });
 
     try {
-      await ref.read(bookshelfOrganizeServiceProvider).applyPlan(_plan!);
-      if (!mounted) return;
+      await ref.read(bookshelfOrganizeServiceProvider).applyPlan(plan);
+      if (!mounted || applyGeneration != _applyGeneration) return;
+      if (outputGeneration != _outputGeneration) {
+        setState(() => _isApplying = false);
+        return;
+      }
       setState(() {
         _isApplying = false;
         _applied = true;
       });
-      AnxToast.show(L10n.of(context).bookshelfUpdated);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _isApplying = false;
-      });
-      AnxToast.show(L10n.of(context).failedToApplyPlan(error));
+      AppFeedback.showSuccess(
+        context,
+        message: L10n.of(context).bookshelfUpdated,
+      );
+    } catch (_) {
+      if (!mounted || applyGeneration != _applyGeneration) return;
+      if (outputGeneration != _outputGeneration) {
+        setState(() => _isApplying = false);
+        return;
+      }
+      setState(() => _isApplying = false);
+      rethrow;
     }
   }
 

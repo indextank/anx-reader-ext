@@ -1,7 +1,9 @@
 import 'dart:io' as io;
 import 'package:anx_reader/utils/platform_utils.dart';
 import 'package:anx_reader/dao/database.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/service/sync/sync_client_base.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/get_path/get_cache_dir.dart';
 import 'package:anx_reader/utils/get_path/databases_path.dart';
 import 'package:anx_reader/utils/log/common.dart';
@@ -316,33 +318,39 @@ class DatabaseSyncManager {
     }
 
     await SmartDialog.show(
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.error, color: Colors.red),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(content),
-            const SizedBox(height: 12),
-            Text(
-              'Details: ${result.message}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+      builder: (context) {
+        final theme = Theme.of(context);
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.error, color: theme.colorScheme.error),
+              SizedBox(width: AppSpacing.tokens.s8),
+              Text(title),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(content),
+              SizedBox(height: AppSpacing.tokens.s12),
+              Text(
+                'Details: ${result.message}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            AppButton(
+              label: L10n.of(navigatorKey.currentContext!).commonOk,
+              variant: AppButtonVariant.text,
+              onPressed: () => SmartDialog.dismiss(),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => SmartDialog.dismiss(),
-            child: Text(L10n.of(navigatorKey.currentContext!).commonOk),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

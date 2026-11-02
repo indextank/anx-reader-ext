@@ -1,10 +1,12 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/ai_provider.dart';
 import 'package:anx_reader/page/settings_page/ai_provider_detail_page.dart';
 import 'package:anx_reader/providers/ai_providers.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
 class AiProviderListPage extends ConsumerWidget {
   const AiProviderListPage({super.key});
@@ -20,61 +22,69 @@ class AiProviderListPage extends ConsumerWidget {
       appBar: AppBar(
         title: Text(l10n.settingsAiProviders),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _addProvider(context, ref),
+          AppIconButton(
+            icon: Icons.add,
+            onPressed: () => _addProvider(context),
             tooltip: l10n.settingsAiProvidersAdd,
           ),
         ],
       ),
-      body: ListView.builder(
-        itemCount: providers.length,
-        itemBuilder: (context, index) {
-          final provider = providers[index];
-          final isSelected = provider.id == selectedId;
-          final hasValidKey = provider.hasValidKey;
+      body: AppSafeArea(
+        top: false,
+        child: providers.isEmpty
+            ? AppEmptyState(
+                title: l10n.commonEmpty,
+                message: l10n.settingsAiProviders,
+                actionLabel: l10n.settingsAiProvidersAdd,
+                onAction: () => _addProvider(context),
+              )
+            : ListView.builder(
+                padding: AppSpacing.vertical8,
+                itemCount: providers.length,
+                itemBuilder: (context, index) {
+                  final provider = providers[index];
+                  return _buildProviderTile(
+                    context,
+                    ref,
+                    provider,
+                    provider.id == selectedId,
+                  );
+                },
+              ),
+      ),
+    );
+  }
 
-          return ListTile(
-            leading: _buildProviderLogo(provider),
-            title: Text(provider.title),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  provider.url,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (!hasValidKey)
-                  Text(
-                    l10n.settingsAiProviderNoValidKeys,
-                    style: TextTheme.of(context).bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                  ),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isSelected)
-                  Chip(
-                    label: Text(l10n.settingsAiProviderDefault),
-                    labelStyle: TextTheme.of(context).labelSmall,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  )
-                else
-                  TextButton(
-                    onPressed: () {
-                      ref
-                          .read(aiProvidersProvider.notifier)
-                          .setSelectedProvider(provider.id);
-                    },
-                    child: Text(l10n.settingsAiProviderSetDefault),
-                  ),
-                const SizedBox(width: 8),
-                Switch(
+  Widget _buildProviderTile(
+    BuildContext context,
+    WidgetRef ref,
+    AiProvider provider,
+    bool isSelected,
+  ) {
+    final l10n = L10n.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    return AppCard(
+      margin: AppSpacing.symmetric(
+        horizontal: AppSpacing.tokens.s8,
+        vertical: AppSpacing.tokens.s4,
+      ),
+      onTap: () => _editProvider(context, provider),
+      onLongPress: provider.isBuiltin
+          ? null
+          : () => _deleteProvider(context, ref, provider),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildProviderLogo(provider),
+              SizedBox(width: AppSpacing.tokens.s12),
+              Expanded(child: Text(provider.title)),
+              Semantics(
+                label: provider.enabled
+                    ? l10n.settingsAiProviderEnabled
+                    : l10n.settingsAiProviderDisabled,
+                child: Switch(
                   value: provider.enabled,
                   onChanged: (value) {
                     ref
@@ -82,22 +92,55 @@ class AiProviderListPage extends ConsumerWidget {
                         .toggleProvider(provider.id, value);
                   },
                 ),
-              ],
-            ),
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      AiProviderDetailPage(providerId: provider.id),
+              ),
+            ],
+          ),
+          SizedBox(height: AppSpacing.tokens.s8),
+          Text(
+            provider.url,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
                 ),
-              );
-            },
-            onLongPress: provider.isBuiltin
-                ? null
-                : () => _deleteProvider(context, ref, provider),
-          );
-        },
+          ),
+          if (!provider.hasValidKey) ...[
+            SizedBox(height: AppSpacing.tokens.s4),
+            Text(
+              l10n.settingsAiProviderNoValidKeys,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.error,
+                  ),
+            ),
+          ],
+          SizedBox(height: AppSpacing.tokens.s8),
+          Wrap(
+            spacing: AppSpacing.tokens.s8,
+            runSpacing: AppSpacing.tokens.s4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (isSelected)
+                Chip(label: Text(l10n.settingsAiProviderDefault))
+              else
+                AppButton(
+                  label: l10n.settingsAiProviderSetDefault,
+                  variant: AppButtonVariant.text,
+                  size: AppButtonSize.small,
+                  onPressed: () {
+                    ref
+                        .read(aiProvidersProvider.notifier)
+                        .setSelectedProvider(provider.id);
+                  },
+                ),
+              if (!provider.isBuiltin)
+                AppButton(
+                  label: l10n.commonDelete,
+                  icon: Icons.delete_outline,
+                  variant: AppButtonVariant.text,
+                  size: AppButtonSize.small,
+                  onPressed: () => _deleteProvider(context, ref, provider),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -106,8 +149,8 @@ class AiProviderListPage extends ConsumerWidget {
     if (provider.logoAsset != null) {
       return Image.asset(
         provider.logoAsset!,
-        width: 32,
-        height: 32,
+        width: AppSettingsAiTokens.providerLogoSize,
+        height: AppSettingsAiTokens.providerLogoSize,
         errorBuilder: (context, error, stackTrace) =>
             _buildFallbackAvatar(provider),
       );
@@ -123,11 +166,20 @@ class AiProviderListPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _addProvider(BuildContext context, WidgetRef ref) async {
+  Future<void> _addProvider(BuildContext context) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const AiProviderDetailPage(providerId: null),
+      ),
+    );
+  }
+
+  Future<void> _editProvider(BuildContext context, AiProvider provider) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AiProviderDetailPage(providerId: provider.id),
       ),
     );
   }
@@ -138,33 +190,17 @@ class AiProviderListPage extends ConsumerWidget {
     AiProvider provider,
   ) async {
     final l10n = L10n.of(context);
-    bool confirmed = false;
-
-    await SmartDialog.show(
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.commonConfirm),
-        content: Text(l10n.settingsAiProviderDeleteConfirm),
-        actions: [
-          TextButton(
-            onPressed: () {
-              confirmed = false;
-              SmartDialog.dismiss();
-            },
-            child: Text(l10n.commonCancel),
-          ),
-          TextButton(
-            onPressed: () {
-              confirmed = true;
-              SmartDialog.dismiss();
-            },
-            child: Text(l10n.commonConfirm),
-          ),
-        ],
-      ),
+    await AppDialog.confirm(
+      context,
+      title: l10n.commonDelete,
+      message: l10n.settingsAiProviderDeleteConfirm,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription:
+          '${provider.title} · ${l10n.settingsAiProviderDeleteConfirm}',
+      onConfirm: () async {
+        ref.read(aiProvidersProvider.notifier).deleteProvider(provider.id);
+      },
     );
-
-    if (confirmed && context.mounted) {
-      ref.read(aiProvidersProvider.notifier).deleteProvider(provider.id);
-    }
   }
 }

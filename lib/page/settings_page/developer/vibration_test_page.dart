@@ -1,8 +1,18 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/service/vibration_service.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 
 class VibrationTestPage extends StatefulWidget {
-  const VibrationTestPage({super.key});
+  const VibrationTestPage({
+    super.key,
+    this.loadCapabilities,
+    this.vibrate,
+  });
+
+  final Future<VibrationCapabilities> Function()? loadCapabilities;
+  final Future<void> Function(VibrationType type)? vibrate;
 
   @override
   State<VibrationTestPage> createState() => _VibrationTestPageState();
@@ -10,7 +20,9 @@ class VibrationTestPage extends StatefulWidget {
 
 class _VibrationTestPageState extends State<VibrationTestPage> {
   VibrationCapabilities? _capabilities;
-  bool _loading = true;
+  final Set<VibrationType> _pendingVibrations = {};
+  bool _loading = false;
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -19,16 +31,40 @@ class _VibrationTestPageState extends State<VibrationTestPage> {
   }
 
   Future<void> _loadCapabilities() async {
-    final caps = await VibrationService.getCapabilities();
-    if (!mounted) return;
+    if (_loading) return;
     setState(() {
-      _capabilities = caps;
-      _loading = false;
+      _loading = true;
+      _loadFailed = false;
     });
+    try {
+      final caps = await (widget.loadCapabilities?.call() ??
+          VibrationService.getCapabilities());
+      if (!mounted) return;
+      setState(() => _capabilities = caps);
+    } catch (_) {
+      if (!mounted) return;
+      if (_capabilities == null) {
+        setState(() => _loadFailed = true);
+      } else {
+        AppFeedback.showError(context, onRetry: _loadCapabilities);
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _trigger(VibrationType type) async {
-    await VibrationService.vibrate(type);
+    if (_pendingVibrations.contains(type)) return;
+    setState(() => _pendingVibrations.add(type));
+    try {
+      await (widget.vibrate?.call(type) ?? VibrationService.vibrate(type));
+    } catch (_) {
+      if (mounted) {
+        AppFeedback.showError(context, onRetry: () => _trigger(type));
+      }
+    } finally {
+      if (mounted) setState(() => _pendingVibrations.remove(type));
+    }
   }
 
   @override
@@ -39,76 +75,73 @@ class _VibrationTestPageState extends State<VibrationTestPage> {
       appBar: AppBar(
         title: const Text('Vibration Test'),
         actions: [
-          IconButton(
+          AppIconButton(
             onPressed: _loadCapabilities,
-            icon: const Icon(Icons.refresh),
+            icon: Icons.refresh,
             tooltip: 'Refresh capabilities',
+            isLoading: _loading,
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: _loading || caps == null
-                  ? const Center(child: CircularProgressIndicator())
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Capabilities',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildCapabilityRow('Has Vibrator', caps.hasVibrator),
-                        _buildCapabilityRow(
-                            'Has Amplitude Control', caps.hasAmplitudeControl),
-                        _buildCapabilityRow('Supports Custom Patterns',
-                            caps.hasCustomVibrationsSupport),
-                        _buildCapabilityRow(
-                            'Can Use Haptics', caps.canUseHaptics),
-                        _buildCapabilityRow(
-                            'Has Any Feedback', caps.hasAnyVibration),
-                      ],
-                    ),
+      body: AppSafeArea(
+        top: false,
+        child: ListView(
+          padding: AppDeveloperTokens.pagePadding,
+          children: [
+            AppCard(child: _buildCapabilities(caps)),
+            SizedBox(height: AppSpacing.tokens.s24),
+            Text(
+              'Vibration Types',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Vibration Types',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: VibrationType.values.map(
-              (type) {
-                return OutlinedButton(
-                  onPressed: (caps?.hasAnyVibration ?? false)
-                      ? () => _trigger(type)
-                      : null,
-                  child: Text(_labelForType(type)),
+            SizedBox(height: AppSpacing.tokens.s12),
+            Wrap(
+              spacing: AppSpacing.tokens.s8,
+              runSpacing: AppSpacing.tokens.s8,
+              children: VibrationType.values.map((type) {
+                return AppButton(
+                  label: _labelForType(type),
+                  variant: AppButtonVariant.outlined,
+                  enabled: caps?.hasAnyVibration ?? false,
+                  isLoading: _pendingVibrations.contains(type),
+                  onPressed: () => _trigger(type),
                 );
-              },
-            ).toList(),
-          ),
-        ],
+              }).toList(),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildCapabilities(VibrationCapabilities? caps) {
+    if (_loading && caps == null) {
+      return const Center(child: AppLoadingIndicator());
+    }
+    if (_loadFailed && caps == null) {
+      return AppErrorState(onRetry: _loadCapabilities);
+    }
+    if (caps == null) return const AppEmptyState();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Capabilities', style: Theme.of(context).textTheme.titleMedium),
+        SizedBox(height: AppSpacing.tokens.s12),
+        _buildCapabilityRow('Has Vibrator', caps.hasVibrator),
+        _buildCapabilityRow('Has Amplitude Control', caps.hasAmplitudeControl),
+        _buildCapabilityRow(
+          'Supports Custom Patterns',
+          caps.hasCustomVibrationsSupport,
+        ),
+        _buildCapabilityRow('Can Use Haptics', caps.canUseHaptics),
+        _buildCapabilityRow('Has Any Feedback', caps.hasAnyVibration),
+      ],
     );
   }
 
   Widget _buildCapabilityRow(String label, bool supported) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: AppDeveloperTokens.capabilityPadding,
       child: Row(
         children: [
           Icon(
@@ -116,10 +149,10 @@ class _VibrationTestPageState extends State<VibrationTestPage> {
             color: supported
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.error,
-            size: 20,
+            size: AppDeveloperTokens.capabilityIconSize,
           ),
-          const SizedBox(width: 8),
-          Text(label),
+          SizedBox(width: AppSpacing.tokens.s8),
+          Expanded(child: Text(label)),
         ],
       ),
     );
@@ -129,7 +162,7 @@ class _VibrationTestPageState extends State<VibrationTestPage> {
     final buffer = StringBuffer();
     final name = type.name;
 
-    for (int i = 0; i < name.length; i++) {
+    for (var i = 0; i < name.length; i++) {
       final char = name[i];
       final isUpper = char.toUpperCase() == char && char.toLowerCase() != char;
       if (i == 0) {

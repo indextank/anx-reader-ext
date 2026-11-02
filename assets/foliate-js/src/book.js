@@ -5,6 +5,7 @@ import './view.js'
 import { FootnoteHandler } from './footnotes.js'
 import { Overlayer } from './overlayer.js'
 import { collapse, compare, fromRange, toRange } from './epubcfi.js'
+import { applyTokens, getTokens, tokensToRootCSS } from './anx-tokens.js'
 const { configure, ZipReader, BlobReader, TextWriter, BlobWriter } =
   await import('./vendor/zip.js')
 const { EPUB } = await import('./epub.js')
@@ -862,7 +863,8 @@ const getCSS = ({ fontSize,
   customCSSEnabled,
   useBookStyles,
   headingFontSize,
-  codeHighlightTheme
+  codeHighlightTheme,
+  tokens
 }) => {
 
   const fontFamily = fontName === 'book' ? '' :
@@ -879,6 +881,7 @@ const getCSS = ({ fontSize,
   // Some CSS selectors are inspired by https://github.com/readest/foliate-js
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
+    ${tokensToRootCSS(tokens)}
     @font-face {
       font-family: ${fontName};
       src: url('${fontPath}');
@@ -1018,7 +1021,7 @@ const getCSS = ({ fontSize,
     pre {
         white-space: pre-wrap !important;
         background: rgba(128, 128, 128, 0.1) !important;
-        border-radius: 6px !important;
+        border-radius: var(--anx-code-block-radius, 6px) !important;
         padding: 1em !important;
         overflow: visible !important;
         font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
@@ -1061,7 +1064,7 @@ const getCSS = ({ fontSize,
         font-size: 0.9em !important;
         background: rgba(128, 128, 128, 0.15) !important;
         padding: 0.2em 0.4em !important;
-        border-radius: 3px !important;
+        border-radius: var(--anx-inline-code-radius, 3px) !important;
     }
     
     pre > code {
@@ -1246,6 +1249,7 @@ const replaceFootnote = (view) => {
     writingMode: style.writingMode,
     useBookStyles: style.useBookStyles,
     headingFontSize: style.headingFontSize,
+    tokens: getTokens(),
   }
   renderer.setStyles(getCSS(footNoteStyle))
   // set background color of dialog
@@ -1744,7 +1748,7 @@ class Reader {
         position: fixed;
         top: -16px;
         right: 20px;
-        font-size: 24px;
+        font-size: var(--anx-overlay-font-size, 24px);
         opacity: 0;
         transition: opacity 0.2s ease;
         z-index: 1000;
@@ -1852,6 +1856,7 @@ const callFlutter = (name, data) => {
 }
 
 const setStyle = (oldStyle) => {
+  if (style.tokens) applyTokens(style.tokens)
   const turn = {
     scroll: false,
     animated: true
@@ -1907,7 +1912,8 @@ const setStyle = (oldStyle) => {
     customCSS: style.customCSS,
     customCSSEnabled: style.customCSSEnabled,
     useBookStyles: style.useBookStyles,
-    headingFontSize: style.headingFontSize
+    headingFontSize: style.headingFontSize,
+    tokens: getTokens(),
   }
   reader.view.renderer.setStyles?.(getCSS(newStyle))
 

@@ -47,8 +47,8 @@ class StepAudioTtsConfig {
   static const List<String> responseFormatOptions = ['mp3', 'wav'];
 
   factory StepAudioTtsConfig.fromMap(Map<String, dynamic> map) {
-    final timeout = int.tryParse(map['timeout']?.toString() ?? '') ??
-        defaultTimeoutSeconds;
+    final timeout =
+        int.tryParse(map['timeout']?.toString() ?? '') ?? defaultTimeoutSeconds;
     return StepAudioTtsConfig(
       url: normalizeStepAudioUrl(map['url']?.toString() ?? ''),
       apiKey: map['key']?.toString() ?? '',
@@ -58,10 +58,10 @@ class StepAudioTtsConfig {
       voice: map['voice']?.toString().trim().isNotEmpty == true
           ? map['voice'].toString().trim()
           : defaultVoice,
-      responseFormat: map['responseFormat']?.toString().trim().isNotEmpty ==
-              true
-          ? map['responseFormat'].toString().trim()
-          : defaultResponseFormat,
+      responseFormat:
+          map['responseFormat']?.toString().trim().isNotEmpty == true
+              ? map['responseFormat'].toString().trim()
+              : defaultResponseFormat,
       textNormalization: textNormalizationOptions
               .contains(map['textNormalization']?.toString().trim())
           ? map['textNormalization'].toString().trim()

@@ -2,20 +2,28 @@ import 'dart:convert';
 
 import 'package:anx_reader/dao/book.dart';
 import 'package:anx_reader/dao/tag.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/service/ai/tools/repository/tag_repository.dart';
+import 'package:anx_reader/theme/app_ai_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/ai_reasoning_parser.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/utils/color/hash_color.dart';
 import 'package:anx_reader/utils/color/rgb.dart';
 import 'package:anx_reader/widgets/ai/tool_tiles/tool_tile_base.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:anx_reader/widgets/common/tag_chip.dart';
 import 'package:flutter/material.dart';
 
+typedef ApplyBookTagsPlan = Future<void> Function(Map<String, dynamic> plan);
+
 class ApplyBookTagsStepTile extends StatefulWidget {
-  const ApplyBookTagsStepTile({super.key, required this.step});
+  const ApplyBookTagsStepTile({
+    super.key,
+    required this.step,
+    this.applyPlan,
+  });
 
   final ParsedToolStep step;
+  final ApplyBookTagsPlan? applyPlan;
 
   @override
   State<ApplyBookTagsStepTile> createState() => _ApplyBookTagsStepTileState();
@@ -29,6 +37,8 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
   String? _parseError;
   bool _isApplying = false;
   bool _applied = false;
+  int _outputGeneration = 0;
+  int _applyGeneration = 0;
 
   @override
   void initState() {
@@ -40,11 +50,11 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
   void didUpdateWidget(covariant ApplyBookTagsStepTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.step.output != oldWidget.step.output) {
-      _syncFromStep();
+      _syncFromStep(outputChanged: true);
     }
   }
 
-  void _syncFromStep() {
+  void _syncFromStep({bool outputChanged = false}) {
     final output = widget.step.output;
     Map<String, dynamic>? plan;
     List<Map<String, dynamic>> books = [];
@@ -89,14 +99,19 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
       _conflicts = conflicts;
       _requiresConfirmation = requires;
       _parseError = parseError;
-      _applied = false;
-      _isApplying = false;
+      if (outputChanged) {
+        _outputGeneration++;
+        _applied = false;
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = ToolTileBase.statusColorFor(widget.step.status);
+    final statusColor = ToolTileBase.statusColorFor(
+      context,
+      widget.step.status,
+    );
     return ToolTileBase(
       title: widget.step.name,
       leadingIcon: Icons.label_important,
@@ -109,10 +124,10 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
   Widget _buildContent(BuildContext context) {
     final theme = Theme.of(context);
     if (_parseError != null) {
-      return Text(_parseError!, style: theme.textTheme.bodyMedium);
+      return AppInlineFeedback(message: _parseError);
     }
     if (_plan == null) {
-      return Text('No plan found', style: theme.textTheme.bodyMedium);
+      return const AppEmptyState(title: 'No plan found', compact: true);
     }
 
     return Column(
@@ -120,22 +135,15 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
       children: [
         if (_conflicts.isNotEmpty) _buildConflicts(theme),
         if (_books.isNotEmpty) _buildBooks(theme),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FilledButton(
-              onPressed: (_requiresConfirmation && !_isApplying && !_applied)
-                  ? _applyPlan
-                  : null,
-              child: _isApplying
-                  ? const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(_applied ? 'Applied' : 'Apply'),
-            ),
-          ],
+        Align(
+          alignment: Alignment.centerRight,
+          child: AppButton(
+            label: _applied ? 'Applied' : 'Apply',
+            enabled: _requiresConfirmation && !_applied,
+            isLoading: _isApplying,
+            size: AppButtonSize.small,
+            onPressed: _confirmApplyPlan,
+          ),
         ),
       ],
     );
@@ -147,39 +155,41 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
       children: _books
           .map(
             (book) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: FilledContainer(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8),
-                radius: 10,
+              padding: AppAiTokens.toolCardBottomMargin,
+              child: AppCard(
+                padding: AppAiTokens.toolContentPadding,
+                borderRadius: AppAiTokens.toolCardContentRadius,
                 color: theme.colorScheme.surfaceContainer,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      book['bookTitle']?.toString() ?? '',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: (book['finalTags'] as List? ?? [])
-                          .map((tag) {
-                            final name = tag['name']?.toString() ?? '';
-                            final rgb = _parseRgb(tag['rgb']) ??
-                                rgbFromColor(hashColor(name));
-                            return TagChip(
-                              label: name,
-                              color: colorFromRgb(rgb),
-                              dense: true,
-                              selected: true,
-                            );
-                          })
-                          .whereType<TagChip>()
-                          .toList(),
-                    ),
-                  ],
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        book['bookTitle']?.toString() ?? '',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      SizedBox(height: AppAiTokens.chipSpacing),
+                      Wrap(
+                        spacing: AppAiTokens.chipSpacing,
+                        runSpacing: AppSpacing.tokens.s4,
+                        children: (book['finalTags'] as List? ?? [])
+                            .map((tag) {
+                              final name = tag['name']?.toString() ?? '';
+                              final rgb = _parseRgb(tag['rgb']) ??
+                                  rgbFromColor(hashColor(name));
+                              return TagChip(
+                                label: name,
+                                color: colorFromRgb(rgb),
+                                dense: true,
+                                selected: true,
+                              );
+                            })
+                            .whereType<TagChip>()
+                            .toList(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -190,100 +200,128 @@ class _ApplyBookTagsStepTileState extends State<ApplyBookTagsStepTile> {
 
   Widget _buildConflicts(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
+      padding: AppAiTokens.toolCardBottomMargin,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Conflicts', style: theme.textTheme.titleSmall),
-          const SizedBox(height: 4),
+          SizedBox(height: AppSpacing.tokens.s4),
           ..._conflicts.map(
             (c) => Text(
               c.toString(),
               style: theme.textTheme.bodySmall,
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: AppSpacing.tokens.s8),
         ],
       ),
     );
   }
 
+  Future<void> _confirmApplyPlan() async {
+    if (_plan == null || _isApplying || _applied || !_requiresConfirmation) {
+      return;
+    }
+    await AppDialog.confirm(
+      context,
+      title: 'Apply',
+      message: 'Apply tag changes to ${_books.length} books?',
+      isDangerous: true,
+      dangerDescription: 'Conflicts: ${_conflicts.length}. '
+          'This changes book and tag data.',
+      onConfirm: _applyPlan,
+    );
+  }
+
   Future<void> _applyPlan() async {
-    if (_plan == null) return;
+    final plan = _plan;
+    if (plan == null || _isApplying || _applied) return;
+    final outputGeneration = _outputGeneration;
+    final applyGeneration = ++_applyGeneration;
     setState(() {
       _isApplying = true;
     });
 
     try {
-      final tagRepo = TagRepository();
-
-      // merges
-      for (final merge in (_plan!['mergeTags'] as List? ?? [])) {
-        final sourceId = (merge['sourceId'] as num?)?.toInt();
-        final targetId = (merge['targetId'] as num?)?.toInt();
-        if (sourceId == null || targetId == null) continue;
-        final source = await tagRepo.fetchTagById(sourceId);
-        final target = await tagRepo.fetchTagById(targetId);
-        if (source != null && target != null && source.id != target.id) {
-          await tagRepo.mergeTags(source: source, target: target);
-        }
+      final applyPlan = widget.applyPlan;
+      if (applyPlan != null) {
+        await applyPlan(plan);
+      } else {
+        await _applyPlanToRepository(plan);
       }
-
-      // updates
-      for (final update in (_plan!['updateTags'] as List? ?? [])) {
-        final id = (update['id'] as num?)?.toInt();
-        if (id == null || id <= 0) continue;
-        await tagRepo.updateTag(
-          id: id,
-          newName: update['name'] as String?,
-          color: _colorFromPlan(update['rgb']),
-        );
+      if (!mounted || applyGeneration != _applyGeneration) return;
+      if (outputGeneration != _outputGeneration) {
+        setState(() => _isApplying = false);
+        return;
       }
-
-      // creates
-      for (final create in (_plan!['createTags'] as List? ?? [])) {
-        final name = (create['name'] ?? '').toString();
-        if (name.isEmpty) continue;
-        final rgb = _colorFromPlan(create['rgb']);
-        await tagRepo.ensureTag(name, color: rgb);
-      }
-
-      // book changes
-      for (final change in (_plan!['bookChanges'] as List? ?? [])) {
-        final bookId = (change['bookId'] as num?)?.toInt();
-        if (bookId == null || bookId <= 0) continue;
-        final book = await bookDao.selectBookById(bookId);
-        final addNames = (change['add'] as List? ?? [])
-            .map((e) => e.toString())
-            .where((e) => e.isNotEmpty);
-        final removeNames = (change['remove'] as List? ?? [])
-            .map((e) => e.toString())
-            .where((e) => e.isNotEmpty);
-
-        for (final name in addNames) {
-          final tag = await tagRepo.ensureTag(name);
-          await bookTagDao.addRelation(bookId: book.id, tagId: tag.id);
-        }
-        for (final name in removeNames) {
-          final tag = await tagRepo.fetchTagByName(name);
-          if (tag != null) {
-            await bookTagDao.removeRelation(bookId: book.id, tagId: tag.id);
-          }
-        }
-      }
-
-      if (!mounted) return;
       setState(() {
         _isApplying = false;
         _applied = true;
       });
-      AnxToast.show('Tags updated');
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isApplying = false;
-      });
-      AnxToast.show('Failed to apply tag changes: $e');
+      AppFeedback.showSuccess(context, message: 'Tags updated');
+    } catch (_) {
+      if (!mounted || applyGeneration != _applyGeneration) return;
+      if (outputGeneration != _outputGeneration) {
+        setState(() => _isApplying = false);
+        return;
+      }
+      setState(() => _isApplying = false);
+      rethrow;
+    }
+  }
+
+  Future<void> _applyPlanToRepository(Map<String, dynamic> plan) async {
+    final tagRepo = TagRepository();
+
+    for (final merge in (plan['mergeTags'] as List? ?? [])) {
+      final sourceId = (merge['sourceId'] as num?)?.toInt();
+      final targetId = (merge['targetId'] as num?)?.toInt();
+      if (sourceId == null || targetId == null) continue;
+      final source = await tagRepo.fetchTagById(sourceId);
+      final target = await tagRepo.fetchTagById(targetId);
+      if (source != null && target != null && source.id != target.id) {
+        await tagRepo.mergeTags(source: source, target: target);
+      }
+    }
+
+    for (final update in (plan['updateTags'] as List? ?? [])) {
+      final id = (update['id'] as num?)?.toInt();
+      if (id == null || id <= 0) continue;
+      await tagRepo.updateTag(
+        id: id,
+        newName: update['name'] as String?,
+        color: _colorFromPlan(update['rgb']),
+      );
+    }
+
+    for (final create in (plan['createTags'] as List? ?? [])) {
+      final name = (create['name'] ?? '').toString();
+      if (name.isEmpty) continue;
+      final rgb = _colorFromPlan(create['rgb']);
+      await tagRepo.ensureTag(name, color: rgb);
+    }
+
+    for (final change in (plan['bookChanges'] as List? ?? [])) {
+      final bookId = (change['bookId'] as num?)?.toInt();
+      if (bookId == null || bookId <= 0) continue;
+      final book = await bookDao.selectBookById(bookId);
+      final addNames = (change['add'] as List? ?? [])
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty);
+      final removeNames = (change['remove'] as List? ?? [])
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty);
+
+      for (final name in addNames) {
+        final tag = await tagRepo.ensureTag(name);
+        await bookTagDao.addRelation(bookId: book.id, tagId: tag.id);
+      }
+      for (final name in removeNames) {
+        final tag = await tagRepo.fetchTagByName(name);
+        if (tag != null) {
+          await bookTagDao.removeRelation(bookId: book.id, tagId: tag.id);
+        }
+      }
     }
   }
 }

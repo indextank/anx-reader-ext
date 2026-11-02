@@ -1,4 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/enums/convert_chinese_mode.dart';
 import 'package:anx_reader/enums/reading_info.dart';
 import 'package:anx_reader/enums/translation_mode.dart';
@@ -26,7 +29,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
   @override
   Widget build(BuildContext context) {
     Widget convertChinese() {
-      const iconStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.bold);
+      const iconStyle = TextStyle(fontWeight: FontWeight.bold);
       return StatefulBuilder(
         builder: (context, setState) {
           return Column(
@@ -89,44 +92,6 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
         },
       );
     }
-
-    // Widget bionicReading() {
-    //   return StatefulBuilder(
-    //     builder: (context, setState) => ListTile(
-    //       contentPadding: EdgeInsets.zero,
-    //       title: Text(L10n.of(context).readingPageBionicReading,
-    //           style: Theme.of(context).textTheme.titleMedium),
-    //       subtitle: GestureDetector(
-    //         child: Text(
-    //           textAlign: TextAlign.start,
-    //           L10n.of(context).readingPageBionicReadingTips,
-    //           style: const TextStyle(
-    //             fontSize: 12,
-    //             color: Color(0xFF666666),
-    //             decoration: TextDecoration.underline,
-    //           ),
-    //         ),
-    //         onTap: () {
-    //           launchUrl(
-    //             Uri.parse('https://github.com/Anxcye/anx-reader/issues/49'),
-    //             mode: LaunchMode.externalApplication,
-    //           );
-    //         },
-    //       ),
-    //       trailing: Switch(
-    //         value: Prefs().readingRules.bionicReading,
-    //         onChanged: (value) {
-    //           setState(() {
-    //             Prefs().readingRules =
-    //                 Prefs().readingRules.copyWith(bionicReading: value);
-    //             epubPlayerKey.currentState?
-    //                 .changeReadingRules(Prefs().readingRules);
-    //           });
-    //         },
-    //       ),
-    //     ),
-    //   );
-    // }
 
     Widget columnCount() {
       return StatefulBuilder(
@@ -197,7 +162,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
               Text(
                 L10n.of(context).readingPageColumnThresholdTip,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey,
+                      color: AppReadingTokens.muted(context),
                     ),
               ),
             Slider(
@@ -285,7 +250,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
-                      ?.copyWith(color: Colors.grey)),
+                      ?.copyWith(color: AppReadingTokens.muted(context))),
             Row(
               children: [
                 Expanded(
@@ -356,7 +321,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
             },
             underline: Container(),
             dropdownColor: Theme.of(context).colorScheme.surfaceContainer,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppReadingTokens.dropdownRadius,
             items: ReadingInfoEnum.values.map((info) {
               return DropdownMenuItem<ReadingInfoEnum>(
                 value: info,
@@ -535,9 +500,9 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
     }
 
     Widget downloadFonts() {
-      return ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(L10n.of(context).downloadFonts),
+      return AppListTile(
+        contentPadding: AppSpacing.zero,
+        title: L10n.of(context).downloadFonts,
         leading: const Icon(Icons.font_download_outlined),
         trailing: const Icon(Icons.arrow_forward_ios),
         onTap: () {
@@ -688,7 +653,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(18.0),
+      padding: AppReadingTokens.settingsPadding,
       child: Column(
         children: [
           downloadFonts(),

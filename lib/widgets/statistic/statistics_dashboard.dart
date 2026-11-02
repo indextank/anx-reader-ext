@@ -1,8 +1,10 @@
 import 'dart:math';
 
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/hint_key.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/providers/dashboard_tiles_provider.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/widgets/hint/hint_banner.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
 import 'package:flutter/material.dart';
@@ -17,37 +19,40 @@ class StatisticsDashboard extends ConsumerWidget {
     final tilesState = ref.watch(dashboardTilesProvider);
     final notifier = ref.read(dashboardTilesProvider.notifier);
     final workingTiles = tilesState.workingTiles;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         HintBanner(
-            icon: const Icon(Icons.drag_handle),
-            hintKey: HintKey.statisticsDashboardRearrange,
-            margin: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              L10n.of(context).statisticsDashboardHint,
-            )),
-        workingTiles.isEmpty
-            ? _buildEmptyState(context, () => notifier.reorder)
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final crossAxisUnits =
-                      _calculateColumnUnits(constraints.maxWidth);
-                  return StaggeredReorderableView.customer(
-                    columnNum: crossAxisUnits,
-                    spacing: 10,
-                    canDrag: true,
-                    children: _buildReorderableItems(
-                      context,
-                      workingTiles,
-                      crossAxisUnits,
-                    ),
-                    onReorder: notifier.reorder,
-                    fixedCellHeight: 90,
-                  );
-                },
-              ),
+          icon: const Icon(Icons.drag_handle),
+          hintKey: HintKey.statisticsDashboardRearrange,
+          margin: AppStatisticsTokens.dashboardHintMargin,
+          child: Text(L10n.of(context).statisticsDashboardHint),
+        ),
+        if (workingTiles.isEmpty)
+          AppEmptyState(
+            title: L10n.of(context).statisticsDashboardEmpty,
+            actionLabel: L10n.of(context).statisticsDashboardAddCard,
+            onAction: () => notifier.reorder,
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final crossAxisUnits =
+                  _calculateColumnUnits(constraints.maxWidth);
+              return StaggeredReorderableView.customer(
+                columnNum: crossAxisUnits,
+                spacing: AppStatisticsTokens.dashboardSpacing,
+                canDrag: true,
+                children: _buildReorderableItems(
+                  context,
+                  workingTiles,
+                  crossAxisUnits,
+                ),
+                onReorder: notifier.reorder,
+                fixedCellHeight: AppStatisticsTokens.dashboardCellHeight,
+              );
+            },
+          ),
       ],
     );
   }
@@ -67,23 +72,9 @@ class StatisticsDashboard extends ConsumerWidget {
   }
 
   int _calculateColumnUnits(double width) {
-    return max(4, (width ~/ 200) * 2);
-  }
-
-  Widget _buildEmptyState(BuildContext context, VoidCallback? onAddPressed) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          L10n.of(context).statisticsDashboardEmpty,
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: onAddPressed,
-          icon: const Icon(Icons.add),
-          label: Text(L10n.of(context).statisticsDashboardAddCard),
-        ),
-      ],
+    return max(
+      AppStatisticsTokens.dashboardMinColumnUnits,
+      (width ~/ AppStatisticsTokens.dashboardColumnWidth) * 2,
     );
   }
 }

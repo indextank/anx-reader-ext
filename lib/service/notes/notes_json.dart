@@ -88,8 +88,7 @@ class NotesJsonPayload {
         'notes': notes.map(notesJsonNoteToMap).toList(),
       };
 
-  String encodePretty() =>
-      const JsonEncoder.withIndent('  ').convert(toJson());
+  String encodePretty() => const JsonEncoder.withIndent('  ').convert(toJson());
 
   static NotesJsonPayload decode(String raw) {
     final decoded = jsonDecode(raw);

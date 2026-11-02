@@ -1,19 +1,21 @@
 import 'dart:async';
 
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/book_player/epub_player.dart';
 import 'package:anx_reader/page/reading_page.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:flutter/material.dart';
 
 class ProgressWidget extends StatefulWidget {
-  final GlobalKey<EpubPlayerState> epubPlayerKey;
-  final Function(bool) showOrHideAppBarAndBottomBar;
-
   const ProgressWidget({
     super.key,
     required this.epubPlayerKey,
     required this.showOrHideAppBarAndBottomBar,
   });
+
+  final GlobalKey<EpubPlayerState> epubPlayerKey;
+  final Function(bool) showOrHideAppBarAndBottomBar;
 
   @override
   State<ProgressWidget> createState() => _ProgressWidgetState();
@@ -30,27 +32,30 @@ class _ProgressWidgetState extends State<ProgressWidget> {
   }
 
   @override
+  void dispose() {
+    _sliderTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: AppReadingTokens.panelPadding,
       child: Column(
         children: [
-          const SizedBox(height: 10),
           Text(
             widget.epubPlayerKey.currentState!.chapterTitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 20,
-              fontFamily: 'SourceHanSerif',
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontFamily: AppReadingTokens.titleFontFamily,
+                  fontWeight: FontWeight.bold,
+                ),
           ),
           const Divider(),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
+              AppIconButton(
+                icon: Icons.arrow_back,
                 onPressed: () {
                   setState(() {
                     widget.epubPlayerKey.currentState!.prevChapter();
@@ -59,12 +64,11 @@ class _ProgressWidgetState extends State<ProgressWidget> {
               ),
               Expanded(
                 child: Slider(
-                  inactiveColor: Colors.grey.shade300,
+                  inactiveColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                   value: _readProgress,
                   onChanged: (value) {
-                    setState(() {
-                      _readProgress = value;
-                    });
+                    setState(() => _readProgress = value);
                     _sliderTimer?.cancel();
                     _sliderTimer = Timer(
                       const Duration(milliseconds: 100),
@@ -72,15 +76,15 @@ class _ProgressWidgetState extends State<ProgressWidget> {
                         await widget.epubPlayerKey.currentState!
                             .goToPercentage(value);
                         Timer(const Duration(milliseconds: 300), () {
-                          setState(() {});
+                          if (mounted) setState(() {});
                         });
                       },
                     );
                   },
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward),
+              AppIconButton(
+                icon: Icons.arrow_forward,
                 onPressed: () {
                   setState(() {
                     widget.epubPlayerKey.currentState!.nextChapter();
@@ -108,7 +112,6 @@ class _ProgressWidgetState extends State<ProgressWidget> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
         ],
       ),
     );
@@ -133,21 +136,19 @@ class ProgressDisplay extends StatelessWidget {
           Text(
             mainText,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 20,
-              fontFamily: 'SourceHanSerif',
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontFamily: AppReadingTokens.titleFontFamily,
+                  fontWeight: FontWeight.bold,
+                ),
           ),
           Text(
             subText,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10,
-              fontFamily: 'SourceHanSerif',
-              fontWeight: FontWeight.w300,
-            ),
-          )
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontFamily: AppReadingTokens.titleFontFamily,
+                  fontWeight: FontWeight.w300,
+                ),
+          ),
         ],
       ),
     );

@@ -1,4 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_radius.dart';
 import 'package:flutter/material.dart';
 
 class IconAndText extends StatelessWidget {
@@ -31,15 +34,11 @@ class IconAndText extends StatelessWidget {
         );
       }
 
-      return IconButton(
-        onPressed: onTap,
-        padding: const EdgeInsets.all(8),
-        constraints: const BoxConstraints(),
-        style: const ButtonStyle(
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        icon: icon,
+      return AppIconButton(
+        variant: AppButtonVariant.neutral,
         tooltip: text,
+        onPressed: onTap,
+        child: icon,
       );
     }
 
@@ -72,10 +71,10 @@ class IconAndText extends StatelessWidget {
     }
 
     return Material(
-      color: Colors.transparent,
+      color: AppColors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: AppRadius.border8,
         child: content,
       ),
     );

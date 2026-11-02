@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/models/book.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
 import 'package:flutter/material.dart';
 
 class BookCover extends StatelessWidget {
@@ -19,17 +21,16 @@ class BookCover extends StatelessWidget {
   final double? width;
   final double? radius;
 
-  // Calculate text color based on background brightness
   Color _getContrastColor(Color backgroundColor) {
     final brightness = ThemeData.estimateBrightnessForColor(backgroundColor);
-    return brightness == Brightness.dark ? Colors.white : Colors.black;
+    return brightness == Brightness.dark ? AppColors.white : AppColors.black;
   }
 
   @override
   Widget build(BuildContext context) {
-    final double effectiveRadius = radius ?? 8;
-    final BorderRadius borderRadius = BorderRadius.circular(effectiveRadius);
-    final File file = File(book.coverFullPath);
+    final effectiveRadius = radius ?? AppBookshelfTokens.coverRadius;
+    final borderRadius = AppBookshelfTokens.coverBorderRadius(effectiveRadius);
+    final file = File(book.coverFullPath);
 
     Widget child;
 
@@ -43,22 +44,21 @@ class BookCover extends StatelessWidget {
         ),
       );
     } else {
-      // Default cover with responsive text and icon
       child = LayoutBuilder(
         builder: (context, constraints) {
-          final coverWidth = constraints.maxWidth;
-
-          // Calculate responsive sizes based on width
-          final titleFontSize = coverWidth * 0.12;
-          final authorFontSize = coverWidth * 0.08;
-          final iconSize = coverWidth * 0.8;
-          final padding = coverWidth * 0.08;
-
-          final backgroundColor = Colors
-              .primaries[book.title.hashCode % Colors.primaries.length]
-              .shade200;
+          final coverWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : Prefs().bookCoverWidth;
+          final titleFontSize =
+              coverWidth * AppBookshelfTokens.coverTitleFactor;
+          final authorFontSize =
+              coverWidth * AppBookshelfTokens.coverAuthorFactor;
+          final iconSize = coverWidth * AppBookshelfTokens.coverIconFactor;
+          final padding = coverWidth * AppBookshelfTokens.coverPaddingFactor;
+          final palette = AppColors.bookCoverPalette;
+          final backgroundColor =
+              palette[book.title.hashCode.abs() % palette.length];
           final textColor = _getContrastColor(backgroundColor);
-
           final showTitle = Prefs().showBookTitleOnDefaultCover;
           final showAuthor = Prefs().showAuthorOnDefaultCover;
 
@@ -66,48 +66,47 @@ class BookCover extends StatelessWidget {
             color: backgroundColor,
             child: Stack(
               children: [
-                // Text content (title at top, author at bottom)
                 if (showTitle || showAuthor)
                   Padding(
-                    padding: EdgeInsets.all(padding),
+                    padding: AppBookshelfTokens.coverPadding(padding),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Title at top
                         if (showTitle)
                           Text(
                             book.title,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: titleFontSize,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                              height: 1.2,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  fontSize: titleFontSize,
+                                  fontWeight: FontWeight.bold,
+                                  color: textColor,
+                                ),
                           ),
                         const Spacer(),
-                        // Author at bottom
                         if (showAuthor)
                           Text(
                             book.author,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: authorFontSize,
-                              fontWeight: FontWeight.w300,
-                              color: textColor,
-                            ),
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontSize: authorFontSize,
+                                      fontWeight: FontWeight.w300,
+                                      color: textColor,
+                                    ),
                           ),
                       ],
                     ),
                   ),
-                // Icon at bottom right corner with rotation
                 Positioned(
                   right: -padding * 0.8,
                   bottom: -padding * 0.5,
                   child: Transform.rotate(
-                    angle: 15 * math.pi / 180, // 15 degrees in radians
+                    angle: AppBookshelfTokens.coverIconRotation * math.pi / 180,
                     child: Icon(
                       Icons.book,
                       size: iconSize,
@@ -122,11 +121,11 @@ class BookCover extends StatelessWidget {
       );
     }
 
-    final RoundedSuperellipseBorder borderShape = RoundedSuperellipseBorder(
+    final borderShape = RoundedSuperellipseBorder(
       borderRadius: borderRadius,
-      side: const BorderSide(
-        width: 0.3,
-        color: Colors.grey,
+      side: BorderSide(
+        width: AppBookshelfTokens.coverBorderWidth,
+        color: Theme.of(context).colorScheme.outlineVariant,
       ),
     );
 
@@ -135,9 +134,7 @@ class BookCover extends StatelessWidget {
       width: width,
       child: DecoratedBox(
         position: DecorationPosition.foreground,
-        decoration: ShapeDecoration(
-          shape: borderShape,
-        ),
+        decoration: ShapeDecoration(shape: borderShape),
         child: ClipRSuperellipse(
           borderRadius: borderRadius,
           child: child,

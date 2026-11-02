@@ -8,8 +8,7 @@ void main() {
   group('resolveResumeAction', () {
     test('no recorded position restarts from the current page start', () {
       expect(
-        resolveResumeAction(
-            lastReadCfi: null, lastReadPositionVisible: false),
+        resolveResumeAction(lastReadCfi: null, lastReadPositionVisible: false),
         TtsResumeAction.restartFromCurrentPageStart,
       );
       expect(
@@ -50,10 +49,9 @@ void main() {
   });
 
   group('queue invariants (collect twice)', () {
-    test('re-collecting the same sentences adds no duplicate segments',
-        () {
-      const sentence = TtsSentence(
-          text: '重复收集测试。', cfi: 'epubcfi(/6/4!/4/12/2,/1:0,/1:7)');
+    test('re-collecting the same sentences adds no duplicate segments', () {
+      const sentence =
+          TtsSentence(text: '重复收集测试。', cfi: 'epubcfi(/6/4!/4/12/2,/1:0,/1:7)');
       // Simulate the prefetcher: collect, expand, key, then collect again.
       List<TtsSegment> buffer = [];
       var keys = <String>{};

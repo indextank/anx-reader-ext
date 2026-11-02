@@ -21,6 +21,7 @@
   "settingsAppearanceThemeColor": "Theme Color",
   "settingsAppearanceDisplay": "Display",
   "settingsAppearanceLanguage": "Language",
+  "settingsAppearanceTextScale": "Interface text size",
   "settingsAppearanceOpenBookAnimation": "Open Book Animation",
   "settingsAppearanceBottomNavigatorShow": "Bottom Navigator",
   "settingsAdvancedAutoHideBottomBar": "Auto hide bottom navigation bar",
@@ -193,7 +194,14 @@
   "commonCancel": "Cancel",
   "commonOk": "OK",
   "commonSuccess": "Success",
+  "developerOptionsEnabled": "Developer options enabled",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
   "commonFailed": "Failed",
+  "commonActionFailed": "Action failed. Try again.",
+  "commonLoading": "Loading",
+  "commonEmpty": "Nothing here yet",
+  "commonLoadFailed": "Content couldn't be loaded. Try again.",
   "commonUploading": "Uploading",
   "commonDownloading": "Downloading",
   "commonCopy": "Copy",
@@ -923,6 +931,15 @@
   "storagePathPermissionLost": "Custom storage path is no longer accessible. Data has been reset to default location.",
   "storagePathNoPermission": "No write permission for the selected folder",
   "bookBottomSheetReplaceFile": "Replace File",
+  "bookBottomSheetDeleteDangerDescription": "Permanently delete \"{title}\", its original file, and its cover. This cannot be undone.",
+  "@bookBottomSheetDeleteDangerDescription": {
+    "description": "Warning shown before permanently deleting a book and its local files",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "bookBottomSheetOriginalFileSize": "Original file size: {size}",
   "bookBottomSheetNewFileSize": "New file size: {size}",
   "bookBottomSheetReplaceWarning": "Replacing the file may cause highlights to be displaced or lost because the book content might be different",
@@ -988,5 +1005,9 @@
   "notesJsonImportInvalid": "Invalid notes JSON format",
   "settingsSyncWebdavUrlHint": "Enter a writable directory URL. The app creates an anx/ folder under it for sync data.",
   "settingsAdvancedTrustUserCertificates": "Trust user / custom CA certificates",
-  "settingsAdvancedTrustUserCertificatesDesc": "Allow HTTPS with user-installed or self-signed certificates (e.g. private Nextcloud). Off by default; keep off on untrusted networks."
+  "settingsAdvancedTrustUserCertificatesDesc": "Allow HTTPS with user-installed or self-signed certificates (e.g. private Nextcloud). Off by default; keep off on untrusted networks.",
+  "readingTocLocateCurrent": "Locate current chapter",
+  "readingTocClearSearch": "Clear search",
+  "readingTocExpand": "Expand subchapters",
+  "readingTocCollapse": "Collapse subchapters"
 }

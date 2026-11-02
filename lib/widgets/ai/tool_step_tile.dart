@@ -1,8 +1,9 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/service/ai/tools/ai_tool_registry.dart';
+import 'package:anx_reader/theme/app_ai_tokens.dart';
 import 'package:anx_reader/utils/ai_reasoning_parser.dart';
 import 'package:anx_reader/widgets/ai/tool_tiles/tool_tile_base.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -21,7 +22,10 @@ class ToolStepTile extends StatefulWidget {
 class _ToolStepTileState extends State<ToolStepTile> {
   @override
   Widget build(BuildContext context) {
-    final statusColor = ToolTileBase.statusColorFor(widget.step.status);
+    final statusColor = ToolTileBase.statusColorFor(
+      context,
+      widget.step.status,
+    );
     final toolName = AiToolRegistry.displayNameForId(
       widget.step.name,
       l10n: L10n.of(context),
@@ -41,7 +45,7 @@ class _ToolStepTileState extends State<ToolStepTile> {
             ),
           if (widget.step.output != null)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: AppAiTokens.toolContentTopPadding,
               child: _ExpandableField(
                 label: 'Output',
                 value: widget.step.output!,
@@ -49,7 +53,7 @@ class _ToolStepTileState extends State<ToolStepTile> {
             ),
           if (widget.step.error != null)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: AppAiTokens.toolContentTopPadding,
               child: _ExpandableField(
                 label: 'Error',
                 value: widget.step.error!,
@@ -79,23 +83,27 @@ class _ExpandableField extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text(label, style: theme.textTheme.labelMedium)),
-            IconButton(
+            AppIconButton(
               tooltip: 'Copy',
-              icon: const Icon(Icons.copy, size: 12),
+              semanticLabel: 'Copy $label',
+              icon: Icons.copy,
               onPressed: () => Clipboard.setData(ClipboardData(text: value)),
             ),
           ],
         ),
-        FilledContainer(
+        AppCard(
           color: theme.colorScheme.primaryContainer,
-          width: double.infinity,
-          padding: const EdgeInsets.all(8),
-          radius: 6,
-          child: Container(
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: SelectableText(
-              value,
-              style: theme.textTheme.bodyMedium,
+          padding: AppAiTokens.toolContentPadding,
+          borderRadius: AppAiTokens.toolContentRadius,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxHeight: AppAiTokens.toolOutputMaxHeight,
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                value,
+                style: theme.textTheme.bodyMedium,
+              ),
             ),
           ),
         ),

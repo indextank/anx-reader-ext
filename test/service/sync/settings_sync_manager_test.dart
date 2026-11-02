@@ -46,8 +46,8 @@ void main() {
           'aiRpm': {'type': 'int', 'value': 20}
         })
       };
-      final (merged, remoteWon) = mergeCategories(
-          local: local, remote: remote, excluded: const {});
+      final (merged, remoteWon) =
+          mergeCategories(local: local, remote: remote, excluded: const {});
       expect(merged['ai']!['updatedAt'], 200);
       expect(remoteWon.containsKey('ai'), isTrue);
     });
@@ -64,8 +64,8 @@ void main() {
             'aiRpm': {'type': 'int', 'value': 20}
           })
         };
-        final (merged, remoteWon) = mergeCategories(
-            local: local, remote: remote, excluded: const {});
+        final (merged, remoteWon) =
+            mergeCategories(local: local, remote: remote, excluded: const {});
         expect(merged['ai']!['updatedAt'], 100);
         expect(remoteWon.containsKey('ai'), isFalse);
       }
@@ -73,16 +73,16 @@ void main() {
 
     test('remote-only category is taken and applied', () {
       final remote = <String, dynamic>{'ai': cat(5, {})};
-      final (merged, remoteWon) = mergeCategories(
-          local: {}, remote: remote, excluded: const {});
+      final (merged, remoteWon) =
+          mergeCategories(local: {}, remote: remote, excluded: const {});
       expect(merged['ai']!['updatedAt'], 5);
       expect(remoteWon.containsKey('ai'), isTrue);
     });
 
     test('local-only category is kept and not applied', () {
       final local = {'ai': cat(5, {})};
-      final (merged, remoteWon) = mergeCategories(
-          local: local, remote: {}, excluded: const {});
+      final (merged, remoteWon) =
+          mergeCategories(local: local, remote: {}, excluded: const {});
       expect(merged['ai']!['updatedAt'], 5);
       expect(remoteWon.containsKey('ai'), isFalse);
     });
@@ -96,8 +96,8 @@ void main() {
         'ai': cat(50, {}),
         'tts': cat(500, {}),
       };
-      final (merged, remoteWon) = mergeCategories(
-          local: local, remote: remote, excluded: {'tts'});
+      final (merged, remoteWon) =
+          mergeCategories(local: local, remote: remote, excluded: {'tts'});
       expect(merged.containsKey('tts'), isFalse);
       expect(remoteWon.containsKey('tts'), isFalse);
       expect(merged.containsKey('ai'), isTrue);
@@ -109,8 +109,8 @@ void main() {
         'ai': 'not-a-map',
         'tts': {'noUpdatedAt': 'x'},
       };
-      final (merged, remoteWon) = mergeCategories(
-          local: local, remote: remote, excluded: const {});
+      final (merged, remoteWon) =
+          mergeCategories(local: local, remote: remote, excluded: const {});
       expect(merged['ai']!['updatedAt'], 100);
       expect(remoteWon.containsKey('ai'), isFalse);
       expect(merged.containsKey('tts'), isFalse);
@@ -217,8 +217,7 @@ void main() {
       Prefs().prefs.setInt('aiRpm', 10);
       await newManager().sync(SyncDirection.both);
       final first = await remoteDoc();
-      final firstTs =
-          ((first['categories'] as Map)['ai'] as Map)['updatedAt'];
+      final firstTs = ((first['categories'] as Map)['ai'] as Map)['updatedAt'];
       await newManager().sync(SyncDirection.both);
       final second = await remoteDoc();
       final secondTs =
@@ -246,7 +245,8 @@ void main() {
       // Local untouched; remote keeps the newer value (LWW).
       expect(Prefs().prefs.getInt('aiRpm'), 10);
       final after = await remoteDoc();
-      final afterAi = (after['categories'] as Map<String, dynamic>)['ai'] as Map;
+      final afterAi =
+          (after['categories'] as Map<String, dynamic>)['ai'] as Map;
       expect((afterAi['keys'] as Map)['aiRpm']['value'], 99);
     });
 
@@ -268,8 +268,7 @@ void main() {
       expect(ttsKeys['ttsVolume']['value'], 1.0);
     });
 
-    test(
-        'decrypt failure keeps local and remote untouched, reports once',
+    test('decrypt failure keeps local and remote untouched, reports once',
         () async {
       await seedCredentials();
       Prefs().prefs.setInt('aiRpm', 10);

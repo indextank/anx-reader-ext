@@ -1,4 +1,6 @@
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/settings/settings_tile.dart';
 import 'package:flutter/material.dart';
 
@@ -24,7 +26,6 @@ class SettingsSection extends AbstractSettingsSection {
   }
 
   Widget buildSectionBody(BuildContext context) {
-    const scaleFactor = 0.5;
     final tileList = buildTileList();
 
     if (title == null) {
@@ -35,25 +36,17 @@ class SettingsSection extends AbstractSettingsSection {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsetsDirectional.only(
-            top: 24 * scaleFactor,
-            bottom: 10 * scaleFactor,
-            start: 24,
-            end: 24,
-          ),
+          padding: AppSettingsTokens.sectionTitlePadding,
           child: DefaultTextStyle(
-            style: TextStyle(
-              color: Theme.of(context).primaryColor,
-            ),
+            style: (Theme.of(context).textTheme.titleSmall ?? const TextStyle())
+                .copyWith(color: Theme.of(context).colorScheme.primary),
             child: title!,
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: FilledContainer(
-            padding: EdgeInsetsGeometry.zero,
-            child: tileList,
-          ),
+        AppCard(
+          margin: margin ?? AppSpacing.horizontal8,
+          padding: AppSpacing.zero,
+          child: tileList,
         ),
       ],
     );
@@ -61,6 +54,7 @@ class SettingsSection extends AbstractSettingsSection {
 
   Widget buildTileList() {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: tiles,
     );
   }

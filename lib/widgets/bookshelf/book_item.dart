@@ -1,8 +1,12 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/book_sync_status.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/providers/sync_status.dart';
 import 'package:anx_reader/service/book.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/bookshelf/book_bottom_sheet.dart';
 import 'package:anx_reader/widgets/bookshelf/book_cover.dart';
 import 'package:anx_reader/widgets/bookshelf/book_sync_status_icon.dart';
@@ -19,122 +23,110 @@ class BookItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Future<void> handleLongPress(BuildContext context) async {
+    void showBookActions() {
       showModalBottomSheet(
-          context: context,
-          builder: (BuildContext context) {
-            return BookBottomSheet(book: book);
-          });
+        context: context,
+        useSafeArea: true,
+        builder: (context) => BookBottomSheet(book: book),
+      );
     }
 
-    BookSyncStatusEnum bookSyncStatus =
-        ref.watch(syncStatusProvider).whenOrNull(data: (data) {
-              if (data.downloading.contains(book.id)) {
-                return BookSyncStatusEnum.downloading;
-              } else if (data.uploading.contains(book.id)) {
-                return BookSyncStatusEnum.uploading;
-              } else if (data.localOnly.contains(book.id)) {
-                return BookSyncStatusEnum.localOnly;
-              } else if (data.remoteOnly.contains(book.id)) {
-                return BookSyncStatusEnum.remoteOnly;
-              } else if (data.both.contains(book.id)) {
-                return BookSyncStatusEnum.both;
-              } else if (data.nonExistent.contains(book.id)) {
-                return BookSyncStatusEnum.nonExistent;
-              } else {
-                return BookSyncStatusEnum.checking;
-              }
-            }) ??
-            BookSyncStatusEnum.checking;
+    final bookSyncStatus = ref.watch(syncStatusProvider).whenOrNull(
+          data: (data) {
+            if (data.downloading.contains(book.id)) {
+              return BookSyncStatusEnum.downloading;
+            } else if (data.uploading.contains(book.id)) {
+              return BookSyncStatusEnum.uploading;
+            } else if (data.localOnly.contains(book.id)) {
+              return BookSyncStatusEnum.localOnly;
+            } else if (data.remoteOnly.contains(book.id)) {
+              return BookSyncStatusEnum.remoteOnly;
+            } else if (data.both.contains(book.id)) {
+              return BookSyncStatusEnum.both;
+            } else if (data.nonExistent.contains(book.id)) {
+              return BookSyncStatusEnum.nonExistent;
+            } else {
+              return BookSyncStatusEnum.checking;
+            }
+          },
+        ) ??
+        BookSyncStatusEnum.checking;
 
-    return GestureDetector(
-      onTap: () {
-        pushToReadingPage(ref, context, book);
-      },
-      onLongPress: () {
-        handleLongPress(context);
-      },
-      onSecondaryTap: () {
-        handleLongPress(context);
-      },
+    return AppCard(
+      padding: AppSpacing.zero,
+      margin: AppSpacing.zero,
+      borderRadius: AppRadius.border8,
+      semanticLabel: book.title,
+      onTap: () => pushToReadingPage(ref, context, book),
+      onLongPress: showBookActions,
+      onSecondaryTap: showBookActions,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Hero(
               tag: book.coverFullPath,
-              child: Container(
-                decoration: BoxDecoration(
-                  boxShadow: [
-                    if (!Prefs().eInkMode)
-                      BoxShadow(
-                        color: Colors.grey.withAlpha(100),
-                        spreadRadius: 5,
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: BookCover(book: book),
-                    ),
-                  ],
-                ),
+              child: Row(
+                children: [
+                  Expanded(child: BookCover(book: book)),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 5),
+          SizedBox(height: AppSpacing.tokens.s4),
           SizedBox(
-            height: 55,
-            child: Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        book.title,
-                        maxLines: 2,
+            height: AppBookshelfTokens.bookMetadataHeight,
+            child: Padding(
+              padding: AppSpacing.symmetric(horizontal: AppSpacing.tokens.s4),
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          book.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      if (Prefs().webdavStatus)
+                        SizedBox.square(
+                          dimension: AppBookshelfTokens.bookSyncIconSize,
+                          child: BookSyncStatusIcon(
+                            syncStatus: bookSyncStatus,
+                          ),
+                        ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          book.author,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(fontWeight: FontWeight.w300),
+                        ),
+                      ),
+                      Text(
+                        '${(book.readingPercentage * 100).toStringAsFixed(0)}%',
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(fontWeight: FontWeight.w300),
                       ),
-                    ),
-                    if (Prefs().webdavStatus)
-                      SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: BookSyncStatusIcon(
-                          syncStatus: bookSyncStatus,
-                        ),
-                      ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        book.author,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w300,
-                            fontSize: 9,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                    Text(
-                      '${(book.readingPercentage * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w300,
-                          fontSize: 9,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],

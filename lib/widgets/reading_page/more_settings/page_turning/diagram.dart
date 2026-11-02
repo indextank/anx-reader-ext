@@ -1,3 +1,5 @@
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:flutter/material.dart';
 
 enum PageTurningType {
@@ -14,34 +16,31 @@ Widget getPageTurningDiagram(
   bool selected,
   Function() onTap,
 ) {
-  return GestureDetector(
+  Color cellColor(PageTurningType type) => switch (type) {
+        PageTurningType.next => AppReadingTokens.nextPageArea(context),
+        PageTurningType.prev => AppReadingTokens.previousPageArea(context),
+        PageTurningType.menu => AppReadingTokens.menuArea(context),
+        PageTurningType.none => AppReadingTokens.inactiveArea(context),
+      };
+
+  return AppCard(
     onTap: onTap,
-    child: Container(
-      width: 100,
-      padding: const EdgeInsets.all(10.0),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color:
-              selected ? Theme.of(context).colorScheme.primary : Colors.black26,
-          width: 1,
-        ),
-      ),
+    padding: AppReadingTokens.compactPadding,
+    borderRadius: AppReadingTokens.pageTurnRadius,
+    color: selected
+        ? Theme.of(context).colorScheme.secondaryContainer
+        : Theme.of(context).colorScheme.surfaceContainer,
+    child: SizedBox(
+      width: AppReadingTokens.pageTurnDiagramWidth,
+      height: AppReadingTokens.pageTurnDiagramWidth,
       child: GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
         ),
         itemBuilder: (context, index) {
-          return Container(
-            color: types[index] == PageTurningType.next
-                ? Colors.red.withAlpha(100)
-                : types[index] == PageTurningType.prev
-                    ? Colors.blue.withAlpha(100)
-                    : types[index] == PageTurningType.menu
-                        ? Colors.green.withAlpha(100)
-                        : types[index] == PageTurningType.none
-                            ? Colors.grey.withAlpha(100)
-                            : Colors.white,
+          return ColoredBox(
+            color: cellColor(types[index]),
             child: Center(
               child: iconPosition.contains(index)
                   ? Icon(

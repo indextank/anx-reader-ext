@@ -1,5 +1,8 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -39,10 +42,14 @@ class _SearchMenuState extends State<SearchMenu> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
         child: Container(
-          height: widget.axis == Axis.vertical ? double.infinity : 350,
-          width: widget.axis == Axis.vertical ? 300 : double.infinity,
+          height: widget.axis == Axis.vertical
+              ? double.infinity
+              : AppReadingTokens.searchMenuHeight,
+          width: widget.axis == Axis.vertical
+              ? AppReadingTokens.searchMenuVerticalWidth
+              : double.infinity,
           decoration: widget.decoration,
-          padding: const EdgeInsets.all(8),
+          padding: AppReadingTokens.menuPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -52,18 +59,16 @@ class _SearchMenuState extends State<SearchMenu> {
                   Expanded(
                     child: Text(
                       '${L10n.of(context).contextMenuSearch}: ${widget.query}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      maxLines: 1,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.refresh, size: 18),
+                  AppIconButton(
+                    icon: Icons.refresh,
+                    tooltip: L10n.of(context).commonRefresh,
                     onPressed: () {
                       _webViewController?.loadUrl(
                         urlRequest: URLRequest(url: WebUri(_url)),
@@ -72,10 +77,9 @@ class _SearchMenuState extends State<SearchMenu> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: AppRadius.border8,
                   child: InAppWebView(
                     initialUrlRequest: URLRequest(url: WebUri(_url)),
                     initialSettings: InAppWebViewSettings(

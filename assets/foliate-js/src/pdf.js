@@ -1,5 +1,7 @@
 /* global pdfjsLib */
 
+import { getTokens, tokensToRootCSS } from './anx-tokens.js'
+
 // https://github.com/mozilla/pdf.js/blob/f04967017f22e46d70d11468dd928b4cdc2f6ea1/web/text_layer_builder.css
 const textLayerBuilderCSS = `
 /* Copyright 2014 Mozilla Foundation
@@ -63,7 +65,7 @@ const textLayerBuilderCSS = `
   margin: -1px;
   padding: 1px;
   background-color: var(--highlight-bg-color);
-  border-radius: 4px;
+  border-radius: var(--anx-chrome-radius-sm, 4px);
 }
 
 .textLayer .highlight.appended {
@@ -71,11 +73,11 @@ const textLayerBuilderCSS = `
 }
 
 .textLayer .highlight.begin {
-  border-radius: 4px 0 0 4px;
+  border-radius: var(--anx-chrome-radius-sm, 4px) 0 0 var(--anx-chrome-radius-sm, 4px);
 }
 
 .textLayer .highlight.end {
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--anx-chrome-radius-sm, 4px) var(--anx-chrome-radius-sm, 4px) 0;
 }
 
 .textLayer .highlight.middle {
@@ -315,14 +317,14 @@ const annotationLayerBuilderCSS = `
 .annotationLayer .textWidgetAnnotation :is(input, textarea):hover,
 .annotationLayer .choiceWidgetAnnotation select:hover,
 .annotationLayer .buttonWidgetAnnotation.checkBox input:hover {
-  border-radius: 2px;
+  border-radius: var(--anx-chrome-radius-xs, 2px);
 }
 
 .annotationLayer .textWidgetAnnotation :is(input, textarea):focus,
 .annotationLayer .choiceWidgetAnnotation select:focus {
   background: none;
   border: 2px solid var(--input-focus-border-color);
-  border-radius: 2px;
+  border-radius: var(--anx-chrome-radius-xs, 2px);
   outline: var(--input-focus-outline);
 }
 
@@ -333,7 +335,7 @@ const annotationLayerBuilderCSS = `
 
 .annotationLayer .buttonWidgetAnnotation.checkBox :focus {
   border: 2px solid var(--input-focus-border-color);
-  border-radius: 2px;
+  border-radius: var(--anx-chrome-radius-xs, 2px);
   outline: var(--input-focus-outline);
 }
 
@@ -545,6 +547,7 @@ const renderPage = async (page, getImageBlob) => {
         :root {
             --scale-factor: ${scale};
         }
+        ${tokensToRootCSS(getTokens())}
         html, body {
             margin: 0;
             padding: 0;

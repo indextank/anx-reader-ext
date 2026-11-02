@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/dao/book.dart';
 import 'package:anx_reader/dao/book_note.dart';
 import 'package:anx_reader/enums/page_turn_mode.dart';
@@ -20,6 +23,7 @@ import 'package:anx_reader/models/reading_rules.dart';
 import 'package:anx_reader/models/search_result_model.dart';
 import 'package:anx_reader/models/toc_item.dart';
 import 'package:anx_reader/page/book_player/image_viewer.dart';
+import 'package:anx_reader/page/book_player/reader_tokens_bridge.dart';
 import 'package:anx_reader/page/home_page.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/providers/book_list.dart';
@@ -224,6 +228,7 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
         useBookStyles: ${Prefs().useBookStyles},
         headingFontSize: ${style.headingFontSize},
         codeHighlightTheme: '${Prefs().codeHighlightTheme.code}',
+        ${readerTokensJs()},
       })
       ''');
     });
@@ -552,8 +557,8 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
       context: context,
       builder: (dialogContext) {
         final l10n = L10n.of(dialogContext);
-        return AlertDialog(
-          title: Text(l10n.readingPageOpenExternalLinkTitle),
+        return AppDialog(
+          title: l10n.readingPageOpenExternalLinkTitle,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -564,13 +569,14 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
             ],
           ),
           actions: [
-            TextButton(
+            AppButton(
+              variant: AppButtonVariant.text,
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(l10n.commonCancel),
+              label: l10n.commonCancel,
             ),
-            TextButton(
+            AppButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(l10n.readingPageOpenExternalLinkAction),
+              label: l10n.readingPageOpenExternalLinkAction,
             ),
           ],
         );
@@ -1045,77 +1051,59 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
 
   Widget _buildHistoryCapsule() {
     final l10n = L10n.of(context);
-    final buttonColor = Color(int.parse('0x$textColor')).withAlpha(200);
-
-    // Common button style for all history navigation buttons
-    final buttonStyle = TextButton.styleFrom(
-      minimumSize: const Size(0, 32),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(32),
-      ),
-    );
-
-    // Helper method to create history navigation buttons
     Widget createHistoryButton(
-        IconData icon, String label, VoidCallback onPressed) {
-      return TextButton.icon(
-        icon: Icon(icon, size: 18, color: buttonColor),
-        label: Text(label, style: TextStyle(color: buttonColor, fontSize: 14)),
+      IconData icon,
+      String label,
+      VoidCallback onPressed,
+    ) {
+      return AppButton(
+        icon: icon,
+        label: label,
+        variant: AppButtonVariant.text,
+        size: AppButtonSize.small,
         onPressed: onPressed,
-        style: buttonStyle,
       );
     }
 
-    // Build buttons list
-    final List<Widget> buttons = [];
-
-    if (canGoBack) {
-      buttons.add(createHistoryButton(
-        Icons.arrow_back,
-        l10n.historyBack,
-        backHistory,
-      ));
-    }
-
-    buttons.add(createHistoryButton(
-      Icons.close,
-      l10n.historyClose,
-      () => setState(() => showHistory = false),
-    ));
-
-    if (canGoForward) {
-      buttons.add(createHistoryButton(
-        Icons.arrow_forward,
-        l10n.historyForward,
-        forwardHistory,
-      ));
-    }
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 40),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-            child: Container(
-              height: 32,
-              decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainer
-                    .withAlpha(123),
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline,
-                  width: 0.5,
+    final buttons = <Widget>[
+      if (canGoBack)
+        createHistoryButton(Icons.arrow_back, l10n.historyBack, backHistory),
+      createHistoryButton(
+        Icons.close,
+        l10n.historyClose,
+        () => setState(() => showHistory = false),
+      ),
+      if (canGoForward)
+        createHistoryButton(
+          Icons.arrow_forward,
+          l10n.historyForward,
+          forwardHistory,
+        ),
+    ];
+    return AppSafeArea(
+      top: false,
+      avoidViewInsets: false,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: AppReadingTokens.historyPadding,
+          child: ClipRRect(
+            borderRadius: AppReadingTokens.historyRadius,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainer
+                      .withAlpha(123),
+                  borderRadius: AppReadingTokens.historyRadius,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline,
+                    width: 0.5,
+                  ),
                 ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: buttons,
+                child: Wrap(children: buttons),
               ),
             ),
           ),
@@ -1162,8 +1150,10 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
                 alignment: Alignment.center,
                 children: [
                   Padding(
-                    padding: EdgeInsets.fromLTRB(
-                        0, (textStyle.fontSize ?? 10) * 0.08, 2, 0),
+                    padding: AppSpacing.only(
+                      top: (textStyle.fontSize ?? 10) * 0.08,
+                      right: 2,
+                    ),
                     child: Text('${snapshot.data}', style: batteryTextStyle),
                   ),
                   Icon(
@@ -1232,7 +1222,7 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(
+          padding: AppSpacing.only(
             top: readingInfo.header.verticalMargin,
             left: readingInfo.header.leftMargin,
             right: readingInfo.header.rightMargin,
@@ -1244,7 +1234,7 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
         ),
         const Spacer(),
         Padding(
-          padding: EdgeInsets.only(
+          padding: AppSpacing.only(
             bottom: readingInfo.footer.verticalMargin,
             left: readingInfo.footer.leftMargin,
             right: readingInfo.footer.rightMargin,

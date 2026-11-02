@@ -1,7 +1,9 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/providers/reading_completion_provider.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -29,10 +31,10 @@ class CompletionProgressTile extends StatisticsDashboardTileBase {
 
   @override
   Widget buildContent(BuildContext context, WidgetRef ref) {
-    final asyncValue = ref.watch(readingCompletionProvider);
-    return AsyncSkeletonWrapper<List<Book>>(
-      asyncValue: asyncValue,
+    return DashboardAsyncValue<List<Book>>(
+      value: ref.watch(readingCompletionProvider),
       mock: [Book.mock()],
+      onRetry: () async => ref.invalidate(readingCompletionProvider),
       builder: (books, _) => _CompletionContent(books: books),
     );
   }
@@ -51,53 +53,47 @@ class _CompletionContent extends StatelessWidget {
         ? 0.0
         : books.fold<double>(0, (acc, book) => acc + book.readingPercentage) /
             books.length;
-
     return Row(
       children: [
         _CompletionRing(percentage: average),
-        const SizedBox(width: 12),
+        const SizedBox(width: AppStatisticsTokens.completionSpacing),
         Expanded(
           child: books.isEmpty
-              ? Center(
-                  child: Text(
-                    l10n.tileCompletionProgressEmptyState,
-                    style: theme.textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
+              ? AppEmptyState(
+                  compact: true,
+                  title: l10n.tileCompletionProgressEmptyState,
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: SingleChildScrollView(
-                        child: ListView.separated(
-                          padding: EdgeInsets.zero,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: books.length,
-                          itemBuilder: (context, index) {
-                            final book = books[index];
-                            final percent = (book.readingPercentage * 100)
-                                .clamp(0, 100)
-                                .toStringAsFixed(0);
-                            return Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    book.title,
-                                    style: theme.textTheme.bodyMedium,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                      child: ListView.separated(
+                        itemCount: books.length,
+                        itemBuilder: (context, index) {
+                          final book = books[index];
+                          final percent = (book.readingPercentage * 100)
+                              .clamp(0, 100)
+                              .toStringAsFixed(0);
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  book.title,
+                                  style: theme.textTheme.bodyMedium,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                Text(
-                                  '$percent%',
-                                  style: theme.textTheme.titleMedium,
-                                ),
-                              ],
-                            );
-                          },
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 12, thickness: 0.4),
+                              ),
+                              Text(
+                                '$percent%',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                            ],
+                          );
+                        },
+                        separatorBuilder: (_, __) => const Divider(
+                          height: AppStatisticsTokens.completionSpacing,
+                          thickness:
+                              AppStatisticsTokens.completionDividerThickness,
                         ),
                       ),
                     ),
@@ -120,19 +116,19 @@ class _CompletionRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final normalized = percentage.clamp(0, 1);
+    final normalized = percentage.clamp(0, 1).toDouble();
     final theme = Theme.of(context);
     return SizedBox(
-      width: 120,
-      height: 120,
+      width: AppStatisticsTokens.completionRingSize,
+      height: AppStatisticsTokens.completionRingSize,
       child: Stack(
         alignment: Alignment.center,
         children: [
           SizedBox.expand(
             child: CircularProgressIndicator(
-              value: normalized as double,
-              strokeWidth: 10,
-              color: Theme.of(context).colorScheme.primary,
+              value: normalized,
+              strokeWidth: AppStatisticsTokens.completionRingStroke,
+              color: theme.colorScheme.primary,
             ),
           ),
           Column(
@@ -145,6 +141,7 @@ class _CompletionRing extends StatelessWidget {
               Text(
                 L10n.of(context).tileCompletionProgressAverageLabel,
                 style: theme.textTheme.labelSmall,
+                textAlign: TextAlign.center,
               ),
             ],
           ),

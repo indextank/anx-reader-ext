@@ -1,16 +1,19 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/bookshelf_folder_style.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/models/tb_group.dart';
 import 'package:anx_reader/providers/book_list.dart';
 import 'package:anx_reader/providers/tb_groups.dart';
+import 'package:anx_reader/providers/ui_settings.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/bookshelf/book_cover.dart';
 import 'package:anx_reader/widgets/bookshelf/book_item.dart';
 import 'package:anx_reader/widgets/bookshelf/book_opened_folder.dart';
-import 'package:anx_reader/widgets/common/container/outlined_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
 class BookFolder extends ConsumerStatefulWidget {
   const BookFolder({
@@ -29,7 +32,9 @@ class _BookFolderState extends ConsumerState<BookFolder> {
 
   @override
   Widget build(BuildContext context) {
-    final folderStyle = context.watch<Prefs>().bookshelfFolderStyle;
+    final folderStyle = ref.watch(
+      uiSettingsProvider.select((settings) => settings.bookshelfFolderStyle),
+    );
 
     void onAcceptBook(DragTargetDetails<Book> details) {
       int targetGroupId;
@@ -48,8 +53,9 @@ class _BookFolderState extends ConsumerState<BookFolder> {
           ? ScaleTransition(
               scale: Tween<double>(begin: 1.0, end: 1.1).animate(
                 CurvedAnimation(
-                    parent: const AlwaysStoppedAnimation(0.5),
-                    curve: Curves.easeInOut),
+                  parent: const AlwaysStoppedAnimation(0.5),
+                  curve: Curves.easeInOut,
+                ),
               ),
               child: child,
             )
@@ -57,9 +63,7 @@ class _BookFolderState extends ConsumerState<BookFolder> {
     }
 
     bool onWillAcceptBook(DragTargetDetails<Book>? details) {
-      if (details?.data.id == widget.books.first.id) {
-        return false;
-      }
+      if (details?.data.id == widget.books.first.id) return false;
       willAcceptBook = details?.data != null;
       return details?.data != null;
     }
@@ -78,36 +82,36 @@ class _BookFolderState extends ConsumerState<BookFolder> {
       );
     }
 
-    String groupName = ref.watch(groupDaoProvider).whenOrNull(
+    final groupName = ref.watch(groupDaoProvider).whenOrNull(
               data: (groups) => groups
-                  .firstWhere((group) => group.id == widget.books.first.groupId,
-                      orElse: () => TbGroup(id: -1, name: "..."))
+                  .firstWhere(
+                    (group) => group.id == widget.books.first.groupId,
+                    orElse: () => TbGroup(id: -1, name: '...'),
+                  )
                   .name,
             ) ??
         '???';
 
     final singleBookTarget = DragTarget<Book>(
-      onAcceptWithDetails: (book) => onAcceptBook(book),
-      onWillAcceptWithDetails: (data) => onWillAcceptBook(data),
-      onLeave: (data) => onLeaveBook(data),
+      onAcceptWithDetails: onAcceptBook,
+      onWillAcceptWithDetails: onWillAcceptBook,
+      onLeave: onLeaveBook,
       builder: (context, candidateData, rejectedData) {
-        return scaleTransition(
-          BookItem(book: widget.books[0]),
-        );
+        return scaleTransition(BookItem(book: widget.books[0]));
       },
     );
 
     final groupTarget = DragTarget<Book>(
-      onAcceptWithDetails: (book) => onAcceptBook(book),
-      onWillAcceptWithDetails: (data) => onWillAcceptBook(data),
-      onLeave: (data) => onLeaveBook(data),
+      onAcceptWithDetails: onAcceptBook,
+      onWillAcceptWithDetails: onWillAcceptBook,
+      onLeave: onLeaveBook,
       builder: (context, candidateData, rejectedData) {
-        int count = -1;
+        var count = -1;
 
         Widget buildStackedPreview() {
           return Stack(
             children: [
-              ...(widget.books.take(4).toList()).map((book) {
+              ...widget.books.take(4).map((book) {
                 count++;
                 return Positioned.fill(
                   right: 0,
@@ -116,10 +120,11 @@ class _BookFolderState extends ConsumerState<BookFolder> {
                     scale: 1 - (count * 0.08),
                     child: Container(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: AppBookshelfTokens.coverBorderRadius(
+                          AppBookshelfTokens.folderRadius,
+                        ),
                         border: Border.all(
                           color: Theme.of(context).colorScheme.outlineVariant,
-                          width: 1,
                         ),
                       ),
                       child: BookCover(book: book),
@@ -133,62 +138,68 @@ class _BookFolderState extends ConsumerState<BookFolder> {
 
         Widget buildGridPreview() {
           final previewBooks = widget.books.take(4).toList();
-          return OutlinedContainer(
-            color: Colors.transparent,
-            outlineColor: Theme.of(context).colorScheme.outlineVariant,
-            padding: const EdgeInsets.all(6),
-            radius: 10,
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.transparent,
+              borderRadius: AppBookshelfTokens.coverBorderRadius(
+                AppBookshelfTokens.folderRadius,
+              ),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            padding: AppBookshelfTokens.folderPreviewPadding,
             child: GridView.builder(
               physics: const NeverScrollableScrollPhysics(),
               shrinkWrap: true,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                childAspectRatio: 1 / 1.6,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 6,
+                childAspectRatio: AppBookshelfTokens.folderPreviewAspectRatio,
+                mainAxisSpacing: AppBookshelfTokens.folderPreviewMainSpacing,
+                crossAxisSpacing: AppBookshelfTokens.folderPreviewCrossSpacing,
               ),
               itemCount: 4,
               itemBuilder: (context, index) {
                 if (index >= previewBooks.length) {
-                  return SizedBox.shrink();
+                  return const SizedBox.shrink();
                 }
-                final book = previewBooks[index];
-                return BookCover(book: book);
+                return BookCover(book: previewBooks[index]);
               },
             ),
           );
         }
 
-        Widget folderPreview;
-        switch (folderStyle) {
-          case BookshelfFolderStyle.grid2x2:
-            folderPreview = buildGridPreview();
-            break;
-          case BookshelfFolderStyle.stacked:
-            folderPreview = buildStackedPreview();
-        }
+        final folderPreview = switch (folderStyle) {
+          BookshelfFolderStyle.grid2x2 => buildGridPreview(),
+          BookshelfFolderStyle.stacked => buildStackedPreview(),
+        };
 
         return scaleTransition(
-          Column(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () => openFolder(groupName),
-                  child: folderPreview,
-                ),
-              ),
-              SizedBox(
-                height: 50,
-                child: Text(
-                  groupName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
+          AppCard(
+            margin: AppSpacing.zero,
+            padding: AppSpacing.all4,
+            semanticLabel: groupName,
+            onTap: () => openFolder(groupName),
+            child: Column(
+              children: [
+                Expanded(child: folderPreview),
+                SizedBox(
+                  height: AppBookshelfTokens.folderNameHeight,
+                  child: Center(
+                    child: Text(
+                      groupName,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

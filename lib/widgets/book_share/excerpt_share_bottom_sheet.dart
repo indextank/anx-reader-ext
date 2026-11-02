@@ -6,6 +6,8 @@ import 'package:anx_reader/enums/excerpt_share_template.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/font_model.dart';
 import 'package:anx_reader/providers/font_list.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/content_style_tokens.dart';
 import 'package:anx_reader/utils/get_path/get_temp_dir.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/utils/save_img.dart';
@@ -44,6 +46,9 @@ class _ExcerptShareBottomSheetState
     extends ConsumerState<ExcerptShareBottomSheet> {
   final GlobalKey _cardKey = GlobalKey();
 
+  /// 与传给 [ExcerptShareCard] 的是同一组令牌（导出图样式与 app 主题无关）。
+  static const _tokens = ShareStyleTokens();
+
   // Color _textColor = Colors.black;
   // Color _backgroundColor = Colors.white;
   // String? _backgroundImage;
@@ -68,28 +73,17 @@ class _ExcerptShareBottomSheetState
     Prefs().excerptShareBgimgIndex = index;
   }
 
-  Color get _textColor =>
-      _colorSchemes[Prefs().excerptShareColorIndex]['text']!;
+  SharePalette get _palette =>
+      ShareStyleTokens.palettes[Prefs().excerptShareColorIndex];
 
-  Color get _backgroundColor =>
-      _colorSchemes[Prefs().excerptShareColorIndex]['background']!;
+  Color get _textColor => _palette.text;
+
+  Color get _backgroundColor => _palette.background;
 
   String? get _backgroundImage =>
       _backgroundImages[Prefs().excerptShareBgimgIndex];
 
   // final List<String> _fonts = ['default', 'serif', 'sans-serif', 'monospace'];
-
-  final List<Map<String, Color>> _colorSchemes = [
-    {'text': Colors.black, 'background': Colors.white},
-    {
-      'text': const ui.Color.fromARGB(255, 246, 217, 149),
-      'background': const ui.Color.fromARGB(255, 48, 44, 28)
-    },
-    {'text': Colors.black, 'background': Colors.amber.shade100},
-    {'text': Colors.white, 'background': Colors.blueGrey.shade800},
-    {'text': Colors.black, 'background': Colors.pink.shade50},
-    {'text': Colors.white, 'background': Colors.indigo.shade900},
-  ];
 
   final List<String?> _backgroundImages = [
     null,
@@ -132,24 +126,23 @@ class _ExcerptShareBottomSheetState
   }
 
   Future<void> _saveAsImage() async {
-    showLoading();
-    final imageData = await _captureCard();
-    SmartDialog.dismiss();
+    final imageData = await runWithLoading(_captureCard);
     if (imageData == null) return;
 
     final fileName = 'AnxReader_${widget.bookTitle.replaceAll(' ', '_')}';
     await SaveImg.downloadImg(imageData, 'png', fileName);
   }
 
-  TextStyle _getTitleStyle(BuildContext context) {
-    return TextStyle(
-      fontSize: 13,
-      color: Theme.of(context).colorScheme.primary,
+  TextStyle? _getTitleStyle(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.primary,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.85,
       child: Column(
@@ -160,7 +153,7 @@ class _ExcerptShareBottomSheetState
                 minHeight: MediaQuery.of(context).size.height * 0.3,
               ),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
+                padding: AppSpacing.all16,
                 child: FittedBox(
                   fit: BoxFit.contain,
                   child: ExcerptShareCard(
@@ -174,6 +167,7 @@ class _ExcerptShareBottomSheetState
                     textColor: _textColor,
                     backgroundColor: _backgroundColor,
                     backgroundImage: _backgroundImage,
+                    tokens: _tokens,
                   ),
                 ),
               ),
@@ -186,7 +180,7 @@ class _ExcerptShareBottomSheetState
             ),
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: AppSpacing.all16,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -203,7 +197,8 @@ class _ExcerptShareBottomSheetState
                           final template =
                               ExcerptShareTemplateEnum.values[index];
                           return Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
+                            padding:
+                                AppSpacing.only(right: _tokens.listSpacing),
                             child: ChoiceChip(
                               label: Text(template.getL10n(context)),
                               selected: _template == template,
@@ -233,7 +228,8 @@ class _ExcerptShareBottomSheetState
                               itemBuilder: (context, index) {
                                 final font = data[index];
                                 return Padding(
-                                  padding: const EdgeInsets.only(right: 8.0),
+                                  padding: AppSpacing.only(
+                                      right: _tokens.listSpacing),
                                   child: ChoiceChip(
                                     label: Text(font.label),
                                     selected: _font == font,
@@ -265,11 +261,14 @@ class _ExcerptShareBottomSheetState
                       height: 50,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
-                        itemCount: _colorSchemes.length,
+                        itemCount: ShareStyleTokens.palettes.length,
                         itemBuilder: (context, index) {
-                          final scheme = _colorSchemes[index];
+                          final palette = ShareStyleTokens.palettes[index];
+                          final selected = _textColor == palette.text &&
+                              _backgroundColor == palette.background;
                           return Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
+                            padding:
+                                AppSpacing.only(right: _tokens.listSpacing),
                             child: GestureDetector(
                               onTap: () {
                                 setState(() {
@@ -280,26 +279,22 @@ class _ExcerptShareBottomSheetState
                                 width: 45,
                                 height: 45,
                                 decoration: BoxDecoration(
-                                  color: scheme['background'],
+                                  color: palette.background,
                                   border: Border.all(
-                                    color: (_textColor == scheme['text'] &&
-                                            _backgroundColor ==
-                                                scheme['background'])
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.grey,
-                                    width: (_textColor == scheme['text'] &&
-                                            _backgroundColor ==
-                                                scheme['background'])
-                                        ? 2
-                                        : 1,
+                                    color: selected
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurfaceVariant,
+                                    width: selected ? 2 : 1,
                                   ),
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(_tokens.pillRadius),
+                                  ),
                                 ),
                                 child: Center(
                                   child: Text(
                                     'Aa',
                                     style: TextStyle(
-                                      color: scheme['text'],
+                                      color: palette.text,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -323,7 +318,8 @@ class _ExcerptShareBottomSheetState
                         itemBuilder: (context, index) {
                           final bgImage = _backgroundImages[index];
                           return Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
+                            padding:
+                                AppSpacing.only(right: _tokens.listSpacing),
                             child: GestureDetector(
                               onTap: () {
                                 setState(() {
@@ -335,7 +331,8 @@ class _ExcerptShareBottomSheetState
                                 height: 60,
                                 decoration: BoxDecoration(
                                   color: bgImage == null
-                                      ? Colors.grey.withAlpha(100)
+                                      ? colorScheme.onSurfaceVariant
+                                          .withAlpha(100)
                                       : null,
                                   image: bgImage != null
                                       ? DecorationImage(
@@ -345,11 +342,13 @@ class _ExcerptShareBottomSheetState
                                       : null,
                                   border: Border.all(
                                     color: _backgroundImage == bgImage
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.grey,
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurfaceVariant,
                                     width: _backgroundImage == bgImage ? 2 : 1,
                                   ),
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(_tokens.pillRadius),
+                                  ),
                                 ),
                                 child: bgImage == null
                                     ? const Icon(Icons.block)

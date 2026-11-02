@@ -1,6 +1,9 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/providers/statictics_summary_value.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -24,49 +27,53 @@ class LibraryTotalsTile extends StatisticsDashboardTileBase {
   }
 
   @override
-  Widget buildContent(
-    BuildContext context,
-    WidgetRef ref,
-  ) {
+  Widget buildContent(BuildContext context, WidgetRef ref) {
     final l10n = L10n.of(context);
-
-    return AsyncSkeletonWrapper<List>(
-        asyncValue: combineAsyncValues([
-          ref.watch(StaticticsSummaryValueProvider(StatisticType.totalBooks)),
-          ref.watch(StaticticsSummaryValueProvider(StatisticType.totalDates)),
-          ref.watch(StaticticsSummaryValueProvider(StatisticType.totalNotes)),
-        ]),
-        mock: [0, 0, 0],
-        builder: (data, _) {
-          final booksRead = data[0] as int;
-          final daysOfReading = data[1] as int;
-          final notesCount = data[2] as int;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: _NumberTile(
-                  icon: Icons.auto_stories,
-                  label: l10n.statisticBooksRead(booksRead),
-                ),
+    final booksProvider =
+        StaticticsSummaryValueProvider(StatisticType.totalBooks);
+    final datesProvider =
+        StaticticsSummaryValueProvider(StatisticType.totalDates);
+    final notesProvider =
+        StaticticsSummaryValueProvider(StatisticType.totalNotes);
+    return DashboardAsyncValue<List<dynamic>>(
+      value: combineAsyncValues([
+        ref.watch(booksProvider),
+        ref.watch(datesProvider),
+        ref.watch(notesProvider),
+      ]),
+      mock: const [0, 0, 0],
+      onRetry: () async {
+        ref.invalidate(booksProvider);
+        ref.invalidate(datesProvider);
+        ref.invalidate(notesProvider);
+      },
+      builder: (data, _) {
+        return Row(
+          children: [
+            Expanded(
+              child: _NumberTile(
+                icon: Icons.auto_stories,
+                label: l10n.statisticBooksRead(data[0] as int),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _NumberTile(
-                  icon: Icons.calendar_today,
-                  label: l10n.statisticDaysOfReading(daysOfReading),
-                ),
+            ),
+            const SizedBox(width: AppStatisticsTokens.librarySpacing),
+            Expanded(
+              child: _NumberTile(
+                icon: Icons.calendar_today,
+                label: l10n.statisticDaysOfReading(data[1] as int),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _NumberTile(
-                  icon: Icons.note_alt_outlined,
-                  label: l10n.statisticNotes(notesCount),
-                ),
+            ),
+            const SizedBox(width: AppStatisticsTokens.librarySpacing),
+            Expanded(
+              child: _NumberTile(
+                icon: Icons.note_alt_outlined,
+                label: l10n.statisticNotes(data[2] as int),
               ),
-            ],
-          );
-        });
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -79,19 +86,20 @@ class _NumberTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: AppStatisticsTokens.libraryTilePadding,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppRadius.border12,
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 30),
-          const SizedBox(height: 2),
+          Icon(icon, size: AppStatisticsTokens.libraryIconSize),
+          const SizedBox(height: AppStatisticsTokens.libraryLabelSpacing),
           Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
           ),
         ],
       ),

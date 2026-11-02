@@ -1,21 +1,75 @@
+import 'dart:async';
+
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
+import 'package:anx_reader/page/book_player/epub_player.dart';
+import 'package:anx_reader/page/settings_page/narrate.dart';
 import 'package:anx_reader/providers/tts_reading_position_provider.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
 import 'package:anx_reader/service/tts/online_tts.dart';
 import 'package:anx_reader/service/tts/tts_factory.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/service/tts/tts_service.dart' as tts_svc;
-import 'package:anx_reader/utils/toast/common.dart';
-import 'package:anx_reader/widgets/reading_page/widget_title.dart';
-import 'package:anx_reader/page/book_player/epub_player.dart';
-import 'package:anx_reader/page/settings_page/narrate.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/more_settings.dart';
+import 'package:anx_reader/widgets/reading_page/widget_title.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
-import 'dart:async';
+
+class TtsSessionGate extends StatefulWidget {
+  const TtsSessionGate({
+    super.key,
+    required this.initialize,
+    required this.builder,
+  });
+
+  final Future<void> Function() initialize;
+  final WidgetBuilder builder;
+
+  @override
+  State<TtsSessionGate> createState() => _TtsSessionGateState();
+}
+
+class _TtsSessionGateState extends State<TtsSessionGate> {
+  bool _loading = true;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    if (!_loading) setState(() => _loading = true);
+    setState(() => _failed = false);
+    try {
+      await widget.initialize();
+      if (mounted) setState(() => _loading = false);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _failed = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const AppSkeleton(
+        child: AppCard(child: SizedBox(height: 240)),
+      );
+    }
+    if (_failed) return AppErrorState(onRetry: _initialize);
+    return widget.builder(context);
+  }
+}
 
 class TtsWidget extends ConsumerStatefulWidget {
   const TtsWidget({super.key, required this.epubPlayerKey});
@@ -27,20 +81,20 @@ class TtsWidget extends ConsumerStatefulWidget {
 }
 
 class _TtsWidgetState extends ConsumerState<TtsWidget> {
-  double volume = TtsHandler().volume;
-  double pitch = TtsHandler().pitch;
-  double rate = TtsHandler().rate;
   double stopSeconds = 0;
   Timer? stopTimer;
   OnlineTts? _onlineTts;
+  bool _navigationPending = false;
+  Future<void> Function()? _failedNavigation;
 
   void _onSegmentsSkipped() {
     final tts = _onlineTts;
     if (tts == null || !mounted) return;
-    // Notify once per speak run (on the first skipped segment) so the
-    // user knows text was skipped without spamming toasts.
     if (tts.skippedSegmentsNotifier.value != 1) return;
-    AnxToast.show(L10n.of(context).ttsSegmentsSkipped(1));
+    AppFeedback.showInfo(
+      context,
+      message: L10n.of(context).ttsSegmentsSkipped(1),
+    );
   }
 
   void _onReadingPositionChanged() {
@@ -60,283 +114,262 @@ class _TtsWidgetState extends ConsumerState<TtsWidget> {
       current.skippedSegmentsNotifier.addListener(_onSegmentsSkipped);
       current.readingPositionNotifier.addListener(_onReadingPositionChanged);
     }
-    if (TtsHandler().ttsStateNotifier.value != TtsStateEnum.playing) {
-      TtsHandler()
-          .init(
-        widget.epubPlayerKey.currentState!.initTts,
-        widget.epubPlayerKey.currentState!.ttsNext,
-        widget.epubPlayerKey.currentState!.ttsPrev,
-      )
-          .then((value) {
-        audioHandler.play();
-      });
-    }
-
     super.initState();
   }
 
   @override
   void dispose() {
+    stopTimer?.cancel();
     _onlineTts?.skippedSegmentsNotifier.removeListener(_onSegmentsSkipped);
-    _onlineTts?.readingPositionNotifier.removeListener(_onReadingPositionChanged);
+    _onlineTts?.readingPositionNotifier
+        .removeListener(_onReadingPositionChanged);
     super.dispose();
+  }
+
+  Future<void> _initializeSession() async {
+    if (TtsHandler().ttsStateNotifier.value != TtsStateEnum.playing) {
+      await TtsHandler().init(
+        widget.epubPlayerKey.currentState!.initTts,
+        widget.epubPlayerKey.currentState!.ttsNext,
+        widget.epubPlayerKey.currentState!.ttsPrev,
+      );
+      audioHandler.play();
+    }
+  }
+
+  Future<void> _runNavigation(Future<void> Function() action) async {
+    if (_navigationPending) return;
+    setState(() {
+      _navigationPending = true;
+      _failedNavigation = null;
+    });
+    try {
+      await action();
+    } catch (_) {
+      if (mounted) setState(() => _failedNavigation = action);
+    } finally {
+      if (mounted) setState(() => _navigationPending = false);
+    }
   }
 
   String _getTtsServiceLabel(BuildContext context) {
     final serviceId = Prefs().ttsService;
-    if (serviceId == 'system') {
-      return L10n.of(context).ttsTypeSystem;
-    }
+    if (serviceId == 'system') return L10n.of(context).ttsTypeSystem;
     return tts_svc.getTtsService(serviceId).getLabel(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<TtsStateEnum>(
-      valueListenable: TtsHandler().ttsStateNotifier,
-      builder: (context, ttsState, child) {
-        Widget volume() {
-          return Row(
-            children: [
-              Text(L10n.of(context).ttsVolume),
-              Expanded(
-                child: Slider(
-                  value: TtsHandler().volume,
-                  onChanged: (newVolume) {
-                    setState(() {
-                      TtsHandler().volume = newVolume;
-                    });
-                  },
-                  min: 0.0,
-                  max: 1.0,
-                  divisions: 10,
-                  label: TtsHandler().volume.toStringAsFixed(1),
-                ),
-              ),
-            ],
-          );
-        }
-
-        Widget pitch() {
-          return Row(
-            children: [
-              Text(L10n.of(context).ttsPitch),
-              Expanded(
-                child: Slider(
-                  value: TtsHandler().pitch,
-                  onChanged: (newPitch) {
-                    setState(() {
-                      TtsHandler().pitch = newPitch;
-                    });
-                  },
-                  min: 0.5,
-                  max: 2.0,
-                  divisions: 15,
-                  label: TtsHandler().pitch.toStringAsFixed(1),
-                ),
-              ),
-            ],
-          );
-        }
-
-        Widget rate() {
-          return Row(
-            children: [
-              Text(L10n.of(context).ttsRate),
-              Expanded(
-                child: Slider(
-                  value: TtsHandler().rate,
-                  onChanged: (newRate) {
-                    setState(() {
-                      TtsHandler().rate = newRate;
-                    });
-                  },
-                  min: 0.0,
-                  max: 2.0,
-                  divisions: 10,
-                  label: TtsHandler().rate.toStringAsFixed(1),
-                ),
-              ),
-            ],
-          );
-        }
-
-        Widget sliders() {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20, 5, 20, 0),
-            child: Column(
+    return TtsSessionGate(
+      initialize: _initializeSession,
+      builder: (context) => ValueListenableBuilder<TtsStateEnum>(
+        valueListenable: TtsHandler().ttsStateNotifier,
+        builder: (context, ttsState, child) {
+          Widget slider({
+            required String label,
+            required double value,
+            required double min,
+            required double max,
+            required int divisions,
+            required ValueChanged<double> onChanged,
+          }) {
+            return Row(
               children: [
-                volume(),
-                pitch(),
-                rate(),
-                Row(
-                  children: [
-                    Text(L10n.of(context).ttsType),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () {
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          builder: (context) {
-                            return FractionallySizedBox(
-                              heightFactor: 0.7,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 16.0),
-                                child: const NarrateSettings(),
-                              ),
-                            );
-                          },
-                        ).then((_) {
-                          // Refresh state if needed when sheet closes
-                          setState(() {});
-                        });
-                      },
-                      child: Row(
-                        children: [
-                          Text(
-                            _getTtsServiceLabel(context),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            size: 14,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        }
-
-        Widget buttons() {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              IconButton(
-                onPressed: () async {
-                  audioHandler.stop();
-                  await widget.epubPlayerKey.currentState!.ttsPrevSection();
-                  TtsHandler().playPrevious();
-                },
-                icon: const Icon(EvaIcons.arrowhead_left),
-              ),
-              IconButton(
-                onPressed: () {
-                  TtsHandler().playPrevious();
-                },
-                icon: const Icon(EvaIcons.chevron_left),
-              ),
-              IconButton(
-                onPressed: () async {
-                  ttsState == TtsStateEnum.playing
-                      ? audioHandler.pause()
-                      : audioHandler.play();
-                },
-                icon: ttsState == TtsStateEnum.playing
-                    ? const Icon(EvaIcons.pause_circle_outline)
-                    : const Icon(EvaIcons.play_circle_outline),
-              ),
-              IconButton(
-                onPressed: () {
-                  audioHandler.stop();
-                },
-                icon: const Icon(EvaIcons.stop_circle_outline),
-              ),
-              IconButton(
-                onPressed: () {
-                  TtsHandler().playNext();
-                },
-                icon: const Icon(EvaIcons.chevron_right),
-              ),
-              IconButton(
-                onPressed: () async {
-                  audioHandler.stop();
-                  await widget.epubPlayerKey.currentState!.ttsNextSection();
-                  TtsHandler().playNext();
-                },
-                icon: const Icon(EvaIcons.arrowhead_right),
-              ),
-            ],
-          );
-        }
-
-        Widget stopTimerWidget() {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20, 5, 20, 0),
-            child: Row(
-              children: [
-                const Icon(EvaIcons.clock_outline),
-                const SizedBox(width: 10),
+                Text(label),
                 Expanded(
                   child: Slider(
-                    value: stopSeconds / 60,
-                    onChanged: (newValue) {
-                      setState(() {
-                        stopSeconds = newValue * 60;
-                        stopTimer?.cancel();
+                    value: value,
+                    onChanged: onChanged,
+                    min: min,
+                    max: max,
+                    divisions: divisions,
+                    label: value.toStringAsFixed(1),
+                  ),
+                ),
+              ],
+            );
+          }
 
-                        if (stopSeconds > 0) {
-                          stopTimer = Timer.periodic(
-                            const Duration(seconds: 5),
-                            (timer) {
-                              if (stopSeconds > 5) {
-                                stopSeconds -= 5;
-                                if (mounted) {
-                                  setState(() {});
+          Widget sliders() {
+            return Padding(
+              padding: AppReadingTokens.panelPadding,
+              child: Column(
+                children: [
+                  slider(
+                    label: L10n.of(context).ttsVolume,
+                    value: TtsHandler().volume,
+                    min: 0,
+                    max: 1,
+                    divisions: 10,
+                    onChanged: (value) =>
+                        setState(() => TtsHandler().volume = value),
+                  ),
+                  slider(
+                    label: L10n.of(context).ttsPitch,
+                    value: TtsHandler().pitch,
+                    min: 0.5,
+                    max: 2,
+                    divisions: 15,
+                    onChanged: (value) =>
+                        setState(() => TtsHandler().pitch = value),
+                  ),
+                  slider(
+                    label: L10n.of(context).ttsRate,
+                    value: TtsHandler().rate,
+                    min: 0,
+                    max: 2,
+                    divisions: 10,
+                    onChanged: (value) =>
+                        setState(() => TtsHandler().rate = value),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: Text(L10n.of(context).ttsType)),
+                      AppButton(
+                        variant: AppButtonVariant.text,
+                        icon: Icons.arrow_forward_ios,
+                        label: _getTtsServiceLabel(context),
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            builder: (context) => FractionallySizedBox(
+                              heightFactor: 0.7,
+                              child: AppSafeArea(
+                                top: false,
+                                minimum: AppReadingTokens.contentPadding,
+                                child: const NarrateSettings(),
+                              ),
+                            ),
+                          ).then((_) {
+                            if (mounted) setState(() {});
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }
+
+          Widget buttons() {
+            return Wrap(
+              alignment: WrapAlignment.spaceAround,
+              children: [
+                AppIconButton(
+                  icon: EvaIcons.arrowhead_left,
+                  isLoading: _navigationPending,
+                  onPressed: () => _runNavigation(() async {
+                    audioHandler.stop();
+                    await widget.epubPlayerKey.currentState!.ttsPrevSection();
+                    TtsHandler().playPrevious();
+                  }),
+                ),
+                AppIconButton(
+                  icon: EvaIcons.chevron_left,
+                  onPressed: TtsHandler().playPrevious,
+                ),
+                AppIconButton(
+                  icon: ttsState == TtsStateEnum.playing
+                      ? EvaIcons.pause_circle_outline
+                      : EvaIcons.play_circle_outline,
+                  onPressed: () {
+                    ttsState == TtsStateEnum.playing
+                        ? audioHandler.pause()
+                        : audioHandler.play();
+                  },
+                ),
+                AppIconButton(
+                  icon: EvaIcons.stop_circle_outline,
+                  onPressed: () => audioHandler.stop(),
+                ),
+                AppIconButton(
+                  icon: EvaIcons.chevron_right,
+                  onPressed: TtsHandler().playNext,
+                ),
+                AppIconButton(
+                  icon: EvaIcons.arrowhead_right,
+                  isLoading: _navigationPending,
+                  onPressed: () => _runNavigation(() async {
+                    audioHandler.stop();
+                    await widget.epubPlayerKey.currentState!.ttsNextSection();
+                    TtsHandler().playNext();
+                  }),
+                ),
+              ],
+            );
+          }
+
+          Widget stopTimerWidget() {
+            return Padding(
+              padding: AppReadingTokens.panelPadding,
+              child: Row(
+                children: [
+                  const Icon(EvaIcons.clock_outline),
+                  Expanded(
+                    child: Slider(
+                      value: stopSeconds / 60,
+                      onChanged: (newValue) {
+                        setState(() {
+                          stopSeconds = newValue * 60;
+                          stopTimer?.cancel();
+                          if (stopSeconds > 0) {
+                            stopTimer = Timer.periodic(
+                              const Duration(seconds: 5),
+                              (timer) {
+                                if (stopSeconds > 5) {
+                                  stopSeconds -= 5;
+                                  if (mounted) setState(() {});
+                                  return;
                                 }
-                                return;
-                              } else {
                                 TtsHandler().stop();
                                 stopSeconds = 0;
                                 timer.cancel();
-                                if (mounted) {
-                                  setState(() {});
-                                }
-                              }
-                            },
-                          );
-                        }
-                      });
-                    },
-                    min: 0.0,
-                    max: 60.0,
-                    label: L10n.of(context)
-                        .commonMinutesFull((stopSeconds / 60).round()),
+                                if (mounted) setState(() {});
+                              },
+                            );
+                          }
+                        });
+                      },
+                      min: 0,
+                      max: 60,
+                      label: L10n.of(context)
+                          .commonMinutesFull((stopSeconds / 60).round()),
+                    ),
                   ),
+                  Flexible(
+                    child: Text(
+                      L10n.of(context).ttsStopAfter((stopSeconds / 60).ceil()),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return SingleChildScrollView(
+            padding: AppReadingTokens.panelPadding,
+            child: Column(
+              children: [
+                widgetTitle(
+                  L10n.of(context).ttsNarrator,
+                  ReadingSettings.style,
                 ),
-                Text(
-                  L10n.of(context).ttsStopAfter((stopSeconds / 60).ceil()),
-                ),
+                buttons(),
+                if (_failedNavigation != null)
+                  AppInlineFeedback(
+                    message: L10n.of(context).commonActionFailed,
+                    onRetry: () => _runNavigation(_failedNavigation!),
+                  ),
+                const Divider(),
+                stopTimerWidget(),
+                sliders(),
               ],
             ),
           );
-        }
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
-            children: [
-              widgetTitle(
-                L10n.of(context).ttsNarrator,
-                ReadingSettings.style,
-              ),
-              buttons(),
-              const Divider(),
-              stopTimerWidget(),
-              sliders(),
-            ],
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 }

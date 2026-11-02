@@ -1,3 +1,4 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/page/reading_page.dart';
@@ -11,23 +12,19 @@ import 'package:pointer_interceptor/pointer_interceptor.dart';
 enum ReadingSettings { theme, style }
 
 void showMoreSettings(ReadingSettings settings) {
-  BuildContext context = navigatorKey.currentContext!;
-  // Navigator.of(context).pop();
+  final context = navigatorKey.currentContext!;
   readingPageKey.currentState!.showOrHideAppBarAndBottomBar(false);
-
-  List<Tab> tabs = [
+  final tabs = [
     Tab(text: L10n.of(context).readingPageReading),
     Tab(text: L10n.of(context).readingPageStyle),
     Tab(text: L10n.of(context).readingPageOther),
   ];
-
-  List<Widget> children = [
-    const ReadingMoreSettings(),
-    const StyleSettings(),
-    const OtherSettings(),
+  final children = const [
+    ReadingMoreSettings(),
+    StyleSettings(),
+    OtherSettings(),
   ];
-
-  TabController? tabController = TabController(
+  final tabController = TabController(
     length: tabs.length,
     vsync: Navigator.of(context),
     initialIndex: settings == ReadingSettings.theme ? 0 : 1,
@@ -35,18 +32,17 @@ void showMoreSettings(ReadingSettings settings) {
 
   showDialog(
     context: context,
-    builder: (context) {
-      return Dialog(
-        child: PointerInterceptor(
+    builder: (context) => PointerInterceptor(
+      child: AppDialog(
+        title: L10n.of(context).navBarSettings,
+        content: AppSafeArea(
+          top: false,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 600),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TabBar(
-                  controller: tabController,
-                  tabs: tabs,
-                ),
+                TabBar(controller: tabController, tabs: tabs),
                 const Divider(height: 0),
                 ConstrainedBox(
                   constraints: BoxConstraints(
@@ -65,7 +61,7 @@ void showMoreSettings(ReadingSettings settings) {
             ),
           ),
         ),
-      );
-    },
+      ),
+    ),
   );
 }

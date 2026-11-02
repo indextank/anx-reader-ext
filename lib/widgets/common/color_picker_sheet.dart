@@ -1,3 +1,4 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -27,14 +28,16 @@ Future<Color?> showRgbColorPicker({
           ),
         ),
         actions: <Widget>[
-          TextButton(
-            child: Text(L10n.of(context).commonCancel),
+          AppButton(
+            variant: AppButtonVariant.text,
+            label: L10n.of(context).commonCancel,
             onPressed: () {
               Navigator.of(dialogContext).pop();
             },
           ),
-          TextButton(
-            child: Text(L10n.of(context).commonOk),
+          AppButton(
+            variant: AppButtonVariant.text,
+            label: L10n.of(context).commonOk,
             onPressed: () {
               Navigator.of(dialogContext).pop(pickedColor);
             },

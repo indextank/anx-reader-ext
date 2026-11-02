@@ -223,7 +223,7 @@ class AliyunTtsProvider extends TtsServiceProvider {
 
     final queryString = _canonicalizedQuery(params);
     final stringToSign = _createStringToSign('GET', '/', queryString);
-    final signature = _sign(stringToSign, '${accessKeySecret}&');
+    final signature = _sign(stringToSign, '$accessKeySecret&');
     final signedQuery = 'Signature=$signature&$queryString';
     final url = Uri.parse('https://$_tokenHost/?$signedQuery');
 

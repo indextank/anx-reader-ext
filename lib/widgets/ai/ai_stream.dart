@@ -1,17 +1,21 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/service/ai/index.dart';
 import 'package:anx_reader/service/ai/prompt_generate.dart';
-import 'package:anx_reader/utils/toast/common.dart';
-import 'package:anx_reader/widgets/markdown/styled_markdown.dart';
+import 'package:anx_reader/theme/app_ai_tokens.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/utils/ai_reasoning_parser.dart';
+import 'package:anx_reader/widgets/ai/tool_step_tile.dart';
+import 'package:anx_reader/widgets/ai/tool_tiles/apply_book_tags_step_tile.dart';
+import 'package:anx_reader/widgets/ai/tool_tiles/mindmap_step_tile.dart';
+import 'package:anx_reader/widgets/ai/tool_tiles/organize_bookshelf_step_tile.dart';
+import 'package:anx_reader/widgets/ai/ai_markdown.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:skeletonizer/skeletonizer.dart';
-import 'package:anx_reader/utils/ai_reasoning_parser.dart';
-import 'package:anx_reader/widgets/ai/tool_step_tile.dart';
-import 'package:anx_reader/widgets/ai/tool_tiles/mindmap_step_tile.dart';
-import 'package:anx_reader/widgets/ai/tool_tiles/organize_bookshelf_step_tile.dart';
-import 'package:anx_reader/widgets/ai/tool_tiles/apply_book_tags_step_tile.dart';
+
+typedef AiStreamFactory = Stream<String> Function(bool regenerate);
 
 class AiStream extends ConsumerStatefulWidget {
   const AiStream({
@@ -22,6 +26,7 @@ class AiStream extends ConsumerStatefulWidget {
     this.canCopy = true,
     this.regenerate = false,
     this.useAgent = false,
+    this.streamFactory,
   });
 
   final PromptTemplatePayload prompt;
@@ -30,6 +35,7 @@ class AiStream extends ConsumerStatefulWidget {
   final bool canCopy;
   final bool regenerate;
   final bool useAgent;
+  final AiStreamFactory? streamFactory;
 
   @override
   AiStreamState createState() => AiStreamState();
@@ -45,6 +51,8 @@ class AiStreamState extends ConsumerState<AiStream> {
   }
 
   Stream<String> _createStream(bool regenerate) {
+    final streamFactory = widget.streamFactory;
+    if (streamFactory != null) return streamFactory(regenerate);
     final messages = widget.prompt.buildMessages();
     return aiGenerateStream(
       messages,
@@ -56,31 +64,41 @@ class AiStreamState extends ConsumerState<AiStream> {
     );
   }
 
+  Future<void> _retryStream() async {
+    setState(() {
+      stream = _createStream(widget.regenerate);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return StreamBuilder<String>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Text(snapshot.error.toString());
+          return AppErrorState(
+            message: l10n.commonLoadFailed,
+            onRetry: _retryStream,
+          );
         }
 
         if (!snapshot.hasData) {
-          return SizedBox(
-              width: 300,
-              height: 60,
-              child: Skeletonizer.zone(
-                child: Bone.multiText(),
-              ));
+          return AppSkeleton(
+            child: SizedBox(
+              width: AppAiTokens.streamLoadingWidth,
+              height: AppAiTokens.streamLoadingHeight,
+              child: Center(child: Text(l10n.commonLoading)),
+            ),
+          );
         }
 
-        final l10n = L10n.of(context);
         final data = snapshot.data!;
         final parsed = parseReasoningContent(data);
         final answerWidgets = _buildTimeline(parsed.answerTimeline);
         final reasoningWidgets = _buildTimeline(
           parsed.reasoningTimeline,
-          fontSize: 13,
+          fontSize: AppAiTokens.reasoningFontSize,
         );
         final isCompleted = snapshot.connectionState == ConnectionState.done;
 
@@ -91,31 +109,37 @@ class AiStreamState extends ConsumerState<AiStream> {
               if (reasoningWidgets.isNotEmpty)
                 _buildThinkingPanel(reasoningWidgets),
               if (reasoningWidgets.isNotEmpty && answerWidgets.isNotEmpty)
-                const SizedBox(height: 8),
+                SizedBox(height: AppSpacing.tokens.s8),
               if (answerWidgets.isNotEmpty)
                 ...answerWidgets
               else if (!isCompleted)
-                Skeletonizer.zone(child: Bone.multiText())
+                AppSkeleton(child: Text(l10n.aiReasoningThinking))
               else
-                const SizedBox.shrink(),
+                AppEmptyState(title: l10n.commonEmpty, compact: true),
               if (widget.canCopy)
                 Wrap(
                   alignment: WrapAlignment.end,
                   children: [
-                    TextButton(
+                    AppButton(
+                      label: l10n.aiRegenerate,
+                      variant: AppButtonVariant.text,
+                      enabled: isCompleted,
                       onPressed: () {
                         setState(() {
                           stream = _createStream(true);
                         });
                       },
-                      child: Text(l10n.aiRegenerate),
                     ),
-                    TextButton(
+                    AppButton(
+                      label: l10n.commonCopy,
+                      variant: AppButtonVariant.text,
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: data));
-                        AnxToast.show(l10n.notesPageCopied);
+                        AppFeedback.showInfo(
+                          context,
+                          message: l10n.notesPageCopied,
+                        );
                       },
-                      child: Text(l10n.commonCopy),
                     ),
                   ],
                 ),
@@ -138,8 +162,8 @@ class AiStreamState extends ConsumerState<AiStream> {
           if (entry.text != null && entry.text!.trim().isNotEmpty) {
             widgets.add(
               Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: StyledMarkdown(
+                padding: AppAiTokens.toolCardBottomMargin,
+                child: AiMarkdown(
                   data: entry.text!,
                   selectable: true,
                   fontSize: fontSize,
@@ -152,7 +176,7 @@ class AiStreamState extends ConsumerState<AiStream> {
           if (entry.toolStep != null) {
             widgets.add(
               Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
+                padding: AppAiTokens.toolCardBottomMargin,
                 child: _buildToolTile(entry.toolStep!),
               ),
             );
@@ -160,7 +184,7 @@ class AiStreamState extends ConsumerState<AiStream> {
           break;
       }
       if (i != timeline.length - 1) {
-        widgets.add(const SizedBox(height: 4));
+        widgets.add(SizedBox(height: AppSpacing.tokens.s4));
       }
     }
     return widgets;
@@ -168,46 +192,52 @@ class AiStreamState extends ConsumerState<AiStream> {
 
   Widget _buildThinkingPanel(List<Widget> children) {
     final theme = Theme.of(context);
-    final accentColor = theme.colorScheme.secondary.withValues(alpha: 0.82);
-    final subtleColor = theme.colorScheme.secondary.withValues(alpha: 0.68);
+    final accentColor = theme.colorScheme.secondary.withValues(
+      alpha: AppAiTokens.thinkingAccentAlpha,
+    );
+    final subtleColor = theme.colorScheme.secondary.withValues(
+      alpha: AppAiTokens.thinkingSubtleAlpha,
+    );
     return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
+      data: theme.copyWith(dividerColor: AppColors.transparent),
       child: ExpansionTile(
         initiallyExpanded: false,
         dense: true,
         visualDensity: VisualDensity.compact,
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.fromLTRB(28, 2, 0, 8),
+        tilePadding: AppSpacing.zero,
+        childrenPadding: AppAiTokens.thinkingPadding,
         shape: const Border(),
         collapsedShape: const Border(),
         iconColor: subtleColor,
         collapsedIconColor: subtleColor,
         leading: Icon(
           Icons.psychology_alt_outlined,
-          size: 15,
+          size: AppAiTokens.thinkingIconSize,
           color: accentColor,
         ),
         title: Text(
           L10n.of(context).aiThinkingHint,
           style: theme.textTheme.bodySmall?.copyWith(
             color: accentColor,
-            fontSize: 12,
+            fontSize: AppAiTokens.thinkingTitleFontSize,
           ),
         ),
         children: [
           Container(
-            margin: const EdgeInsets.only(left: 7),
-            padding: const EdgeInsets.only(left: 12),
+            margin: AppAiTokens.thinkingMargin,
+            padding: AppAiTokens.thinkingContentPadding,
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(
-                  color: subtleColor.withValues(alpha: 0.55),
-                  width: 2,
+                  color: subtleColor.withValues(
+                    alpha: AppAiTokens.thinkingBorderAlpha,
+                  ),
+                  width: AppAiTokens.mindmapEdgeWidth,
                 ),
               ),
             ),
             child: Opacity(
-              opacity: 0.9,
+              opacity: AppAiTokens.thinkingOpacity,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: children,

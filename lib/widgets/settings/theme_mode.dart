@@ -1,27 +1,18 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/providers/ui_settings.dart';
 import 'package:anx_reader/utils/theme_mode_to_string.dart';
-import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/widgets/common/anx_segmented_button.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class ChangeThemeMode extends StatefulWidget {
+class ChangeThemeMode extends ConsumerWidget {
   const ChangeThemeMode({super.key});
 
   @override
-  ChangeThemeModeState createState() => ChangeThemeModeState();
-}
-
-class ChangeThemeModeState extends State<ChangeThemeMode> {
-  late String _themeMode;
-
-  @override
-  void initState() {
-    super.initState();
-    _themeMode = themeModeToString(Prefs().themeMode);
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(
+      uiSettingsProvider.select((settings) => settings.themeMode),
+    );
     return AnxSegmentedButton<String>(
       segments: <SegmentButtonItem<String>>[
         SegmentButtonItem(
@@ -40,13 +31,14 @@ class ChangeThemeModeState extends State<ChangeThemeMode> {
           icon: const Icon(Icons.brightness_5),
         ),
       ],
-      selected: {_themeMode},
-      onSelectionChanged: (Set<String> newSelection) {
-        final String mode = newSelection.first;
-        Prefs().saveThemeModeToPrefs(mode);
-        setState(() {
-          _themeMode = mode;
-        });
+      selected: {themeModeToString(themeMode)},
+      onSelectionChanged: (selection) {
+        final mode = switch (selection.first) {
+          'dark' => ThemeMode.dark,
+          'light' => ThemeMode.light,
+          _ => ThemeMode.system,
+        };
+        ref.read(uiSettingsProvider.notifier).setThemeMode(mode);
       },
     );
   }

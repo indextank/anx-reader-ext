@@ -1,33 +1,38 @@
 import 'dart:ui';
 
+import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/dao/database.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/sync_direction.dart';
 import 'package:anx_reader/enums/sync_trigger.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/home_page/ai_page.dart';
-import 'package:anx_reader/service/initialization_check.dart';
 import 'package:anx_reader/page/home_page/bookshelf_page.dart';
 import 'package:anx_reader/page/home_page/notes_page.dart';
 import 'package:anx_reader/page/home_page/settings_page.dart';
 import 'package:anx_reader/page/home_page/statistics_page.dart';
+import 'package:anx_reader/providers/iap.dart';
+import 'package:anx_reader/providers/sync.dart';
+import 'package:anx_reader/service/initialization_check.dart';
 import 'package:anx_reader/service/receive_file/receive_share.dart';
 import 'package:anx_reader/service/vibration_service.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/check_update.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/utils/get_path/get_temp_dir.dart';
 import 'package:anx_reader/utils/load_default_font.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/utils/platform_utils.dart';
-import 'package:anx_reader/providers/sync.dart';
-import 'package:anx_reader/providers/iap.dart';
-import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:anx_reader/widgets/settings/about.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_floating_bottom_bar/flutter_floating_bottom_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_floating_bottom_bar/flutter_floating_bottom_bar.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -60,18 +65,20 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     if (availableVersion == null) {
       SmartDialog.show(
-        builder: (context) => AlertDialog(
-          title: const Icon(Icons.error),
+        builder: (context) => AppDialog(
+          title: L10n.of(context).commonAttention,
           content: Text(L10n.of(context).webview2NotInstalled),
           actions: [
-            TextButton(
-              onPressed: () => {
+            AppButton(
+              label: L10n.of(context).webview2Install,
+              onPressed: () {
                 launchUrl(
-                    Uri.parse(
-                        'https://developer.microsoft.com/en-us/microsoft-edge/webview2'),
-                    mode: LaunchMode.externalApplication)
+                  Uri.parse(
+                    'https://developer.microsoft.com/en-us/microsoft-edge/webview2',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                );
               },
-              child: Text(L10n.of(context).webview2Install),
             ),
           ],
         ),
@@ -79,7 +86,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     } else {
       webViewEnvironment = await WebViewEnvironment.create(
         settings: WebViewEnvironmentSettings(
-            userDataFolder: (await getAnxTempDir()).path),
+          userDataFolder: (await getAnxTempDir()).path,
+        ),
       );
     }
   }
@@ -87,15 +95,13 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _showDbUpdatedDialog() {
     SmartDialog.show(
       clickMaskDismiss: false,
-      builder: (context) => AlertDialog(
-        title: Text(L10n.of(context).commonAttention),
+      builder: (context) => AppDialog(
+        title: L10n.of(context).commonAttention,
         content: Text(L10n.of(context).dbUpdatedTip),
         actions: [
-          TextButton(
-            onPressed: () {
-              SmartDialog.dismiss();
-            },
-            child: Text(L10n.of(context).commonOk),
+          AppButton(
+            label: L10n.of(context).commonOk,
+            onPressed: SmartDialog.dismiss,
           ),
         ],
       ),
@@ -178,7 +184,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         if (Prefs().bottomNavigatorShowStatistics)
           StatisticPage(controller: controller),
         if (Prefs().bottomNavigatorShowAI && EnvVar.enableAIFeature)
-          AiChatStream(),
+          const AiChatStream(),
         if (Prefs().bottomNavigatorShowNote) NotesPage(controller: controller),
         SettingsPage(controller: controller),
       ];
@@ -189,7 +195,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       VibrationService.heavy();
       if (navBarItems[index]['identifier'] == 'ai' && !fromRail) {
         showCupertinoSheet(
-            context: context, builder: (context) => const AiPage());
+          context: context,
+          scrollableBuilder: (context, scrollController) => const AiPage(),
+        );
         return;
       }
       setState(() {
@@ -213,46 +221,50 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _expanded ??= constraints.maxWidth > 1000;
-        if (constraints.maxWidth > 600) {
+        _expanded ??=
+            constraints.maxWidth > AppNavigationTokens.desktopBreakpoint;
+        if (constraints.maxWidth > AppNavigationTokens.railBreakpoint) {
           return Scaffold(
             extendBody: true,
             body: Row(
               children: [
-                SafeArea(
+                AppSafeArea(
                   bottom: false,
                   child: FilledContainer(
-                    margin: const EdgeInsets.all(16),
+                    margin: AppSpacing.all16,
                     color: ElevationOverlay.applySurfaceTint(
                       Theme.of(context).colorScheme.surface,
                       Theme.of(context).colorScheme.primary,
-                      3,
+                      AppNavigationTokens.railElevation,
                     ),
-                    radius: 20,
-                    child: SafeArea(
-                      child: NavigationRail(
-                        leading: InkWell(
+                    radius: AppRadius.tokens.r20,
+                    child: NavigationRail(
+                      leading: Semantics(
+                        button: true,
+                        label: L10n.of(context).appAbout,
+                        child: InkWell(
                           onTap: () => openAboutDialog(),
+                          borderRadius: AppRadius.pill,
                           child: Padding(
-                            padding: const EdgeInsets.only(right: 2.0),
+                            padding: AppSpacing.all8,
                             child: Image.asset(
-                              width: 32,
-                              height: 32,
+                              width: AppNavigationTokens.logoSize,
+                              height: AppNavigationTokens.logoSize,
                               'assets/icon/Anx-logo-tined.png',
                               color: Theme.of(context).colorScheme.secondary,
+                              semanticLabel: L10n.of(context).appAbout,
                             ),
                           ),
                         ),
-                        groupAlignment: 1,
-                        extended: false,
-                        selectedIndex: currentIndex,
-                        onDestinationSelected: (int index) =>
-                            onBottomTap(index, true),
-                        destinations: railBarItems,
-                        labelType: NavigationRailLabelType.all,
-                        backgroundColor: Colors.transparent,
-                        // elevation: 0,
                       ),
+                      groupAlignment: 1,
+                      extended: false,
+                      selectedIndex: currentIndex,
+                      onDestinationSelected: (int index) =>
+                          onBottomTap(index, true),
+                      destinations: railBarItems,
+                      labelType: NavigationRailLabelType.all,
+                      backgroundColor: AppColors.transparent,
                     ),
                   ),
                 ),
@@ -267,48 +279,54 @@ class _HomePageState extends ConsumerState<HomePage> {
           return Scaffold(
             extendBody: true,
             body: BottomBar(
-              width: 330,
+              width: AppNavigationTokens.bottomBarWidth,
               body: (_, controller) =>
                   pages(currentIndex, constraints, controller),
               hideOnScroll: Prefs().autoHideBottomBar,
               scrollOpposite: false,
               curve: Curves.easeIn,
-              barColor: Colors.transparent,
+              barColor: AppColors.transparent,
               iconDecoration: BoxDecoration(
                 color: Prefs().autoHideBottomBar
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(500),
+                    : AppColors.transparent,
+                borderRadius: AppRadius.pill,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(32),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-                  child: Container(
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainer
-                          .withAlpha(123),
-                      borderRadius: BorderRadius.circular(32),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outline,
-                        width: 0.5,
-                      ),
+              child: AppSafeArea(
+                top: false,
+                child: ClipRRect(
+                  borderRadius: AppRadius.border32,
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(
+                      sigmaX: AppNavigationTokens.bottomBarBlur,
+                      sigmaY: AppNavigationTokens.bottomBarBlur,
                     ),
-                    child: BottomNavigationBar(
-                      selectedFontSize: 12,
-                      enableFeedback: true,
-                      type: BottomNavigationBarType.fixed,
-                      landscapeLayout:
-                          BottomNavigationBarLandscapeLayout.linear,
-                      currentIndex: currentIndex,
-                      onTap: (int index) => onBottomTap(index, false),
-                      items: bottomBarItems,
-                      backgroundColor: Colors.transparent,
-                      elevation: 0,
-                      // height: 64,
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minHeight: AppNavigationTokens.bottomBarMinHeight,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainer
+                            .withAlpha(123),
+                        borderRadius: AppRadius.border32,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline,
+                          width: AppNavigationTokens.bottomBarBorderWidth,
+                        ),
+                      ),
+                      child: BottomNavigationBar(
+                        enableFeedback: true,
+                        type: BottomNavigationBarType.fixed,
+                        landscapeLayout:
+                            BottomNavigationBarLandscapeLayout.linear,
+                        currentIndex: currentIndex,
+                        onTap: (int index) => onBottomTap(index, false),
+                        items: bottomBarItems,
+                        backgroundColor: AppColors.transparent,
+                        elevation: 0,
+                      ),
                     ),
                   ),
                 ),

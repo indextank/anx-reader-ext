@@ -27,8 +27,8 @@ void main() {
         SettingsSyncCategory.appearance);
     expect(SettingsSyncCatalog.categoryOf('readStyle'),
         SettingsSyncCategory.reading);
-    expect(SettingsSyncCatalog.categoryOf('aiProviders'),
-        SettingsSyncCategory.ai);
+    expect(
+        SettingsSyncCatalog.categoryOf('aiProviders'), SettingsSyncCategory.ai);
   });
 
   test('prefix keys map to categories', () {

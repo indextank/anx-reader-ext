@@ -4,11 +4,11 @@ class SpiningSyncIcon extends StatefulWidget {
   const SpiningSyncIcon({
     super.key,
     this.size = 16,
-    this.color = Colors.grey,
+    this.color,
   });
 
   final double size;
-  final Color color;
+  final Color? color;
 
   @override
   State<SpiningSyncIcon> createState() => _SpiningSyncIconState();
@@ -16,7 +16,7 @@ class SpiningSyncIcon extends StatefulWidget {
 
 class _SpiningSyncIconState extends State<SpiningSyncIcon>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late final AnimationController _controller;
 
   @override
   void initState() {
@@ -40,7 +40,7 @@ class _SpiningSyncIconState extends State<SpiningSyncIcon>
       child: Center(
         child: Icon(
           Icons.sync,
-          color: widget.color,
+          color: widget.color ?? Theme.of(context).colorScheme.onSurfaceVariant,
           size: widget.size,
         ),
       ),

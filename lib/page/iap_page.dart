@@ -1,86 +1,94 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/iap_state.dart';
-import 'package:anx_reader/service/iap/iap_service.dart';
 import 'package:anx_reader/providers/iap.dart';
+import 'package:anx_reader/service/iap/iap_service.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/utils/platform_utils.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
-// import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class IAPPage extends ConsumerWidget {
+class IAPPage extends ConsumerStatefulWidget {
   const IAPPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<IAPPage> createState() => _IAPPageState();
+}
+
+class _IAPPageState extends ConsumerState<IAPPage> {
+  _IapOperation? _lastOperation;
+
+  Future<void> _buy() {
+    _lastOperation = _IapOperation.purchase;
+    return ref.read(iapProvider.notifier).buy();
+  }
+
+  Future<void> _restore() {
+    _lastOperation = _IapOperation.restore;
+    return ref.read(iapProvider.notifier).restore();
+  }
+
+  Future<void> _retryOperation() {
+    return _lastOperation == _IapOperation.restore ? _restore() : _buy();
+  }
+
+  Future<void> _retryInitialLoad() async {
+    ref.invalidate(iapProvider);
+    await ref.read(iapProvider.future);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final iapAsync = ref.watch(iapProvider);
-
-    return iapAsync.when(
-      loading: () => Scaffold(
-        appBar: AppBar(
-          title: Text(L10n.of(context).iapPageTitle),
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, s) {
-        AnxLog.severe('IAP: Error loading IAP state: $error', s);
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(L10n.of(context).iapPageTitle),
-          ),
-          body: Center(child: Text(error.toString())),
-        );
-      },
-      data: (iapState) => Scaffold(
-        appBar: AppBar(
-          title: Text(L10n.of(context).iapPageTitle),
-          actions: [
-            TextButton(
-              onPressed: () => ref.read(iapProvider.notifier).restore(),
-              child: Text(L10n.of(context).iapPageRestore),
-            ),
-          ],
-        ),
-        body: _buildContent(context, ref, iapState),
+    return Scaffold(
+      appBar: AppBar(title: Text(L10n.of(context).iapPageTitle)),
+      body: AppAsyncValue<IapState>(
+        value: iapAsync,
+        onRetry: _retryInitialLoad,
+        errorBuilder: (context, error, stackTrace) {
+          AnxLog.severe('IAP: Error loading IAP state: $error', stackTrace);
+          return AppErrorState(onRetry: _retryInitialLoad);
+        },
+        dataBuilder: _buildContent,
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, WidgetRef ref, IapState state) {
-    final notifier = ref.read(iapProvider.notifier);
-    final List<Map<String, dynamic>> content = [
+  Widget _buildContent(BuildContext context, IapState state) {
+    final l10n = L10n.of(context);
+    final content = <Map<String, dynamic>>[
       {
         'icon': Icons.auto_awesome,
-        'title': L10n.of(context).iapPageFeatureAi,
-        'desc': L10n.of(context).iapPageFeatureAiDesc,
+        'title': l10n.iapPageFeatureAi,
+        'desc': l10n.iapPageFeatureAiDesc,
       },
       {
         'icon': Icons.sync,
-        'title': L10n.of(context).iapPageFeatureSync,
-        'desc': L10n.of(context).iapPageFeatureSyncDesc,
+        'title': l10n.iapPageFeatureSync,
+        'desc': l10n.iapPageFeatureSyncDesc,
       },
       {
         'icon': Icons.bar_chart,
-        'title': L10n.of(context).iapPageFeatureStats,
-        'desc': L10n.of(context).iapPageFeatureStatsDesc,
+        'title': l10n.iapPageFeatureStats,
+        'desc': l10n.iapPageFeatureStatsDesc,
       },
       {
         'icon': Icons.color_lens,
-        'title': L10n.of(context).iapPageFeatureCustom,
-        'desc': L10n.of(context).iapPageFeatureCustomDesc,
+        'title': l10n.iapPageFeatureCustom,
+        'desc': l10n.iapPageFeatureCustomDesc,
       },
       {
         'icon': Icons.note,
-        'title': L10n.of(context).iapPageFeatureNote,
-        'desc': L10n.of(context).iapPageFeatureNoteDesc,
+        'title': l10n.iapPageFeatureNote,
+        'desc': l10n.iapPageFeatureNoteDesc,
       },
       {
         'icon': Icons.more_horiz,
-        'title': L10n.of(context).iapPageFeatureRich,
-        'desc': L10n.of(context).iapPageFeatureRichDesc,
+        'title': l10n.iapPageFeatureRich,
+        'desc': l10n.iapPageFeatureRichDesc,
       },
     ];
 
@@ -88,240 +96,220 @@ class IAPPage extends ConsumerWidget {
         state.isPurchasing || state.isRestoring || state.isRefreshing;
     final priceText =
         state.products.isNotEmpty ? state.products.first.price : '';
+    final hasError = state.errorMessage?.isNotEmpty ?? false;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildStatusCard(context, state),
-                  const SizedBox(height: 20),
-                  Text(
-                    L10n.of(context).iapPageWhyChoose,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+    return AppSafeArea(
+      minimum: AppIapTokens.bottomSafePadding,
+      child: Padding(
+        padding: AppIapTokens.pagePadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildStatusCard(context, state),
+                    const SizedBox(height: AppIapTokens.sectionSpacing),
+                    Text(
+                      l10n.iapPageWhyChoose,
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  LayoutBuilder(builder: (context, constraints) {
-                    return Wrap(
-                      children: content
-                          .map((item) => SizedBox(
-                                width: constraints.maxWidth /
-                                    (constraints.maxWidth ~/ 400),
+                    const SizedBox(height: AppIapTokens.subsectionSpacing),
+                    LayoutBuilder(builder: (context, constraints) {
+                      final columns = constraints.maxWidth ~/
+                                  AppIapTokens.featureItemWidth ==
+                              0
+                          ? 1
+                          : constraints.maxWidth ~/
+                              AppIapTokens.featureItemWidth;
+                      return Wrap(
+                        children: content
+                            .map(
+                              (item) => SizedBox(
+                                width: constraints.maxWidth / columns,
                                 child: _buildFeatureItem(
                                   context,
-                                  item['icon'],
-                                  item['title'],
-                                  item['desc'],
+                                  item['icon'] as IconData,
+                                  item['title'] as String,
+                                  item['desc'] as String,
                                 ),
-                              ))
-                          .toList(),
-                    );
-                  }),
-                  const SizedBox(height: 30),
-                  if (AnxPlatform.isMacOS || AnxPlatform.isIOS)
-                    Text(L10n.of(context).iapPageRestoreHint),
-                  if (AnxPlatform.isAndroid)
-                    Text(L10n.of(context).iapPageRestoreHintPlayStore),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        child: Text(L10n.of(context).aboutPrivacyPolicy),
-                        onPressed: () async {
-                          launchUrl(
+                              ),
+                            )
+                            .toList(),
+                      );
+                    }),
+                    const SizedBox(height: AppIapTokens.featureSpacing),
+                    if (AnxPlatform.isMacOS || AnxPlatform.isIOS)
+                      Text(l10n.iapPageRestoreHint),
+                    if (AnxPlatform.isAndroid)
+                      Text(l10n.iapPageRestoreHintPlayStore),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: AppSubmitButton(
+                        label: l10n.iapPageRestore,
+                        onSubmit: _restore,
+                        disabled: isBusy,
+                        isLoading: isBusy,
+                        variant: AppButtonVariant.text,
+                        feedbackMode: AppSubmitFeedbackMode.inline,
+                        errorMessage: l10n.commonActionFailed,
+                      ),
+                    ),
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      children: [
+                        AppButton(
+                          label: l10n.aboutPrivacyPolicy,
+                          variant: AppButtonVariant.text,
+                          onPressed: () => launchUrl(
                             Uri.parse('https://anx.anxcye.com/privacy.html'),
                             mode: LaunchMode.externalApplication,
-                          );
-                        },
-                      ),
-                      TextButton(
-                        child: Text(L10n.of(context).aboutTermsOfUse),
-                        onPressed: () async {
-                          launchUrl(
+                          ),
+                        ),
+                        AppButton(
+                          label: l10n.aboutTermsOfUse,
+                          variant: AppButtonVariant.text,
+                          onPressed: () => launchUrl(
                             Uri.parse('https://anx.anxcye.com/terms.html'),
                             mode: LaunchMode.externalApplication,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (!state.isPurchased && state.isAvailable) ...[
-                Padding(
-                  padding: const EdgeInsets.all(10.0),
-                  child: Text(
-                    L10n.of(context).iapPageLifetimeHint(
-                        state.products.isEmpty ? '' : priceText),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+            if (!state.isPurchased && state.isAvailable)
+              Padding(
+                padding: AppIapTokens.purchaseHintPadding,
+                child: Text(
+                  l10n.iapPageLifetimeHint(
+                    state.products.isEmpty ? '' : priceText,
                   ),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-                SafeArea(
-                  bottom: state.errorMessage?.isEmpty ?? true,
-                  minimum: EdgeInsets.only(
-                      bottom: state.errorMessage?.isEmpty ?? true ? 20 : 0),
-                  child: ElevatedButton(
-                    onPressed: isBusy ? null : notifier.buy,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                    ),
-                    child: isBusy
-                        ? Center(
-                            child: CircularProgressIndicator(
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
-                          )
-                        : Text(
-                            L10n.of(context).iapPageOneTimePurchase,
-                            style: const TextStyle(
-                                fontSize: 18, color: Colors.white),
-                          ),
-                  ),
+              ),
+            if (hasError)
+              Padding(
+                padding: AppIapTokens.errorPadding,
+                child: AppInlineFeedback(
+                  message: l10n.commonActionFailed,
+                  onRetry: isBusy ? null : _retryOperation,
                 ),
-              ],
-              if (state.errorMessage != null && state.errorMessage!.isNotEmpty)
-                SafeArea(
-                  minimum: const EdgeInsets.only(bottom: 20),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 20.0),
-                    child: Text(
-                      state.errorMessage!,
-                      style: const TextStyle(color: Colors.red),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
+              ),
+            if (!state.isPurchased && state.isAvailable)
+              AppSubmitButton(
+                label: l10n.iapPageOneTimePurchase,
+                onSubmit: _buy,
+                disabled: isBusy,
+                isLoading: isBusy,
+                feedbackMode: AppSubmitFeedbackMode.inline,
+                errorMessage: l10n.commonActionFailed,
+                size: AppButtonSize.large,
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildStatusCard(BuildContext context, IapState state) {
-    Color cardColor;
-    IconData statusIcon;
-    String statusDescription;
+    final colors = context.appTheme.colors;
+    final colorScheme = Theme.of(context).colorScheme;
+    final l10n = L10n.of(context);
+    final Color cardColor;
+    final IconData statusIcon;
+    final String statusDescription;
     String? timeInfo;
 
     switch (state.status) {
       case IAPStatus.purchased:
         statusIcon = Icons.verified;
-        statusDescription = L10n.of(context).iapPageStatusPurchased;
-        cardColor = Colors.green;
+        statusDescription = l10n.iapPageStatusPurchased;
+        cardColor = colors.success;
         if (state.purchaseDate != null) {
-          timeInfo = L10n.of(context).iapPageDatePurchased(
+          timeInfo = l10n.iapPageDatePurchased(
             _formatDate(state.purchaseDate!),
           );
         }
-        break;
       case IAPStatus.trial:
         statusIcon = Icons.access_time;
-        statusDescription =
-            L10n.of(context).iapPageStatusTrial(state.trialDaysLeft.toString());
-        cardColor = Colors.blue;
+        statusDescription = l10n.iapPageStatusTrial(
+          state.trialDaysLeft.toString(),
+        );
+        cardColor = colors.info;
         if (state.trialStartDate != null &&
             state.trialStartDate!.millisecondsSinceEpoch > 0) {
-          timeInfo = L10n.of(context).iapPageDateTrialStart(
+          timeInfo = l10n.iapPageDateTrialStart(
             _formatDate(state.trialStartDate!),
           );
         }
-        break;
       case IAPStatus.trialExpired:
         statusIcon = Icons.timer_off;
-        statusDescription = L10n.of(context).iapPageStatusTrialExpired;
-        cardColor = Colors.orange;
+        statusDescription = l10n.iapPageStatusTrialExpired;
+        cardColor = colors.warning;
         if (state.trialStartDate != null &&
             state.trialStartDate!.millisecondsSinceEpoch > 0) {
-          timeInfo = L10n.of(context).iapPageDateTrialStart(
+          timeInfo = l10n.iapPageDateTrialStart(
             _formatDate(state.trialStartDate!),
           );
         }
-        break;
       case IAPStatus.originalUser:
         statusIcon = Icons.stars;
-        statusDescription = L10n.of(context).iapPageStatusOriginal;
-        cardColor = Colors.purple;
+        statusDescription = l10n.iapPageStatusOriginal;
+        cardColor = colorScheme.secondary;
         if (state.trialStartDate != null &&
             state.trialStartDate!.millisecondsSinceEpoch > 0) {
-          timeInfo = L10n.of(context).iapPageDateOriginal(
+          timeInfo = l10n.iapPageDateOriginal(
             _formatDate(state.trialStartDate!),
           );
         }
-        break;
       case IAPStatus.unknown:
         statusIcon = Icons.help_outline;
-        statusDescription = L10n.of(context).iapPageStatusUnknown;
-        cardColor = Colors.grey;
-        break;
+        statusDescription = l10n.iapPageStatusUnknown;
+        cardColor = colorScheme.outline;
     }
 
-    return FilledContainer(
-      color: cardColor.withAlpha(30),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Icon(
-              statusIcon,
-              size: 50,
-              color: Theme.of(context).primaryColor,
-            ),
-            const SizedBox(height: 10),
+    return AppCard(
+      color: cardColor.withValues(alpha: AppIapTokens.statusBackgroundAlpha),
+      padding: AppIapTokens.statusPadding,
+      child: Column(
+        children: [
+          Icon(statusIcon, size: AppIapTokens.statusIconSize, color: cardColor),
+          const SizedBox(height: AppIapTokens.subsectionSpacing),
+          Text(
+            state.status.title(context),
+            style: Theme.of(context).textTheme.titleLarge,
+            textAlign: TextAlign.center,
+          ),
+          Text(
+            statusDescription,
+            style: Theme.of(context).textTheme.bodyLarge,
+            textAlign: TextAlign.center,
+          ),
+          if (timeInfo != null)
             Text(
-              state.status.title(context),
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              statusDescription,
-              style: const TextStyle(fontSize: 16),
+              timeInfo,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
-            if (timeInfo != null) ...[
-              const SizedBox(height: 5),
-              Text(
-                timeInfo,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
+          if (state.status == IAPStatus.trial)
+            Padding(
+              padding: AppIapTokens.trialPadding,
+              child: LinearProgressIndicator(
+                value: state.trialDaysLeft / IAPService.kTrialDays,
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(cardColor),
               ),
-            ],
-            if (state.status == IAPStatus.trial)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: LinearProgressIndicator(
-                  value: state.trialDaysLeft / IAPService.kTrialDays,
-                  backgroundColor: Colors.grey.shade300,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).primaryColor),
-                ),
-              ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -331,28 +319,32 @@ class IAPPage extends ConsumerWidget {
   }
 
   Widget _buildFeatureItem(
-      BuildContext context, IconData icon, String title, String description) {
+    BuildContext context,
+    IconData icon,
+    String title,
+    String description,
+  ) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: AppIapTokens.featurePadding,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 30, color: Theme.of(context).primaryColor),
-          const SizedBox(width: 15),
+          Icon(
+            icon,
+            size: AppIapTokens.featureIconSize,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: AppIapTokens.featureIconSpacing),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                  ),
-                ),
+                Text(title, style: theme.textTheme.titleMedium),
                 Text(
                   description,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey[600],
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -363,3 +355,5 @@ class IAPPage extends ConsumerWidget {
     );
   }
 }
+
+enum _IapOperation { purchase, restore }

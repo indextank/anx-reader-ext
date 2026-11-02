@@ -1,3 +1,4 @@
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 
 abstract class BaseRoundedContainer extends StatelessWidget {
@@ -36,7 +37,7 @@ abstract class BaseRoundedContainer extends StatelessWidget {
     return AnimatedContainer(
       duration: animationDuration,
       curve: animationCurve,
-      margin: margin?.add(const EdgeInsets.all(1)) ?? const EdgeInsets.all(1),
+      margin: margin?.add(AppSpacing.all1) ?? AppSpacing.all1,
       width: width,
       height: height,
       constraints: constraints,

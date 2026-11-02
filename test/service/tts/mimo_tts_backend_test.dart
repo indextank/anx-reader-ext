@@ -105,8 +105,7 @@ void main() {
       expect(body.containsKey('rate'), isFalse);
     });
 
-    test('prepends the optional user message when an instruction is set',
-        () {
+    test('prepends the optional user message when an instruction is set', () {
       final body = buildMimoRequestBody(
         model: 'mimo-v2.5-tts',
         text: '目标文本',
@@ -116,8 +115,8 @@ void main() {
       );
       final messages = body['messages'] as List<dynamic>;
       expect(messages, hasLength(2));
-      expect(messages.first,
-          {'role': 'user', 'content': 'Bright, bouncy tone'});
+      expect(
+          messages.first, {'role': 'user', 'content': 'Bright, bouncy tone'});
       expect(messages.last, {'role': 'assistant', 'content': '目标文本'});
     });
   });
@@ -136,7 +135,9 @@ void main() {
 
     test('throws a readable error when choices are missing', () {
       expect(
-        () => parseMimoResponse({'error': {'message': 'bad'}}),
+        () => parseMimoResponse({
+          'error': {'message': 'bad'}
+        }),
         throwsA(isA<Exception>().having(
           (e) => e.toString(),
           'message',
@@ -147,8 +148,7 @@ void main() {
 
     test('surfaces the content filter rejection', () {
       final response = _successResponse();
-      final choices =
-          response['choices'] as List<dynamic>;
+      final choices = response['choices'] as List<dynamic>;
       (choices.first as Map<String, dynamic>)['finish_reason'] =
           'content_filter';
       expect(
@@ -162,8 +162,7 @@ void main() {
     });
 
     test('rejects invalid base64 audio', () {
-      final response =
-          _successResponse(base64Data: 'not-valid-base64!!!');
+      final response = _successResponse(base64Data: 'not-valid-base64!!!');
       expect(
         () => parseMimoResponse(response),
         throwsA(isA<Exception>().having(
@@ -209,8 +208,8 @@ void main() {
       final audio = base64Encode(List.filled(64, 3));
       final client = MockClient((request) async {
         captured = request;
-        return http.Response(jsonEncode(_successResponse(base64Data: audio)),
-            200);
+        return http.Response(
+            jsonEncode(_successResponse(base64Data: audio)), 200);
       });
       final provider = MimoTtsProvider.forTesting(client: client);
 
@@ -275,8 +274,7 @@ void main() {
       expect(result, isEmpty);
     });
 
-    test('times out when the server exceeds the configured timeout',
-        () async {
+    test('times out when the server exceeds the configured timeout', () async {
       await _initPrefsWith({..._baseConfig, 'timeout': 1});
       final client = MockClient((request) async {
         await Future<void>.delayed(const Duration(seconds: 10));
@@ -307,8 +305,7 @@ void main() {
       );
     });
 
-    test('returns an empty result for blank text without a request',
-        () async {
+    test('returns an empty result for blank text without a request', () async {
       final notCalled = MockClient((request) async {
         fail('no HTTP request should be made for blank text');
       });

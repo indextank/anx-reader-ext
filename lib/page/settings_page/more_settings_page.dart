@@ -1,4 +1,5 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/settings_page/ai.dart';
 import 'package:anx_reader/page/settings_page/advanced.dart';
@@ -59,10 +60,12 @@ class _SubMoreSettingsState extends State<SubMoreSettings> {
       animation: Prefs(),
       builder: (context, _) {
         final showDeveloperEntry = Prefs().developerOptionsEnabled;
+        final backTooltip = MaterialLocalizations.of(context).backButtonTooltip;
         return Scaffold(
           appBar: AppBar(
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
+            leading: AppIconButton(
+              icon: Icons.arrow_back,
+              tooltip: backTooltip,
               onPressed: () {
                 Navigator.pop(context);
               },

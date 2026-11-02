@@ -1,3 +1,4 @@
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:flutter/material.dart';
 
 class DashboardMiniMetric extends StatelessWidget {
@@ -21,15 +22,16 @@ class DashboardMiniMetric extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: theme.textTheme.bodySmall,
+            Icon(
+              icon,
+              size: AppStatisticsTokens.miniMetricIconSize,
+              color: theme.colorScheme.primary,
             ),
+            const SizedBox(width: AppStatisticsTokens.miniMetricSpacing),
+            Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppStatisticsTokens.miniMetricSpacing),
         Text(
           value.toString(),
           style: theme.textTheme.displaySmall?.copyWith(

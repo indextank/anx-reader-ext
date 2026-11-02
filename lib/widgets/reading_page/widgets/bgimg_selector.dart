@@ -1,6 +1,10 @@
 import 'dart:io';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/enums/bgimg_fit.dart';
 import 'package:anx_reader/enums/bgimg_theme_mode.dart';
 import 'package:anx_reader/enums/bgimg_type.dart';
@@ -101,16 +105,16 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
     required VoidCallback onTap,
   }) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 8.0),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            height: _itemHeight,
-            color: Theme.of(context).colorScheme.surfaceContainer,
-            child: child,
-          ),
+      padding: AppReadingTokens.backgroundItemPadding,
+      child: AppCard(
+        onTap: onTap,
+        padding: AppSpacing.zero,
+        borderRadius: AppReadingTokens.backgroundRadius,
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        child: SizedBox(
+          height: AppReadingTokens.backgroundItemHeight,
+          width: double.infinity,
+          child: child,
         ),
       ),
     );
@@ -131,9 +135,9 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
     final showImportNightButton = !hasNightImg && isLocalFile;
 
     Widget itemContent = Padding(
-      padding: const EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 8.0),
+      padding: AppReadingTokens.backgroundItemPadding,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: AppReadingTokens.backgroundRadius,
         child: Container(
           height: _itemHeight,
           color: Theme.of(context).colorScheme.surfaceContainer,
@@ -207,10 +211,13 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                           SizedBox(height: 4),
                           Text(
                             L10n.of(context).readingPageStyleImportNightImage,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                ),
                           ),
                         ],
                       ),
@@ -228,30 +235,34 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                     children: [
                       // Day label
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        margin: const EdgeInsets.only(left: 8, bottom: 8),
+                        padding: AppReadingTokens.backgroundLabelPadding,
+                        margin: AppReadingTokens.backgroundDayLabelMargin,
                         decoration: BoxDecoration(
-                          color: Colors.white.withAlpha(180),
-                          borderRadius: BorderRadius.circular(8),
+                          color: AppColors.white.withAlpha(180),
+                          borderRadius: AppReadingTokens.backgroundLabelRadius,
                         ),
                         child: Text(
                           L10n.of(context).readingPageStyleDayMode,
-                          style: TextStyle(fontSize: 10, color: Colors.black87),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: AppColors.black),
                         ),
                       ),
                       // Night label
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        margin: const EdgeInsets.only(right: 8, bottom: 8),
+                        padding: AppReadingTokens.backgroundLabelPadding,
+                        margin: AppReadingTokens.backgroundNightLabelMargin,
                         decoration: BoxDecoration(
-                          color: Colors.black.withAlpha(180),
-                          borderRadius: BorderRadius.circular(8),
+                          color: AppColors.black.withAlpha(180),
+                          borderRadius: AppReadingTokens.backgroundLabelRadius,
                         ),
                         child: Text(
                           L10n.of(context).readingPageStyleNightMode,
-                          style: TextStyle(fontSize: 10, color: Colors.white),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: AppColors.white),
                         ),
                       ),
                     ],
@@ -299,7 +310,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black26,
+                              color: AppColors.black.withAlpha(66),
                               blurRadius: 4,
                               offset: Offset(0, 2),
                             ),
@@ -325,7 +336,18 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
       final List<Widget> actions = [
         SlidableAction(
           onPressed: (context) {
-            ref.read(bgimgProvider.notifier).deleteBgimg(bgimgModel);
+            final l10n = L10n.of(context);
+            AppDialog.confirm(
+              context,
+              title: l10n.commonDelete,
+              message: l10n.readingPageStyleBackground,
+              confirmLabel: l10n.commonDelete,
+              isDangerous: true,
+              dangerDescription: l10n.readingPageStyleBackground,
+              onConfirm: () async {
+                ref.read(bgimgProvider.notifier).deleteBgimg(bgimgModel);
+              },
+            );
           },
           icon: Icons.delete,
           label: L10n.of(context).commonDelete,
@@ -340,7 +362,20 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
           0,
           SlidableAction(
             onPressed: (context) {
-              ref.read(bgimgProvider.notifier).removeNightImg(bgimgModel.path);
+              final l10n = L10n.of(context);
+              AppDialog.confirm(
+                context,
+                title: l10n.readingPageStyleDeleteNightImage,
+                message: l10n.readingPageStyleNightMode,
+                confirmLabel: l10n.commonDelete,
+                isDangerous: true,
+                dangerDescription: l10n.readingPageStyleDeleteNightImage,
+                onConfirm: () async {
+                  ref
+                      .read(bgimgProvider.notifier)
+                      .removeNightImg(bgimgModel.path);
+                },
+              );
             },
             icon: Icons.nightlight_outlined,
             label: L10n.of(context).readingPageStyleDeleteNightImage,
@@ -438,7 +473,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
     final bgimgList = ref.watch(bgimgProvider);
     final currentBgimg = Prefs().bgimg;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10.0),
+      padding: AppReadingTokens.panelVerticalPadding,
       child: Column(
         children: [
           _buildBgimgFitSelector(context),
@@ -491,14 +526,14 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
     ];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 12.0),
+      padding: AppReadingTokens.backgroundFitPadding,
       child: Row(
         children: [
           SizedBox(
             width: 64,
             child: Text(
               l10n.readingPageStyleBgimgFit,
-              style: TextStyle(fontSize: 13),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
           Expanded(
@@ -521,7 +556,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
   Widget _buildBlurOpacityControls(BuildContext context) {
     final bgimg = Prefs().bgimg;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0),
+      padding: AppReadingTokens.backgroundEffectPadding,
       child: Column(
         children: [
           Row(
@@ -530,7 +565,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                 width: 64,
                 child: Text(
                   L10n.of(context).readingPageStyleBgimgBlur,
-                  style: TextStyle(fontSize: 13),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               Expanded(
@@ -550,7 +585,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                 width: 36,
                 child: Text(
                   bgimg.blur.toStringAsFixed(1),
-                  style: TextStyle(fontSize: 12),
+                  style: Theme.of(context).textTheme.labelSmall,
                   textAlign: TextAlign.end,
                 ),
               ),
@@ -562,7 +597,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                 width: 64,
                 child: Text(
                   L10n.of(context).readingPageStyleBgimgOpacity,
-                  style: TextStyle(fontSize: 13),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               Expanded(
@@ -582,7 +617,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
                 width: 36,
                 child: Text(
                   '${(bgimg.opacity * 100).round()}%',
-                  style: TextStyle(fontSize: 12),
+                  style: Theme.of(context).textTheme.labelSmall,
                   textAlign: TextAlign.end,
                 ),
               ),

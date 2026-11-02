@@ -1,3 +1,4 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/ai_reasoning_effort.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/ai_provider.dart';
@@ -5,22 +6,32 @@ import 'package:anx_reader/providers/ai_providers.dart';
 import 'package:anx_reader/service/ai/ai_model_service.dart';
 import 'package:anx_reader/service/ai/index.dart';
 import 'package:anx_reader/service/ai/prompt_generate.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/ai/ai_stream.dart';
-import 'package:anx_reader/widgets/common/anx_button.dart';
 import 'package:anx_reader/widgets/common/anx_segmented_button.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:uuid/uuid.dart';
 
+typedef AiModelsFetcher = Future<List<String>> Function({
+  required String url,
+  required String apiKey,
+});
+
 class AiProviderDetailPage extends ConsumerStatefulWidget {
-  final String? providerId; // null for new provider
+  final String? providerId;
 
   const AiProviderDetailPage({
     super.key,
     required this.providerId,
+    this.fetchModels,
+    this.testConnection,
   });
+
+  final AiModelsFetcher? fetchModels;
+  final Future<void> Function()? testConnection;
 
   @override
   ConsumerState<AiProviderDetailPage> createState() =>
@@ -37,7 +48,6 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
   List<AiApiKey> _apiKeys = [];
   bool _isModified = false;
   bool _isFetchingModels = false;
-  final GlobalKey _fetchButtonKey = GlobalKey();
 
   @override
   void initState() {
@@ -80,171 +90,133 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.providerId == null
-            ? l10n.settingsAiProvidersAdd
-            : l10n.settingsAiProviderName),
+        title: Text(
+          widget.providerId == null
+              ? l10n.settingsAiProvidersAdd
+              : l10n.settingsAiProviderName,
+        ),
         actions: [
           if (_isModified)
-            TextButton(
-              onPressed: _saveProvider,
-              child: Text(l10n.commonSave),
+            AppSubmitButton(
+              label: l10n.commonSave,
+              variant: AppButtonVariant.text,
+              size: AppButtonSize.small,
+              errorMessage: l10n.commonActionFailed,
+              onSubmit: _saveProvider,
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Provider Name
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: l10n.settingsAiProviderName,
-                border: const OutlineInputBorder(),
+      body: AppSafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: AppSettingsAiTokens.pagePadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppTextField(
+                controller: _nameController,
+                label: l10n.settingsAiProviderName,
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // Protocol Type
-            Text(l10n.settingsAiProviderProtocol,
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            AnxSegmentedButton<AiProtocol>(
-              selected: {_selectedProtocol},
-              segments: [
-                SegmentButtonItem(
-                  value: AiProtocol.openai,
-                  label: l10n.settingsAiProviderProtocolOpenai,
+              SizedBox(height: AppSpacing.tokens.s16),
+              Text(
+                l10n.settingsAiProviderProtocol,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              SizedBox(height: AppSpacing.tokens.s8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: AnxSegmentedButton<AiProtocol>(
+                  selected: {_selectedProtocol},
+                  segments: [
+                    SegmentButtonItem(
+                      value: AiProtocol.openai,
+                      label: l10n.settingsAiProviderProtocolOpenai,
+                    ),
+                    SegmentButtonItem(
+                      value: AiProtocol.claude,
+                      label: l10n.settingsAiProviderProtocolClaude,
+                    ),
+                    SegmentButtonItem(
+                      value: AiProtocol.gemini,
+                      label: l10n.settingsAiProviderProtocolGemini,
+                    ),
+                  ],
+                  onSelectionChanged: (Set<AiProtocol> selection) {
+                    setState(() {
+                      _selectedProtocol = selection.first;
+                      _isModified = true;
+                    });
+                  },
                 ),
-                SegmentButtonItem(
-                  value: AiProtocol.claude,
-                  label: l10n.settingsAiProviderProtocolClaude,
-                ),
-                SegmentButtonItem(
-                  value: AiProtocol.gemini,
-                  label: l10n.settingsAiProviderProtocolGemini,
-                ),
-              ],
-              onSelectionChanged: (Set<AiProtocol> selection) {
-                setState(() {
-                  _selectedProtocol = selection.first;
-                  _isModified = true;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // API URL
-            TextField(
-              controller: _urlController,
-              decoration: InputDecoration(
-                labelText: l10n.settingsAiProviderUrl,
-                border: const OutlineInputBorder(),
+              ),
+              SizedBox(height: AppSpacing.tokens.s16),
+              AppTextField(
+                controller: _urlController,
+                label: l10n.settingsAiProviderUrl,
                 helperText: _selectedProtocol == AiProtocol.openai
                     ? l10n.settingsAiProviderUrlHint
                     : null,
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // Model
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _modelController,
-                    decoration: InputDecoration(
-                      labelText: l10n.settingsAiProviderModel,
-                      border: const OutlineInputBorder(),
+              SizedBox(height: AppSpacing.tokens.s16),
+              AppTextField(
+                controller: _modelController,
+                label: l10n.settingsAiProviderModel,
+              ),
+              if (_selectedProtocol == AiProtocol.openai) ...[
+                SizedBox(height: AppSpacing.tokens.s8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: AppButton(
+                    label: l10n.settingsAiProviderFetchModels,
+                    isLoading: _isFetchingModels,
+                    onPressed: _fetchModels,
+                  ),
+                ),
+              ],
+              SizedBox(height: AppSpacing.tokens.s24),
+              _buildAdvancedSettingsCard(context),
+              SizedBox(height: AppSpacing.tokens.s16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.settingsAiProviderApiKeys,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                ),
-                if (_selectedProtocol == AiProtocol.openai) ...[
-                  const SizedBox(width: 8),
-                  AnxButton(
-                    key: _fetchButtonKey,
-                    onPressed: _isFetchingModels ? null : _fetchModels,
-                    isLoading: _isFetchingModels,
-                    child: Text(l10n.settingsAiProviderFetchModels),
+                  AppIconButton(
+                    icon: Icons.add,
+                    onPressed: _addApiKey,
+                    tooltip: l10n.settingsAiProviderAddKey,
                   ),
                 ],
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            _buildAdvancedSettingsCard(context),
-            const SizedBox(height: 16),
-
-            // API Keys Section
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(l10n.settingsAiProviderApiKeys,
-                    style: Theme.of(context).textTheme.titleMedium),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: _addApiKey,
-                  tooltip: l10n.settingsAiProviderAddKey,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            if (_apiKeys.isEmpty)
-              FilledContainer(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Icon(
-                        Icons.key_off_outlined,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withAlpha(120),
-                      ),
-                      Text(
-                        l10n.settingsAiProviderNoValidKeys,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withAlpha(150),
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                      AnxButton.icon(
-                        onPressed: _addApiKey,
-                        icon: const Icon(Icons.add),
-                        label: Text(l10n.settingsAiProviderAddKey),
-                      ),
-                    ],
+              ),
+              SizedBox(height: AppSpacing.tokens.s8),
+              if (_apiKeys.isEmpty)
+                AppEmptyState(
+                  title: l10n.settingsAiProviderNoValidKeys,
+                  icon: Icons.key_off_outlined,
+                  actionLabel: l10n.settingsAiProviderAddKey,
+                  onAction: _addApiKey,
+                )
+              else
+                ..._apiKeys.asMap().entries.map((entry) {
+                  return _buildApiKeyTile(entry.value, entry.key);
+                }),
+              SizedBox(height: AppSpacing.tokens.s24),
+              if (provider != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: AppSubmitButton(
+                    label: l10n.settingsAiProviderTestConnection,
+                    variant: AppButtonVariant.outlined,
+                    errorMessage: l10n.commonActionFailed,
+                    onSubmit: _testConnection,
                   ),
                 ),
-              )
-            else
-              ..._apiKeys.asMap().entries.map((entry) {
-                final index = entry.key;
-                final apiKey = entry.value;
-                return _buildApiKeyTile(apiKey, index);
-              }),
-
-            const SizedBox(height: 24),
-
-            // Test Connection Button (at bottom)
-            if (provider != null)
-              SizedBox(
-                width: double.infinity,
-                child: AnxButton.outlined(
-                  onPressed: _testConnection,
-                  child: Text(l10n.settingsAiProviderTestConnection),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -255,10 +227,11 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final accent = colorScheme.secondary;
-    return FilledContainer(
+    return AppCard(
+      padding: AppSpacing.zero,
       child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        childrenPadding: const EdgeInsets.all(16),
+        tilePadding: AppSettingsAiTokens.advancedTilePadding,
+        childrenPadding: AppSpacing.all16,
         shape: const Border(),
         collapsedShape: const Border(),
         iconColor: accent,
@@ -266,30 +239,25 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
         title: Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: AppSettingsAiTokens.advancedIconContainerSize,
+              height: AppSettingsAiTokens.advancedIconContainerSize,
               decoration: BoxDecoration(
                 color: accent.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppRadius.border12,
               ),
               child: Icon(
                 Icons.tune_rounded,
-                size: 18,
+                size: AppSettingsAiTokens.segmentedIconSize,
                 color: accent,
               ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: AppSpacing.tokens.s12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.settingsAdvanced,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+              child: Text(
+                l10n.settingsAdvanced,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -299,7 +267,6 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
             initialValue: _reasoningEffort,
             decoration: InputDecoration(
               labelText: l10n.settingsAiProviderReasoningEffort,
-              border: const OutlineInputBorder(),
             ),
             items: [
               DropdownMenuItem(
@@ -327,22 +294,21 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
               });
             },
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: AppSpacing.tokens.s12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
                 Icons.info_outline_rounded,
-                size: 16,
+                size: AppSpacing.tokens.s16,
                 color: colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: AppSpacing.tokens.s8),
               Expanded(
                 child: Text(
                   l10n.settingsAiProviderReasoningEffortHelp,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
-                    height: 1.35,
                   ),
                 ),
               ),
@@ -355,284 +321,186 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
 
   Widget _buildApiKeyTile(AiApiKey apiKey, int index) {
     final l10n = L10n.of(context);
-    bool obscureKey = true;
+    var obscureKey = true;
 
-    return FilledContainer(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    apiKey.label?.isNotEmpty == true
-                        ? apiKey.label!
-                        : 'API Key ${index + 1}',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
+    return AppCard(
+      margin: AppSettingsAiTokens.apiKeyMargin,
+      padding: AppSpacing.all12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  apiKey.label?.isNotEmpty == true
+                      ? apiKey.label!
+                      : 'API Key ${index + 1}',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-                Switch(
-                  value: apiKey.enabled,
-                  onChanged: (value) {
-                    setState(() {
-                      _apiKeys[index] = AiApiKey(
-                        id: apiKey.id,
-                        key: apiKey.key,
-                        enabled: value,
-                        label: apiKey.label,
-                        createdAt: apiKey.createdAt,
-                      );
-                      _isModified = true;
-                    });
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => _deleteApiKey(index),
-                  tooltip: l10n.commonDelete,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            StatefulBuilder(
-              builder: (context, setModalState) {
-                return TextFormField(
-                  initialValue: apiKey.key,
-                  obscureText: obscureKey,
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                          obscureKey ? Icons.visibility_off : Icons.visibility),
-                      onPressed: () {
-                        setModalState(() => obscureKey = !obscureKey);
-                      },
-                    ),
-                  ),
-                  onChanged: (value) {
-                    _apiKeys[index] = AiApiKey(
-                      id: apiKey.id,
-                      key: value,
-                      enabled: apiKey.enabled,
-                      label: apiKey.label,
-                      createdAt: apiKey.createdAt,
-                    );
+              ),
+              Switch(
+                value: apiKey.enabled,
+                onChanged: (value) {
+                  setState(() {
+                    _apiKeys[index] = apiKey.copyWith(enabled: value);
                     _isModified = true;
+                  });
+                },
+              ),
+              AppIconButton(
+                icon: Icons.delete_outline,
+                onPressed: () => _deleteApiKey(index),
+                tooltip: l10n.commonDelete,
+              ),
+            ],
+          ),
+          SizedBox(height: AppSpacing.tokens.s8),
+          StatefulBuilder(
+            builder: (context, setFieldState) {
+              return AppTextField(
+                initialValue: apiKey.key,
+                obscureText: obscureKey,
+                suffixIcon: AppIconButton(
+                  icon: obscureKey ? Icons.visibility_off : Icons.visibility,
+                  tooltip: obscureKey ? l10n.showPassword : l10n.hidePassword,
+                  onPressed: () {
+                    setFieldState(() => obscureKey = !obscureKey);
                   },
-                );
-              },
-            ),
-          ],
-        ),
+                ),
+                onChanged: (value) {
+                  _apiKeys[index] = apiKey.copyWith(key: value);
+                  _isModified = true;
+                },
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
-  void _addApiKey() {
-    final l10n = L10n.of(context);
-    final labelController = TextEditingController();
-    final keyController = TextEditingController();
-
-    showDialog(
+  Future<void> _addApiKey() async {
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.settingsAiProviderAddKey),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: labelController,
-              decoration: InputDecoration(
-                labelText: l10n.settingsAiProviderKeyLabel,
-                border: const OutlineInputBorder(),
+      builder: (dialogContext) => _AddApiKeyDialog(
+        onAdd: (label, key) {
+          setState(() {
+            _apiKeys.add(
+              AiApiKey(
+                id: const Uuid().v4(),
+                key: key,
+                enabled: true,
+                label: label.isEmpty ? null : label,
+                createdAt: DateTime.now(),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: keyController,
-              decoration: const InputDecoration(
-                labelText: 'API Key',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.commonCancel),
-          ),
-          TextButton(
-            onPressed: () {
-              if (keyController.text.isNotEmpty) {
-                setState(() {
-                  _apiKeys.add(AiApiKey(
-                    id: const Uuid().v4(),
-                    key: keyController.text,
-                    enabled: true,
-                    label: labelController.text.isNotEmpty
-                        ? labelController.text
-                        : null,
-                    createdAt: DateTime.now(),
-                  ));
-                  _isModified = true;
-                });
-                Navigator.pop(context);
-              }
-            },
-            child: Text(l10n.commonConfirm),
-          ),
-        ],
+            );
+            _isModified = true;
+          });
+        },
       ),
     );
   }
 
   Future<void> _deleteApiKey(int index) async {
     final l10n = L10n.of(context);
-    bool confirmed = false;
-
-    await SmartDialog.show(
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.commonConfirm),
-        content: Text(l10n.commonDelete),
-        actions: [
-          TextButton(
-            onPressed: () {
-              confirmed = false;
-              SmartDialog.dismiss();
-            },
-            child: Text(l10n.commonCancel),
-          ),
-          TextButton(
-            onPressed: () {
-              confirmed = true;
-              SmartDialog.dismiss();
-            },
-            child: Text(l10n.commonConfirm),
-          ),
-        ],
-      ),
+    final confirmed = await AppDialog.confirm(
+      context,
+      title: l10n.commonDelete,
+      message: l10n.commonDelete,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: l10n.settingsAiProviderDeleteConfirm,
+      onConfirm: () async {
+        if (!mounted) return;
+        setState(() {
+          _apiKeys.removeAt(index);
+          _isModified = true;
+        });
+      },
     );
-
-    if (confirmed) {
-      setState(() {
-        _apiKeys.removeAt(index);
-        _isModified = true;
-      });
-    }
+    if (!confirmed || !mounted) return;
+    setState(() {});
   }
 
   Future<void> _fetchModels() async {
     final l10n = L10n.of(context);
     final enabledKeys = _apiKeys.where((k) => k.enabled && k.key.isNotEmpty);
-    if (enabledKeys.isEmpty || _urlController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.settingsAiProviderNoValidKeys)),
+    if (enabledKeys.isEmpty || _urlController.text.trim().isEmpty) {
+      AppFeedback.showError(
+        context,
+        message: l10n.settingsAiProviderNoValidKeys,
       );
       return;
     }
 
+    if (_isFetchingModels) return;
     setState(() => _isFetchingModels = true);
-
     try {
-      final models = await fetchAiModels(
+      final models = await (widget.fetchModels ?? fetchAiModels)(
         url: _urlController.text.trim(),
         apiKey: enabledKeys.first.key,
       );
-
       if (!mounted) return;
       setState(() => _isFetchingModels = false);
-
-      if (models.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.settingsAiProviderNoModelsFound)),
-        );
-        return;
-      }
-
-      // Position the dropdown below the fetch button
-      final renderBox =
-          _fetchButtonKey.currentContext?.findRenderObject() as RenderBox?;
-      final offset = renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
-      final size = renderBox?.size ?? Size.zero;
-
-      final selected = await showMenu<String>(
-        context: context,
-        position: RelativeRect.fromLTRB(
-          offset.dx,
-          offset.dy + size.height,
-          offset.dx + size.width,
-          offset.dy + size.height + 1,
-        ),
-        constraints: BoxConstraints(
-          minWidth: 220,
-          maxHeight: MediaQuery.of(context).size.height * 0.4,
-        ),
-        items: models
-            .map(
-              (modelId) => PopupMenuItem<String>(
-                value: modelId,
-                child: Text(modelId),
-              ),
-            )
-            .toList(),
-      );
-
-      if (selected != null) {
-        _modelController.text = selected;
-        setState(() => _isModified = true);
-      }
-    } catch (e) {
+      await _showModelPicker(models);
+    } catch (_) {
       if (mounted) {
-        setState(() => _isFetchingModels = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text(l10n.settingsAiProviderFetchModelsFailed(e.toString())),
-          ),
+        AppFeedback.showError(
+          context,
+          message: l10n.commonLoadFailed,
+          onRetry: _fetchModels,
         );
+      }
+    } finally {
+      if (mounted && _isFetchingModels) {
+        setState(() => _isFetchingModels = false);
       }
     }
   }
 
-  void _saveProvider() {
+  Future<void> _showModelPicker(List<String> models) async {
+    final l10n = L10n.of(context);
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        title: l10n.settingsAiProviderSelectModel,
+        content: SizedBox(
+          width: double.maxFinite,
+          height: AppSettingsAiTokens.modelPickerHeight,
+          child: models.isEmpty
+              ? AppEmptyState(title: l10n.settingsAiProviderNoModelsFound)
+              : ListView.builder(
+                  itemCount: models.length,
+                  itemBuilder: (context, index) => AppListTile(
+                    title: models[index],
+                    onTap: () => Navigator.pop(dialogContext, models[index]),
+                  ),
+                ),
+        ),
+        actions: [
+          AppButton(
+            label: l10n.commonCancel,
+            variant: AppButtonVariant.text,
+            onPressed: () => Navigator.pop(dialogContext),
+          ),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+    _modelController.text = selected;
+    setState(() => _isModified = true);
+  }
+
+  Future<void> _saveProvider() async {
     final l10n = L10n.of(context);
 
     if (_nameController.text.isEmpty || _urlController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.commonFailed)),
-      );
+      AppFeedback.showError(context, message: l10n.commonFailed);
       return;
     }
 
-    final provider = AiProvider(
-      id: widget.providerId ?? const Uuid().v4(),
-      title: _nameController.text,
-      url: _urlController.text,
-      protocol: _selectedProtocol,
-      enabled: true,
-      isBuiltin: widget.providerId != null
-          ? ref
-              .read(aiProvidersProvider)
-              .firstWhere((p) => p.id == widget.providerId)
-              .isBuiltin
-          : false,
-      apiKeys: _apiKeys,
-      model: _modelController.text,
-      reasoningEffort: _reasoningEffort,
-      keyIndex: 0,
-      createdAt: widget.providerId != null
-          ? ref
-              .read(aiProvidersProvider)
-              .firstWhere((p) => p.id == widget.providerId)
-              .createdAt
-          : DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
-
+    final provider = _buildProvider();
     if (widget.providerId == null) {
       ref.read(aiProvidersProvider.notifier).addProvider(provider);
     } else {
@@ -643,51 +511,50 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
     Navigator.pop(context);
   }
 
-  void _testConnection() {
-    final l10n = L10n.of(context);
+  AiProvider _buildProvider() {
+    final existing = widget.providerId == null
+        ? null
+        : ref
+            .read(aiProvidersProvider)
+            .firstWhere((p) => p.id == widget.providerId);
+    return AiProvider(
+      id: widget.providerId ?? const Uuid().v4(),
+      title: _nameController.text,
+      logoAsset: existing?.logoAsset,
+      url: _urlController.text,
+      protocol: _selectedProtocol,
+      enabled: existing?.enabled ?? true,
+      isBuiltin: existing?.isBuiltin ?? false,
+      apiKeys: _apiKeys,
+      model: _modelController.text,
+      reasoningEffort: _reasoningEffort,
+      keyIndex: existing?.keyIndex ?? 0,
+      createdAt: existing?.createdAt ?? DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
 
-    final enabledKeys = _apiKeys.where((k) => k.enabled && k.key.trim().isNotEmpty);
+  Future<void> _testConnection() async {
+    final l10n = L10n.of(context);
+    final enabledKeys = _apiKeys.where(
+      (k) => k.enabled && k.key.trim().isNotEmpty,
+    );
     if (_urlController.text.trim().isEmpty ||
         _modelController.text.trim().isEmpty ||
         enabledKeys.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.settingsAiProviderNoValidKeys)),
+      AppFeedback.showError(
+        context,
+        message: l10n.settingsAiProviderNoValidKeys,
       );
       return;
     }
 
-    // Save any pending changes before testing so the provider has the latest config
     if (_isModified) {
       if (_nameController.text.isEmpty || _urlController.text.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.commonFailed)),
-        );
+        AppFeedback.showError(context, message: l10n.commonFailed);
         return;
       }
-      final provider = AiProvider(
-        id: widget.providerId ?? const Uuid().v4(),
-        title: _nameController.text,
-        url: _urlController.text,
-        protocol: _selectedProtocol,
-        enabled: true,
-        isBuiltin: widget.providerId != null
-            ? ref
-                .read(aiProvidersProvider)
-                .firstWhere((p) => p.id == widget.providerId)
-                .isBuiltin
-            : false,
-        apiKeys: _apiKeys,
-        model: _modelController.text,
-        reasoningEffort: _reasoningEffort,
-        keyIndex: 0,
-        createdAt: widget.providerId != null
-            ? ref
-                .read(aiProvidersProvider)
-                .firstWhere((p) => p.id == widget.providerId)
-                .createdAt
-            : DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+      final provider = _buildProvider();
       if (widget.providerId == null) {
         ref.read(aiProvidersProvider.notifier).addProvider(provider);
       } else {
@@ -696,12 +563,16 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
       setState(() => _isModified = false);
     }
 
-    SmartDialog.show(
-      onDismiss: () {
-        cancelActiveAiRequest();
-      },
-      builder: (context) => AlertDialog(
-        title: Text(l10n.commonTest),
+    final testConnection = widget.testConnection;
+    if (testConnection != null) {
+      await testConnection();
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        title: l10n.commonTest,
         content: SizedBox(
           width: double.maxFinite,
           child: AiStream(
@@ -711,6 +582,74 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
           ),
         ),
       ),
+    );
+    cancelActiveAiRequest();
+  }
+}
+
+class _AddApiKeyDialog extends StatefulWidget {
+  const _AddApiKeyDialog({required this.onAdd});
+
+  final void Function(String label, String key) onAdd;
+
+  @override
+  State<_AddApiKeyDialog> createState() => _AddApiKeyDialogState();
+}
+
+class _AddApiKeyDialogState extends State<_AddApiKeyDialog> {
+  final TextEditingController _labelController = TextEditingController();
+  final TextEditingController _keyController = TextEditingController();
+  bool _showValidationError = false;
+
+  @override
+  void dispose() {
+    _labelController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
+    return AppDialog(
+      title: l10n.settingsAiProviderAddKey,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(
+              controller: _labelController,
+              label: l10n.settingsAiProviderKeyLabel,
+            ),
+            SizedBox(height: AppSpacing.tokens.s16),
+            AppTextField(controller: _keyController, label: 'API Key'),
+            if (_showValidationError) ...[
+              SizedBox(height: AppSpacing.tokens.s12),
+              AppInlineFeedback(message: l10n.commonInputCannotBeEmpty),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        AppButton(
+          label: l10n.commonCancel,
+          variant: AppButtonVariant.text,
+          onPressed: () => Navigator.pop(context),
+        ),
+        AppSubmitButton(
+          label: l10n.commonConfirm,
+          feedbackMode: AppSubmitFeedbackMode.inline,
+          onSubmit: () async {
+            final key = _keyController.text.trim();
+            if (key.isEmpty) {
+              setState(() => _showValidationError = true);
+              return;
+            }
+            widget.onAdd(_labelController.text, key);
+            if (mounted) Navigator.pop(context);
+          },
+        ),
+      ],
     );
   }
 }

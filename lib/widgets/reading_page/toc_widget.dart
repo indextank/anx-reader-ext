@@ -1,5 +1,6 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/book_player/epub_player.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/widgets/reading_page/widgets/book_toc.dart';
 import 'package:anx_reader/widgets/reading_page/widgets/bookmark.dart';
 import 'package:flutter/material.dart';
@@ -49,7 +50,7 @@ class _TocWidgetState extends State<TocWidget>
         ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: AppReadingTokens.contentPadding,
             child: TabBarView(
               controller: _tabController,
               children: [

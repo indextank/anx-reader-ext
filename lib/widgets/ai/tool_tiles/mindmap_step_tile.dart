@@ -1,9 +1,12 @@
 import 'dart:convert';
 
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/theme/app_ai_tokens.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/ai_reasoning_parser.dart';
 import 'package:anx_reader/widgets/ai/tool_tiles/tool_tile_base.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:graphview/GraphView.dart';
@@ -21,8 +24,8 @@ class MindmapStepTile extends StatefulWidget {
 }
 
 class _MindmapStepTileState extends State<MindmapStepTile> {
-  static const double _minScale = 0.4;
-  static const double _maxScale = 3.5;
+  static const double _minScale = AppAiTokens.mindmapMinScale;
+  static const double _maxScale = AppAiTokens.mindmapMaxScale;
 
   MindmapGraphBundle? _bundle;
   String? _error;
@@ -100,7 +103,10 @@ class _MindmapStepTileState extends State<MindmapStepTile> {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = ToolTileBase.statusColorFor(widget.step.status);
+    final statusColor = ToolTileBase.statusColorFor(
+      context,
+      widget.step.status,
+    );
 
     return ToolTileBase(
       title: widget.step.name,
@@ -114,77 +120,80 @@ class _MindmapStepTileState extends State<MindmapStepTile> {
   Widget _buildContent(BuildContext context) {
     final theme = Theme.of(context);
     if (_error != null) {
-      return Text(_error!, style: theme.textTheme.bodyMedium);
+      return AppInlineFeedback(message: _error);
     }
 
     final bundle = _bundle;
     if (bundle == null) {
-      return Text(L10n.of(context).mindmapGenerating,
-          style: theme.textTheme.bodyMedium);
+      return AppSkeleton(child: Text(L10n.of(context).mindmapGenerating));
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FilledContainer(
-          width: double.infinity,
-          height: 360,
-          radius: 12,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final width =
-                  constraints.maxWidth.isFinite ? constraints.maxWidth : 320.0;
-              final height = constraints.maxHeight.isFinite
-                  ? constraints.maxHeight
-                  : 320.0;
-              return Listener(
-                onPointerSignal: (event) {
-                  if (event is PointerScrollEvent) {
-                    GestureBinding.instance.pointerSignalResolver.register(
-                      event,
-                      (resolvedEvent) => _handlePointerScroll(
-                        resolvedEvent as PointerScrollEvent,
+        AppCard(
+          padding: AppSpacing.zero,
+          borderRadius: AppAiTokens.mindmapRadius,
+          child: SizedBox(
+            width: double.infinity,
+            height: AppAiTokens.mindmapHeight,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth.isFinite
+                    ? constraints.maxWidth
+                    : AppAiTokens.mindmapFallbackWidth;
+                final height = constraints.maxHeight.isFinite
+                    ? constraints.maxHeight
+                    : AppAiTokens.mindmapFallbackHeight;
+                return Listener(
+                  onPointerSignal: (event) {
+                    if (event is PointerScrollEvent) {
+                      GestureBinding.instance.pointerSignalResolver.register(
+                        event,
+                        (resolvedEvent) => _handlePointerScroll(
+                          resolvedEvent as PointerScrollEvent,
+                        ),
+                      );
+                    }
+                  },
+                  child: InteractiveViewer(
+                    key: _viewportKey,
+                    transformationController: _transformController,
+                    minScale: _minScale,
+                    maxScale: _maxScale,
+                    child: SizedBox(
+                      width: width,
+                      height: height,
+                      child: GraphView.builder(
+                        graph: bundle.graph,
+                        algorithm: bundle.algorithm,
+                        paint: Paint()
+                          ..color = theme.colorScheme.onSurface
+                          ..strokeWidth = AppAiTokens.mindmapEdgeWidth
+                          ..style = PaintingStyle.stroke,
+                        autoZoomToFit: true,
+                        builder: (node) {
+                          final id = node.key?.value?.toString() ?? '';
+                          final data = bundle.lookup[id];
+                          final level = bundle.levels[id] ?? 0;
+                          final style = _resolveLevelStyle(theme, level);
+                          return _MindmapNodeCard(
+                            label: data?.label ?? id,
+                            backgroundColor: style.background,
+                            foregroundColor: style.foreground,
+                          );
+                        },
                       ),
-                    );
-                  }
-                },
-                child: InteractiveViewer(
-                  key: _viewportKey,
-                  transformationController: _transformController,
-                  minScale: _minScale,
-                  maxScale: _maxScale,
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: GraphView.builder(
-                      graph: bundle.graph,
-                      algorithm: bundle.algorithm,
-                      paint: Paint()
-                        ..color = theme.colorScheme.onSurface
-                        ..strokeWidth = 2
-                        ..style = PaintingStyle.stroke,
-                      autoZoomToFit: true,
-                      builder: (node) {
-                        final id = node.key?.value?.toString() ?? '';
-                        final data = bundle.lookup[id];
-                        final level = bundle.levels[id] ?? 0;
-                        final style = _resolveLevelStyle(theme, level);
-                        return _MindmapNodeCard(
-                          label: data?.label ?? id,
-                          backgroundColor: style.background,
-                          foregroundColor: style.foreground,
-                        );
-                      },
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
         if (bundle.stats != null)
           Padding(
-            padding: const EdgeInsets.only(top: 8.0),
+            padding: AppAiTokens.feedbackTopPadding,
             child: Text(
               L10n.of(context).mindmapStats(
                 bundle.stats!.depth,
@@ -211,8 +220,12 @@ class _MindmapStepTileState extends State<MindmapStepTile> {
     final currentMatrix = _transformController.value;
     final currentScale = currentMatrix.getMaxScaleOnAxis();
 
-    final scaleDelta = (-event.scrollDelta.dy / 400).clamp(-0.5, 0.5);
-    if (scaleDelta.abs() < 1e-4) {
+    final scaleDelta =
+        (-event.scrollDelta.dy / AppAiTokens.mindmapScrollScale).clamp(
+      -AppAiTokens.mindmapMaxScaleDelta,
+      AppAiTokens.mindmapMaxScaleDelta,
+    );
+    if (scaleDelta.abs() < AppAiTokens.mindmapScaleEpsilon) {
       return;
     }
 
@@ -224,9 +237,9 @@ class _MindmapStepTileState extends State<MindmapStepTile> {
     }
 
     final nextMatrix = currentMatrix.clone()
-      ..translate(focalPoint.dx, focalPoint.dy)
-      ..scale(zoomFactor)
-      ..translate(-focalPoint.dx, -focalPoint.dy);
+      ..translateByDouble(focalPoint.dx, focalPoint.dy, 0, 1)
+      ..scaleByDouble(zoomFactor, zoomFactor, zoomFactor, 1)
+      ..translateByDouble(-focalPoint.dx, -focalPoint.dy, 0, 1);
 
     _transformController.value = nextMatrix;
   }
@@ -245,13 +258,15 @@ class _MindmapNodeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 200),
-      child: FilledContainer(
-        fill: true,
-        margin: EdgeInsets.zero,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(
+        maxWidth: AppAiTokens.mindmapNodeMaxWidth,
+      ),
+      child: AppCard(
+        margin: AppSpacing.zero,
         color: backgroundColor,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: AppAiTokens.mindmapNodePadding,
+        borderRadius: AppAiTokens.mindmapRadius,
         child: Text(
           label,
           style: Theme.of(context)
@@ -273,12 +288,14 @@ class _LevelStyle {
 
 _LevelStyle _resolveLevelStyle(ThemeData theme, int level) {
   final base = HSVColor.fromColor(theme.colorScheme.primary);
-  final hue = (base.hue + (level * 32)) % 360;
+  final hue = (base.hue + (level * AppAiTokens.mindmapHueStep)) % 360;
   final saturation = (0.35 + (level % 5) * 0.08).clamp(0.2, 0.85);
   final value = (0.9 - (level % 6) * 0.06).clamp(0.3, 0.95);
   final background = HSVColor.fromAHSV(1, hue, saturation, value).toColor();
-  final foreground =
-      background.computeLuminance() > 0.55 ? Colors.black : Colors.white;
+  final foreground = background.computeLuminance() >
+          AppAiTokens.mindmapLightForegroundThreshold
+      ? AppColors.black
+      : AppColors.white;
   return _LevelStyle(background: background, foreground: foreground);
 }
 
@@ -316,9 +333,9 @@ class MindmapGraphBundle {
     visit(payload.root, 0);
 
     final config = BuchheimWalkerConfiguration()
-      ..siblingSeparation = 10
-      ..levelSeparation = 200
-      ..subtreeSeparation = 20
+      ..siblingSeparation = AppAiTokens.mindmapSiblingSeparation
+      ..levelSeparation = AppAiTokens.mindmapLevelSeparation
+      ..subtreeSeparation = AppAiTokens.mindmapSubtreeSeparation
       ..orientation = BuchheimWalkerConfiguration.ORIENTATION_LEFT_RIGHT;
 
     final algorithm = MindmapAlgorithm(

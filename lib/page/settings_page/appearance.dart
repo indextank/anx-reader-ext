@@ -1,16 +1,20 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/enums/bookshelf_folder_style.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/providers/ui_settings.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/widgets/common/anx_segmented_button.dart';
+import 'package:anx_reader/widgets/settings/settings_section.dart';
+import 'package:anx_reader/widgets/settings/settings_tile.dart';
 import 'package:anx_reader/widgets/settings/settings_title.dart';
 import 'package:anx_reader/widgets/settings/simple_dialog.dart';
 import 'package:anx_reader/widgets/settings/theme_mode.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:provider/provider.dart';
-import 'package:anx_reader/widgets/settings/settings_section.dart';
-import 'package:anx_reader/widgets/settings/settings_tile.dart';
-import 'package:anx_reader/enums/bookshelf_folder_style.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const List<Map<String, String>> languageOptions = [
   {'system': 'System'},
@@ -31,25 +35,27 @@ const List<Map<String, String>> languageOptions = [
   {'Română': 'ro'},
 ];
 
-class AppearanceSetting extends StatefulWidget {
+class AppearanceSetting extends ConsumerStatefulWidget {
   const AppearanceSetting({super.key});
 
   @override
-  State<AppearanceSetting> createState() => _AppearanceSettingState();
+  ConsumerState<AppearanceSetting> createState() => _AppearanceSettingState();
 }
 
-class _AppearanceSettingState extends State<AppearanceSetting> {
+class _AppearanceSettingState extends ConsumerState<AppearanceSetting> {
   @override
   Widget build(BuildContext context) {
-    final languageSubtitle = Prefs().locale == null
+    final settings = ref.watch(uiSettingsProvider);
+    final locale = settings.locale;
+    final languageSubtitle = locale == null
         ? languageOptions[0].values.first
         : languageOptions
             .firstWhere(
                 (element) =>
                     element.values.first ==
-                    Prefs().locale!.languageCode +
-                        (Prefs().locale!.countryCode != null
-                            ? "-${Prefs().locale!.countryCode}"
+                    locale.languageCode +
+                        (locale.countryCode != null
+                            ? "-${locale.countryCode}"
                             : ""),
                 orElse: () => languageOptions[0])
             .keys
@@ -61,97 +67,118 @@ class _AppearanceSettingState extends State<AppearanceSetting> {
           title: Text(L10n.of(context).settingsAppearanceTheme),
           tiles: [
             const CustomSettingsTile(
-                child: Padding(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, 8),
-              child: ChangeThemeMode(),
-            )),
+              child: Padding(
+                padding: AppSettingsTokens.themeModePadding,
+                child: ChangeThemeMode(),
+              ),
+            ),
             SettingsTile.navigation(
-                title: Text(L10n.of(context).settingsAppearanceThemeColor),
-                leading: const Icon(Icons.color_lens),
-                onPressed: (context) async {
-                  await showColorPickerDialog(context);
-                }),
+              title: Text(L10n.of(context).settingsAppearanceThemeColor),
+              leading: const Icon(Icons.color_lens),
+              onPressed: (context) async {
+                await showColorPickerDialog(context, ref);
+              },
+            ),
             SettingsTile.switchTile(
               title: const Text("OLED Dark Mode"),
               leading: const Icon(Icons.brightness_2),
-              initialValue: Prefs().trueDarkMode,
+              initialValue: settings.trueDarkMode,
               onToggle: (bool value) {
-                setState(() {
-                  Prefs().trueDarkMode = value;
-                });
+                ref.read(uiSettingsProvider.notifier).setTrueDarkMode(value);
               },
             ),
             SettingsTile.switchTile(
               title: Text(L10n.of(context).eInkMode),
               leading: const Icon(Icons.contrast),
-              initialValue: Prefs().eInkMode,
+              initialValue: settings.eInkMode,
               onToggle: (bool value) {
-                setState(() {
-                  Prefs().saveThemeModeToPrefs('light');
-                  Prefs().eInkMode = value;
-                });
+                ref.read(uiSettingsProvider.notifier).setEInkMode(value);
               },
             ),
           ],
         ),
         SettingsSection(
-            title: Text(L10n.of(context).settingsAppearanceDisplay),
-            tiles: [
-              SettingsTile.navigation(
-                  title: Text(L10n.of(context).settingsAppearanceLanguage),
-                  value: Text(languageSubtitle),
-                  leading: const Icon(Icons.language),
-                  onPressed: (context) {
-                    showLanguagePickerDialog(context);
-                  }),
-              SettingsTile.switchTile(
-                title:
-                    Text(L10n.of(context).settingsAppearanceOpenBookAnimation),
-                leading: const Icon(Icons.animation),
-                initialValue: Prefs().openBookAnimation,
-                onToggle: (bool value) {
-                  setState(() {
-                    Prefs().openBookAnimation = value;
-                  });
-                },
+          title: Text(L10n.of(context).settingsAppearanceDisplay),
+          tiles: [
+            SettingsTile.navigation(
+              title: Text(L10n.of(context).settingsAppearanceLanguage),
+              value: Text(languageSubtitle),
+              leading: const Icon(Icons.language),
+              onPressed: (context) {
+                showLanguagePickerDialog(context, ref);
+              },
+            ),
+            CustomSettingsTile(
+              child: ListTile(
+                title: Text(L10n.of(context).settingsAppearanceTextScale),
+                subtitle: Row(
+                  children: [
+                    Text('${(settings.textScale * 100).round()}%'),
+                    Expanded(
+                      child: Slider(
+                        value: settings.textScale,
+                        min: 0.8,
+                        max: 1.5,
+                        divisions: 7,
+                        onChanged: (value) {
+                          ref
+                              .read(uiSettingsProvider.notifier)
+                              .setTextScale(value);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              SettingsTile.switchTile(
-                title: Text(L10n.of(context).settingsAdvancedAutoHideBottomBar),
-                leading: const Icon(Icons.vertical_align_bottom),
-                initialValue: Prefs().autoHideBottomBar,
-                onToggle: (value) {
-                  Prefs().autoHideBottomBar = value;
-                  setState(() {});
-                },
-              ),
-              SettingsTile.switchTile(
-                title: Text(L10n.of(context).reduceVibrationFeedback),
-                leading: const Icon(Icons.vibration),
-                initialValue: Prefs().reduceVibrationFeedback,
-                onToggle: (bool value) {
-                  setState(() {
-                    Prefs().reduceVibrationFeedback = value;
-                  });
-                },
-              ),
-              SettingsTile.switchTile(
-                title: Text(L10n.of(context).readingPageShowActionLabels),
-                leading: const Icon(Icons.subtitles_outlined),
-                initialValue: Prefs().showActionLabels,
-                onToggle: (bool value) {
-                  setState(() {
-                    Prefs().showActionLabels = value;
-                  });
-                },
-                description:
-                    Text(L10n.of(context).readingPageShowActionLabelsTips),
-              ),
-            ]),
+            ),
+            SettingsTile.switchTile(
+              title: Text(L10n.of(context).settingsAppearanceOpenBookAnimation),
+              leading: const Icon(Icons.animation),
+              initialValue: Prefs().openBookAnimation,
+              onToggle: (bool value) {
+                setState(() {
+                  Prefs().openBookAnimation = value;
+                });
+              },
+            ),
+            SettingsTile.switchTile(
+              title: Text(L10n.of(context).settingsAdvancedAutoHideBottomBar),
+              leading: const Icon(Icons.vertical_align_bottom),
+              initialValue: Prefs().autoHideBottomBar,
+              onToggle: (value) {
+                Prefs().autoHideBottomBar = value;
+                setState(() {});
+              },
+            ),
+            SettingsTile.switchTile(
+              title: Text(L10n.of(context).reduceVibrationFeedback),
+              leading: const Icon(Icons.vibration),
+              initialValue: Prefs().reduceVibrationFeedback,
+              onToggle: (bool value) {
+                setState(() {
+                  Prefs().reduceVibrationFeedback = value;
+                });
+              },
+            ),
+            SettingsTile.switchTile(
+              title: Text(L10n.of(context).readingPageShowActionLabels),
+              leading: const Icon(Icons.subtitles_outlined),
+              initialValue: Prefs().showActionLabels,
+              onToggle: (bool value) {
+                setState(() {
+                  Prefs().showActionLabels = value;
+                });
+              },
+              description:
+                  Text(L10n.of(context).readingPageShowActionLabelsTips),
+            ),
+          ],
+        ),
         SettingsSection(
-            title: Text(L10n.of(context).settingsBookshelfCover),
-            tiles: [
-              CustomSettingsTile(
-                  child: ListTile(
+          title: Text(L10n.of(context).settingsBookshelfCover),
+          tiles: [
+            CustomSettingsTile(
+              child: ListTile(
                 title: Text(L10n.of(context).settingsBookshelfCoverWidth),
                 subtitle: Row(
                   children: [
@@ -171,70 +198,62 @@ class _AppearanceSettingState extends State<AppearanceSetting> {
                     ),
                   ],
                 ),
-              )),
-              CustomSettingsTile(
-                  child: ListTile(
+              ),
+            ),
+            CustomSettingsTile(
+              child: ListTile(
                 title: Text(L10n.of(context).settingsBookshelfFolderStyle),
                 subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: AppSpacing.vertical8,
                   child: AnxSegmentedButton<BookshelfFolderStyle>(
                     segments: [
                       SegmentButtonItem(
                         label: L10n.of(context)
                             .settingsBookshelfFolderStyleOverlap,
                         value: BookshelfFolderStyle.stacked,
-                        icon: Icon(Icons.layers),
+                        icon: const Icon(Icons.layers),
                       ),
                       SegmentButtonItem(
                         label:
                             L10n.of(context).settingsBookshelfFolderStyleGrid,
                         value: BookshelfFolderStyle.grid2x2,
-                        icon: Icon(Icons.grid_view),
+                        icon: const Icon(Icons.grid_view),
                       ),
                     ],
-                    selected: {Prefs().bookshelfFolderStyle},
+                    selected: {settings.bookshelfFolderStyle},
                     onSelectionChanged: (value) {
-                      setState(() {
-                        Prefs().bookshelfFolderStyle = value.first;
-                      });
+                      ref
+                          .read(uiSettingsProvider.notifier)
+                          .setBookshelfFolderStyle(value.first);
                     },
                   ),
                 ),
-              )),
-              SettingsTile.switchTile(
-                title: Text(
-                    L10n.of(context).settingsBookshelfDefaultCoverShowTitle),
-                leading: const Icon(Icons.title),
-                initialValue: Prefs().showBookTitleOnDefaultCover,
-                onToggle: (bool value) {
-                  setState(() {
-                    Prefs().showBookTitleOnDefaultCover = value;
-                  });
-                },
               ),
-              SettingsTile.switchTile(
-                title: Text(
-                    L10n.of(context).settingsBookshelfDefaultCoverShowAuthor),
-                leading: const Icon(Icons.person),
-                initialValue: Prefs().showAuthorOnDefaultCover,
-                onToggle: (bool value) {
-                  setState(() {
-                    Prefs().showAuthorOnDefaultCover = value;
-                  });
-                },
-              ),
-              // SettingsTile.switchTile(
-              //   title: Text(
-              //       L10n.of(context).settingsAdvancedUseOriginalCoverRatio),
-              //   leading: const Icon(Icons.photo_size_select_large_outlined),
-              //   initialValue: Prefs().useOriginalCoverRatio,
-              //   onToggle: (bool value) {
-              //     setState(() {
-              //       Prefs().useOriginalCoverRatio = value;
-              //     });
-              //   },
-              // ),
-            ]),
+            ),
+            SettingsTile.switchTile(
+              title:
+                  Text(L10n.of(context).settingsBookshelfDefaultCoverShowTitle),
+              leading: const Icon(Icons.title),
+              initialValue: Prefs().showBookTitleOnDefaultCover,
+              onToggle: (bool value) {
+                setState(() {
+                  Prefs().showBookTitleOnDefaultCover = value;
+                });
+              },
+            ),
+            SettingsTile.switchTile(
+              title: Text(
+                  L10n.of(context).settingsBookshelfDefaultCoverShowAuthor),
+              leading: const Icon(Icons.person),
+              initialValue: Prefs().showAuthorOnDefaultCover,
+              onToggle: (bool value) {
+                setState(() {
+                  Prefs().showAuthorOnDefaultCover = value;
+                });
+              },
+            ),
+          ],
+        ),
         SettingsSection(
           title: Text(L10n.of(context).settingsAppearanceBottomNavigatorShow),
           tiles: [
@@ -273,9 +292,13 @@ class _AppearanceSettingState extends State<AppearanceSetting> {
   }
 }
 
-void showLanguagePickerDialog(BuildContext context) {
+void showLanguagePickerDialog(BuildContext context, WidgetRef ref) {
   final title = L10n.of(context).settingsAppearanceLanguage;
-  final saveToPrefs = Prefs().saveLocaleToPrefs;
+  Future<void> saveToPrefs(String code) {
+    return ref
+        .read(uiSettingsProvider.notifier)
+        .setLocale(localeFromLanguageCode(code));
+  }
 
   final children = languageOptions.map((e) {
     final key = e.keys.first;
@@ -285,17 +308,21 @@ void showLanguagePickerDialog(BuildContext context) {
   showSimpleDialog(title, saveToPrefs, children);
 }
 
-Future<void> showColorPickerDialog(BuildContext context) async {
-  final prefsProvider = Provider.of<Prefs>(context, listen: false);
-  final currentColor = prefsProvider.themeColor;
+Locale? localeFromLanguageCode(String code) {
+  if (code == 'system') return null;
+  final parts = code.split('-');
+  return Locale(parts.first, parts.length > 1 ? parts[1] : null);
+}
 
+Future<void> showColorPickerDialog(BuildContext context, WidgetRef ref) async {
+  final currentColor = ref.read(uiSettingsProvider).themeColor;
   Color pickedColor = currentColor;
 
   await showDialog<void>(
     context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text(L10n.of(context).settingsAppearanceThemeColor),
+    builder: (BuildContext dialogContext) {
+      return AppDialog(
+        title: L10n.of(dialogContext).settingsAppearanceThemeColor,
         content: SingleChildScrollView(
           child: ColorPicker(
             pickerColor: pickedColor,
@@ -304,21 +331,23 @@ Future<void> showColorPickerDialog(BuildContext context) async {
             },
             enableAlpha: false,
             displayThumbColor: true,
-            pickerAreaHeightPercent: 0.8,
+            pickerAreaHeightPercent: AppSettingsTokens.colorPickerHeightPercent,
           ),
         ),
-        actions: <Widget>[
-          TextButton(
-            child: Text(L10n.of(context).commonCancel),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
+        actions: [
+          AppButton(
+            label: L10n.of(dialogContext).commonCancel,
+            variant: AppButtonVariant.text,
+            onPressed: () => Navigator.of(dialogContext).pop(),
           ),
-          TextButton(
-            child: Text(L10n.of(context).commonOk),
-            onPressed: () {
-              prefsProvider.saveThemeToPrefs(pickedColor.value);
-              Navigator.of(context).pop();
+          AppSubmitButton(
+            label: L10n.of(dialogContext).commonOk,
+            feedbackMode: AppSubmitFeedbackMode.inline,
+            onSubmit: () async {
+              await ref
+                  .read(uiSettingsProvider.notifier)
+                  .setThemeColor(pickedColor);
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
             },
           ),
         ],

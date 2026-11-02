@@ -1,8 +1,9 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/providers/reading_duration_trend_provider.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/utils/date/convert_seconds.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
 import 'package:anx_reader/widgets/statistic/book_reading_chart.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -47,10 +48,10 @@ abstract class _BaseReadingDurationTile extends StatisticsDashboardTileBase {
 
   @override
   Widget buildContent(BuildContext context, WidgetRef ref) {
-    final asyncValue = ref.watch(readingDurationTrendProvider);
-    return AsyncSkeletonWrapper<ReadingDurationTrendData>(
-      asyncValue: asyncValue,
+    return DashboardAsyncValue<ReadingDurationTrendData>(
+      value: ref.watch(readingDurationTrendProvider),
       mock: ReadingDurationTrendData.mock(),
+      onRetry: () async => ref.invalidate(readingDurationTrendProvider),
       builder: (data, _) => _ReadingDurationTileBody(
         series: _selectSeries(data),
       ),
@@ -85,17 +86,14 @@ class _ReadingDurationTileBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final totalLabel = convertSeconds(series.totalSeconds);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          totalLabel,
-          style: theme.textTheme.bodyMedium,
+          convertSeconds(series.totalSeconds),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppStatisticsTokens.librarySpacing),
         Expanded(
           child: BookReadingChart(
             cumulativeValues: series.cumulativeSeconds,

@@ -1,39 +1,40 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 
 class BookshelfTips extends StatelessWidget {
   const BookshelfTips({super.key});
 
-  final TextStyle textStyleBig = const TextStyle(
-    fontSize: 20,
-    fontWeight: FontWeight.bold,
-  );
-  final TextStyle textStyle = const TextStyle(
-    fontSize: 15,
-  );
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('(´。＿。｀)',
-              style: TextStyle(
-                  fontSize: 50,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey)),
-          const SizedBox(height: 50),
-          Text(
-            L10n.of(context).bookshelfTips_1,
-            style: textStyleBig,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            L10n.of(context).bookshelfTips_2,
-            style: textStyle,
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: AppSpacing.all24,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '(´。＿。｀)',
+              style: theme.textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            SizedBox(height: AppSpacing.tokens.s48),
+            Text(
+              L10n.of(context).bookshelfTips_1,
+              style: theme.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: AppSpacing.tokens.s8),
+            Text(
+              L10n.of(context).bookshelfTips_2,
+              style: theme.textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

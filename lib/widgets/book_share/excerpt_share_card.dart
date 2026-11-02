@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:anx_reader/enums/excerpt_share_template.dart';
 import 'package:anx_reader/models/font_model.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/content_style_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:mongol/mongol.dart';
 
@@ -16,6 +18,9 @@ class ExcerptShareCard extends StatelessWidget {
   final Color backgroundColor;
   final String? backgroundImage;
 
+  /// 导出图样式与 app 主题无关，故令牌以构造参数传入并默认 const，而非读 Theme。
+  final ShareStyleTokens tokens;
+
   const ExcerptShareCard({
     super.key,
     required this.bookTitle,
@@ -27,7 +32,13 @@ class ExcerptShareCard extends StatelessWidget {
     required this.textColor,
     required this.backgroundColor,
     this.backgroundImage,
+    this.tokens = const ShareStyleTokens(),
   });
+
+  BorderRadius get _cardRadius =>
+      BorderRadius.all(Radius.circular(tokens.cornerRadius));
+
+  EdgeInsets get _cardPadding => AppSpacing.all(tokens.cardPadding);
 
   @override
   Widget build(BuildContext context) {
@@ -40,20 +51,20 @@ class ExcerptShareCard extends StatelessWidget {
 
     return RepaintBoundary(
       child: Container(
-        width: 500,
+        width: tokens.outputWidth,
         decoration: BoxDecoration(
           color: backgroundColor,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: _cardRadius,
           boxShadow: [
             BoxShadow(
-              color: Colors.black45,
+              color: tokens.imageScrim,
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: _cardRadius,
           child: child,
         ),
       ),
@@ -105,7 +116,7 @@ class ExcerptShareCard extends StatelessWidget {
           text: TextSpan(
               text: excerpt,
               style: _getTextStyle().copyWith(
-                fontSize: 18,
+                fontSize: tokens.bodyFontSize,
                 height: 1.1,
                 letterSpacing: 5,
               )),
@@ -121,7 +132,7 @@ class ExcerptShareCard extends StatelessWidget {
           child: MongolText(
             excerpt,
             style: _getTextStyle().copyWith(
-              fontSize: 18,
+              fontSize: tokens.bodyFontSize,
               height: 1.1,
               letterSpacing: 5,
             ),
@@ -132,7 +143,7 @@ class ExcerptShareCard extends StatelessWidget {
       return Text(
         excerpt,
         style: _getTextStyle().copyWith(
-          fontSize: 18,
+          fontSize: tokens.bodyFontSize,
           height: 2,
         ),
       );
@@ -239,7 +250,7 @@ class ExcerptShareCard extends StatelessWidget {
 
   Widget _buildDefaultTemplate() {
     return Container(
-      padding: const EdgeInsets.all(24.0),
+      padding: _cardPadding,
       decoration: BoxDecoration(
         image: backgroundImage != null
             ? DecorationImage(
@@ -289,7 +300,7 @@ class ExcerptShareCard extends StatelessWidget {
 
   Widget _buildSimpleTemplate() {
     return Container(
-      padding: const EdgeInsets.all(24.0),
+      padding: _cardPadding,
       decoration: BoxDecoration(
         color: backgroundColor,
         image: backgroundImage != null
@@ -361,7 +372,7 @@ class ExcerptShareCard extends StatelessWidget {
     return Column(
       children: [
         Container(
-            padding: const EdgeInsets.all(24.0),
+            padding: _cardPadding,
             decoration: BoxDecoration(
               color: backgroundColor,
               image: backgroundImage != null
@@ -382,14 +393,16 @@ class ExcerptShareCard extends StatelessWidget {
                   children: [
                     _getTitleText(
                       verticle: true,
-                      fontSize: 38,
-                      color: backgroundImage != null ? Colors.white : null,
+                      fontSize: tokens.accentFontSize,
+                      color:
+                          backgroundImage != null ? tokens.imageOverlay : null,
                     ),
                     const SizedBox(width: 16),
                     _getAuthorText(
                       verticle: true,
                       textSize: 25,
-                      color: backgroundImage != null ? Colors.white : null,
+                      color:
+                          backgroundImage != null ? tokens.imageOverlay : null,
                     ),
                   ],
                 ),
@@ -397,8 +410,9 @@ class ExcerptShareCard extends StatelessWidget {
                   children: [
                     const Spacer(),
                     _getAnxReaderLogo(
-                      fontSize: 16,
-                      color: backgroundImage != null ? Colors.white : null,
+                      fontSize: tokens.captionFontSize,
+                      color:
+                          backgroundImage != null ? tokens.imageOverlay : null,
                     ),
                   ],
                 ),
@@ -409,7 +423,7 @@ class ExcerptShareCard extends StatelessWidget {
           height: 1,
         ),
         Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: _cardPadding,
           child: Column(children: [
             _getContent(),
             const SizedBox(height: 16),
@@ -434,7 +448,7 @@ class ExcerptShareCard extends StatelessWidget {
               )
             : null,
       ),
-      padding: const EdgeInsets.all(24.0),
+      padding: _cardPadding,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [

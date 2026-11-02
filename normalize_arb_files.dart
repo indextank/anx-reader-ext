@@ -1,3 +1,8 @@
+// Standalone CLI maintenance script (run with `dart run normalize_arb_files.dart`).
+// Writing progress/errors to stdout via print is the intended behavior here,
+// not production app code, so the avoid_print lint does not apply.
+// ignore_for_file: avoid_print
+
 import 'dart:io';
 import 'dart:convert';
 

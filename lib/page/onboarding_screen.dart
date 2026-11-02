@@ -1,13 +1,19 @@
-import 'package:anx_reader/page/settings_page/appearance.dart';
-import 'package:flutter/material.dart';
-import 'package:introduction_screen/introduction_screen.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
-import 'package:anx_reader/config/shared_preference_provider.dart';
-import 'package:provider/provider.dart';
+import 'package:anx_reader/page/settings_page/appearance.dart';
+import 'package:anx_reader/providers/ui_settings.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_elevation.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:introduction_screen/introduction_screen.dart';
 
 /// Onboarding screen for first-time users
 /// Shows introduction pages covering key features and settings
-class OnboardingScreen extends StatefulWidget {
+class OnboardingScreen extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
 
   const OnboardingScreen({
@@ -16,25 +22,27 @@ class OnboardingScreen extends StatefulWidget {
   });
 
   @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
+  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final GlobalKey<IntroductionScreenState> _introKey =
       GlobalKey<IntroductionScreenState>();
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return IntroductionScreen(
       key: _introKey,
-      globalBackgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      globalBackgroundColor: theme.scaffoldBackgroundColor,
       allowImplicitScrolling: true,
       infiniteAutoScroll: false,
       globalHeader: Align(
         alignment: Alignment.topRight,
-        child: SafeArea(
+        child: AppSafeArea(
+          bottom: false,
           child: Padding(
-            padding: const EdgeInsets.only(top: 16, right: 16),
+            padding: AppSpacing.all16,
             child: _buildSkipButton(),
           ),
         ),
@@ -48,52 +56,50 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ],
       onDone: _onIntroEnd,
       onSkip: _onIntroEnd,
-      showSkipButton: false, // We handle skip in globalHeader
+      showSkipButton: false,
       showBackButton: true,
       showNextButton: true,
       skipOrBackFlex: 0,
       nextFlex: 0,
       showBottomPart: true,
       curve: Curves.fastLinearToSlowEaseIn,
-      controlsMargin: const EdgeInsets.all(16),
-      controlsPadding: const EdgeInsets.fromLTRB(8.0, 4.0, 8.0, 4.0),
+      controlsMargin: AppSpacing.all16,
+      controlsPadding: AppOnboardingTokens.controlsPadding,
       dotsDecorator: DotsDecorator(
-        size: const Size(10.0, 10.0),
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        activeSize: const Size(22.0, 10.0),
-        activeColor: Theme.of(context).colorScheme.primary,
+        size: AppOnboardingTokens.dotSize,
+        color: theme.colorScheme.surfaceContainerHighest,
+        activeSize: AppOnboardingTokens.activeDotSize,
+        activeColor: theme.colorScheme.primary,
         activeShape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(25.0)),
+          borderRadius: AppRadius.pill,
         ),
       ),
       next: Icon(
         Icons.arrow_forward,
-        color: Theme.of(context).colorScheme.primary,
+        color: theme.colorScheme.primary,
+        semanticLabel: MaterialLocalizations.of(context).nextPageTooltip,
       ),
       back: Icon(
         Icons.arrow_back,
-        color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+        color: theme.colorScheme.onSurface.withAlpha(150),
+        semanticLabel: MaterialLocalizations.of(context).previousPageTooltip,
       ),
       done: Text(
         L10n.of(context).onboardingDone,
-        style: TextStyle(
+        style: theme.textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.primary,
+          color: theme.colorScheme.primary,
         ),
       ),
     );
   }
 
   Widget _buildSkipButton() {
-    return TextButton(
+    return AppButton(
+      label: L10n.of(context).onboardingSkip,
+      variant: AppButtonVariant.text,
+      semanticLabel: L10n.of(context).onboardingSkip,
       onPressed: _onIntroEnd,
-      child: Text(
-        L10n.of(context).onboardingSkip,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
     );
   }
 
@@ -153,35 +159,59 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         color: Theme.of(context).colorScheme.primaryContainer.withAlpha(50),
         shape: BoxShape.circle,
       ),
-      padding: const EdgeInsets.all(40),
+      padding: AppOnboardingTokens.heroIconPadding,
       child: Icon(
         icon,
-        size: 120,
+        size: AppOnboardingTokens.heroIconSize,
         color: Theme.of(context).colorScheme.primary,
       ),
     );
   }
 
   PageDecoration _getPageDecoration() {
+    final theme = Theme.of(context);
     return PageDecoration(
-      titleTextStyle: TextStyle(
-        fontSize: 28.0,
+      titleTextStyle:
+          (theme.textTheme.headlineSmall ?? const TextStyle()).copyWith(
         fontWeight: FontWeight.w700,
-        color: Theme.of(context).colorScheme.onSurface,
+        color: theme.colorScheme.onSurface,
       ),
-      bodyTextStyle: TextStyle(
-        fontSize: 19.0,
-        color: Theme.of(context).colorScheme.onSurface.withAlpha(200),
+      bodyTextStyle: (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
+        color: theme.colorScheme.onSurface.withAlpha(200),
       ),
-      bodyPadding: const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 16.0),
-      pageColor: Theme.of(context).scaffoldBackgroundColor,
-      imagePadding: const EdgeInsets.symmetric(vertical: 40.0),
+      bodyPadding: AppOnboardingTokens.bodyPadding,
+      pageColor: theme.scaffoldBackgroundColor,
+      imagePadding: AppOnboardingTokens.imagePadding,
+    );
+  }
+
+  Widget _buildSectionTitle(IconData icon, String title) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(
+          icon,
+          color: theme.colorScheme.primary,
+          size: AppSpacing.tokens.s20,
+        ),
+        SizedBox(width: AppSpacing.tokens.s8),
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildAppearanceSettings() {
     Widget buildLanguageSelector() {
-      final currentLocale = Prefs().locale;
+      final currentLocale = ref.watch(
+        uiSettingsProvider.select((settings) => settings.locale),
+      );
       final currentLanguageCode = currentLocale?.languageCode ?? 'System';
       final currentCountryCode = currentLocale?.countryCode ?? '';
       final currentLanguageTag = currentLanguageCode +
@@ -190,45 +220,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.language,
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                L10n.of(context).settingsAppearanceLanguage,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-            ],
+          _buildSectionTitle(
+            Icons.language,
+            L10n.of(context).settingsAppearanceLanguage,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: AppSpacing.tokens.s12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: AppOnboardingTokens.dropdownPadding,
             decoration: BoxDecoration(
               border: Border.all(
                 color: Theme.of(context).colorScheme.outline.withAlpha(100),
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppRadius.border8,
             ),
             child: DropdownButton<String>(
               isExpanded: true,
-              underline: const SizedBox(),
+              underline: const SizedBox.shrink(),
               value: languageOptions.any(
                       (option) => option.values.first == currentLanguageTag)
                   ? currentLanguageTag
                   : 'system',
               onChanged: (String? newValue) {
                 if (newValue != null) {
-                  setState(() {
-                    Prefs().saveLocaleToPrefs(newValue);
-                  });
+                  ref
+                      .read(uiSettingsProvider.notifier)
+                      .setLocale(localeFromLanguageCode(newValue));
                 }
               },
               items: languageOptions
@@ -247,99 +263,65 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
 
     Widget buildThemeColorSelector() {
-      final List<Color> themeColors = [
-        Colors.purple,
-        Colors.indigo,
-        Colors.blue,
-        Colors.cyan,
-        Colors.teal,
-        Colors.green,
-        Colors.lime,
-        Colors.amber,
-        Colors.orange,
-        Colors.deepOrange,
-        Colors.pink,
-        Colors.red,
-      ]..reversed.toList();
-
-      final currentThemeColor = Prefs().themeColor;
+      final currentThemeColor = ref.watch(
+        uiSettingsProvider.select((settings) => settings.themeColor),
+      );
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.palette,
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                L10n.of(context).settingsAppearanceThemeColor,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-            ],
+          _buildSectionTitle(
+            Icons.palette,
+            L10n.of(context).settingsAppearanceThemeColor,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: AppSpacing.tokens.s12),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 6,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 1,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: AppOnboardingTokens.colorGridCrossAxisCount,
+              mainAxisSpacing: AppSpacing.tokens.s8,
+              crossAxisSpacing: AppSpacing.tokens.s8,
             ),
-            itemCount: themeColors.length,
+            itemCount: AppColors.themeChoices.length,
             itemBuilder: (context, index) {
-              final color = themeColors[index];
+              final color = AppColors.themeChoices[index];
               final isSelected =
                   color.toARGB32() == currentThemeColor.toARGB32();
 
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    Prefs().saveThemeToPrefs(color.toARGB32());
-                  });
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.onSurface
-                          : Colors.transparent,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(30),
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
+              return Semantics(
+                button: true,
+                selected: isSelected,
+                label: L10n.of(context).settingsAppearanceThemeColor,
+                child: InkResponse(
+                  onTap: () {
+                    ref.read(uiSettingsProvider.notifier).setThemeColor(color);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.onSurface
+                            : AppColors.transparent,
+                        width: AppOnboardingTokens.colorSelectionBorderWidth,
                       ),
-                      if (isSelected)
-                        BoxShadow(
-                          color: color.withAlpha(100),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                    ],
+                      boxShadow: [
+                        ...AppElevation.low,
+                        if (isSelected) ...AppElevation.selectionGlow(color),
+                      ],
+                    ),
+                    child: isSelected
+                        ? Icon(
+                            Icons.check,
+                            color: color.computeLuminance() > 0.5
+                                ? AppColors.black
+                                : AppColors.white,
+                            size: AppSpacing.tokens.s20,
+                          )
+                        : null,
                   ),
-                  child: isSelected
-                      ? Icon(
-                          Icons.check,
-                          color: color.computeLuminance() > 0.5
-                              ? Colors.black
-                              : Colors.white,
-                          size: 20,
-                        )
-                      : null,
                 ),
               );
             },
@@ -348,144 +330,84 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       );
     }
 
-    return Consumer<Prefs>(
-      builder: (context, prefs, child) {
-        return SingleChildScrollView(
-          child: Column(
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Container(
+            padding: AppSpacing.all16,
+            decoration: BoxDecoration(
+              color:
+                  Theme.of(context).colorScheme.primaryContainer.withAlpha(50),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.palette_outlined,
+              size: AppSpacing.tokens.s48,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          SizedBox(height: AppSpacing.tokens.s16),
+          Text(
+            L10n.of(context).settingsAppearance,
+            style: Theme.of(context).textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: AppSpacing.tokens.s8),
+          Text(
+            L10n.of(context).customizeYourExperience,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: AppSpacing.tokens.s24),
+          buildLanguageSelector(),
+          SizedBox(height: AppSpacing.tokens.s12),
+          Row(
             children: [
-              Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primaryContainer
-                          .withAlpha(50),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.palette_outlined,
-                      size: 48,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    L10n.of(context).settingsAppearance,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    L10n.of(context).customizeYourExperience,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withAlpha(150),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+              Icon(
+                Icons.contrast,
+                color: Theme.of(context).colorScheme.primary,
+                size: AppSpacing.tokens.s20,
               ),
-              const SizedBox(height: 24),
-              buildLanguageSelector(),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.contrast,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          L10n.of(context).eInkMode,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          L10n.of(context).optimizedForEInkDisplays,
-                          style: TextStyle(
-                            fontSize: 12,
+              SizedBox(width: AppSpacing.tokens.s8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      L10n.of(context).eInkMode,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    Text(
+                      L10n.of(context).optimizedForEInkDisplays,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context)
                                 .colorScheme
                                 .onSurface
                                 .withAlpha(150),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: prefs.eInkMode,
-                    onChanged: (value) {
-                      setState(() {
-                        if (value) {
-                          prefs.saveThemeModeToPrefs('light');
-                        }
-                        prefs.eInkMode = value;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              buildThemeColorSelector(),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withAlpha(50),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withAlpha(50),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        L10n.of(context).moreDisplayOptionsTip,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withAlpha(150),
-                        ),
-                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              Switch(
+                value: ref.watch(
+                  uiSettingsProvider.select((settings) => settings.eInkMode),
+                ),
+                onChanged: (value) {
+                  ref.read(uiSettingsProvider.notifier).setEInkMode(value);
+                },
+              ),
             ],
           ),
-        );
-      },
+          SizedBox(height: AppSpacing.tokens.s24),
+          buildThemeColorSelector(),
+          SizedBox(height: AppSpacing.tokens.s24),
+          _buildTipCard(L10n.of(context).moreDisplayOptionsTip),
+          SizedBox(height: AppSpacing.tokens.s16),
+        ],
+      ),
     );
   }
 
@@ -495,51 +417,43 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       children: [
         Text(
           bodyText,
-          style: TextStyle(
-            fontSize: 19.0,
-            color: Theme.of(context).colorScheme.onSurface.withAlpha(200),
-          ),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(200),
+              ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 32),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context)
-                .colorScheme
-                .surfaceContainerHighest
-                .withAlpha(50),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withAlpha(50),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                color: Theme.of(context).colorScheme.primary,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  tipText,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color:
-                        Theme.of(context).colorScheme.onSurface.withAlpha(150),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        SizedBox(height: AppSpacing.tokens.s32),
+        _buildTipCard(tipText),
       ],
     );
   }
 
-  void _onIntroEnd() async {
+  Widget _buildTipCard(String text) {
+    return AppCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: Theme.of(context).colorScheme.primary,
+            size: AppSpacing.tokens.s20,
+          ),
+          SizedBox(width: AppSpacing.tokens.s8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color:
+                        Theme.of(context).colorScheme.onSurface.withAlpha(150),
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onIntroEnd() {
     widget.onComplete();
   }
 }

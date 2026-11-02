@@ -1,10 +1,11 @@
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/providers/fonts.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:anx_reader/providers/fonts.dart';
 import 'package:url_launcher/url_launcher_string.dart';
-import 'package:anx_reader/l10n/generated/L10n.dart';
 
 class FontsSettingPage extends ConsumerWidget {
   const FontsSettingPage({super.key});
@@ -12,127 +13,154 @@ class FontsSettingPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final fontList = ref.watch(fontsProvider);
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text(L10n.of(context).downloadFonts),
-      ),
-      body: fontList.when(
-        data: (fonts) {
-          if (fonts.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          return ListView.builder(
+      appBar: AppBar(title: Text(L10n.of(context).downloadFonts)),
+      body: AppSafeArea(
+        top: false,
+        child: AppAsyncValue<List<RemoteFontModel>>(
+          value: fontList,
+          isEmpty: (fonts) => fonts.isEmpty,
+          emptyBuilder: (context) => AppEmptyState(
+            title: L10n.of(context).fontNoAvailableFonts,
+            message: L10n.of(context).downloadFonts,
+            actionLabel: L10n.of(context).commonRefresh,
+            onAction: () => _refresh(ref),
+          ),
+          onRetry: () => _refresh(ref),
+          errorBuilder: (context, error, stackTrace) => AppErrorState(
+            title: L10n.of(context).fontFailedToLoadFonts,
+            onRetry: () => _refresh(ref),
+          ),
+          dataBuilder: (context, fonts) => ListView.builder(
             itemCount: fonts.length,
-            itemBuilder: (context, index) {
-              final font = fonts[index];
-              return FilledContainer(
-                margin: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (font.preview.isNotEmpty)
-                      CachedNetworkImage(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        imageUrl: 'https://fonts.anxcye.com/${font.preview}',
-                        width: MediaQuery.of(context).size.width,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                        errorWidget: (context, url, error) =>
-                            const Icon(Icons.error),
-                      ),
-                    const Divider(),
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            font.name,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(font.desc),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton.icon(
-                                onPressed: () {
-                                  launchUrlString(
-                                    font.official,
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                },
-                                icon: const Icon(Icons.link),
-                                label: Text(
-                                  L10n.of(context).fontOfficialWebsite,
-                                  style: TextStyle(
-                                    color: Theme.of(context).primaryColor,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: () {
-                                  launchUrlString(
-                                    font.license.url,
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                },
-                                icon: const Icon(Icons.link),
-                                label: Text(
-                                  font.license.name,
-                                  style: TextStyle(
-                                    color: Theme.of(context).primaryColor,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _buildDownloadButton(context, ref, font),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(
-          child: Text(L10n.of(context).fontFailedToLoadFonts),
+            itemBuilder: (context, index) => _FontCard(font: fonts[index]),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildDownloadButton(
-    BuildContext context,
-    WidgetRef ref,
-    RemoteFontModel font,
-  ) {
+  static Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(fontsProvider);
+    await ref.read(fontsProvider.future);
+  }
+}
+
+class _FontCard extends ConsumerWidget {
+  const _FontCard({required this.font});
+
+  final RemoteFontModel font;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = L10n.of(context);
+    return AppCard(
+      margin: AppSpacing.all8,
+      padding: AppSpacing.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (font.preview.isNotEmpty) ...[
+            _FontPreview(url: 'https://fonts.anxcye.com/${font.preview}'),
+            const Divider(),
+          ],
+          Padding(
+            padding: AppSpacing.all16,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(font.name, style: Theme.of(context).textTheme.titleMedium),
+                SizedBox(height: AppSpacing.tokens.s8),
+                Text(font.desc),
+                SizedBox(height: AppSpacing.tokens.s8),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: AppSpacing.tokens.s8,
+                  runSpacing: AppSpacing.tokens.s8,
+                  children: [
+                    AppButton(
+                      label: l10n.fontOfficialWebsite,
+                      icon: Icons.link,
+                      variant: AppButtonVariant.text,
+                      onPressed: () {
+                        launchUrlString(
+                          font.official,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      },
+                    ),
+                    AppButton(
+                      label: font.license.name,
+                      icon: Icons.link,
+                      variant: AppButtonVariant.text,
+                      onPressed: () {
+                        launchUrlString(
+                          font.license.url,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                SizedBox(height: AppSpacing.tokens.s16),
+                _DownloadButton(font: font),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FontPreview extends StatefulWidget {
+  const _FontPreview({required this.url});
+
+  final String url;
+
+  @override
+  State<_FontPreview> createState() => _FontPreviewState();
+}
+
+class _FontPreviewState extends State<_FontPreview> {
+  int _attempt = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return CachedNetworkImage(
+      key: ValueKey(_attempt),
+      color: Theme.of(context).colorScheme.onSurface,
+      imageUrl: widget.url,
+      width: MediaQuery.of(context).size.width,
+      fit: BoxFit.cover,
+      placeholder: (context, url) => const Center(child: AppLoadingIndicator()),
+      errorWidget: (context, url, error) => AppInlineFeedback(
+        message: L10n.of(context).commonLoadFailed,
+        onRetry: () => setState(() => _attempt++),
+      ),
+    );
+  }
+}
+
+class _DownloadButton extends ConsumerWidget {
+  const _DownloadButton({required this.font});
+
+  final RemoteFontModel font;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = L10n.of(context);
     final downloadState = ref.watch(fontDownloadsProvider)[font.id];
     final fontDownloads = ref.read(fontDownloadsProvider.notifier);
     final isAllFilesDownloaded =
         font.files.every((file) => fontDownloads.isDownloaded(font.id, file));
 
     if (isAllFilesDownloaded) {
-      return ElevatedButton.icon(
-          onPressed: null,
-          icon: const Icon(Icons.check),
-          label: Text(L10n.of(context).fontDownloaded));
+      return AppButton(
+        label: l10n.fontDownloaded,
+        icon: Icons.check,
+        enabled: false,
+      );
     }
 
     if (downloadState != null) {
@@ -142,82 +170,72 @@ class FontsSettingPage extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               LinearProgressIndicator(value: downloadState.progress),
-              const SizedBox(height: 8),
-              Row(
+              SizedBox(height: AppSpacing.tokens.s8),
+              Text(
+                '${l10n.fontDownloading((downloadState.progress * 100).toStringAsFixed(1))}%',
+              ),
+              Wrap(
+                spacing: AppSpacing.tokens.s8,
+                runSpacing: AppSpacing.tokens.s8,
                 children: [
-                  Text(
-                      '${L10n.of(context).fontDownloading((downloadState.progress * 100).toStringAsFixed(1))}%'),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => ref
-                        .read(fontDownloadsProvider.notifier)
-                        .pauseDownload(font.id),
-                    icon: const Icon(Icons.pause),
-                    label: Text(L10n.of(context).commonPause),
+                  AppButton(
+                    label: l10n.commonPause,
+                    icon: Icons.pause,
+                    variant: AppButtonVariant.text,
+                    onPressed: () => fontDownloads.pauseDownload(font.id),
                   ),
-                  TextButton.icon(
-                    onPressed: () => ref
-                        .read(fontDownloadsProvider.notifier)
-                        .cancelDownload(font.id),
-                    icon: const Icon(Icons.cancel),
-                    label: Text(L10n.of(context).commonCancel),
+                  AppButton(
+                    label: l10n.commonCancel,
+                    icon: Icons.cancel,
+                    variant: AppButtonVariant.text,
+                    onPressed: () => fontDownloads.cancelDownload(font.id),
                   ),
                 ],
               ),
             ],
           );
-
         case DownloadStatus.paused:
-          return Row(
-            children: [
-              Text(
-                  '${L10n.of(context).fontCancelled((downloadState.progress * 100).toStringAsFixed(1))}%'),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: () => ref
-                    .read(fontDownloadsProvider.notifier)
-                    .resumeDownload(font),
-                icon: const Icon(Icons.play_arrow),
-                label: Text(L10n.of(context).commonResume),
-              ),
-              TextButton.icon(
-                onPressed: () => ref
-                    .read(fontDownloadsProvider.notifier)
-                    .cancelDownload(font.id),
-                icon: const Icon(Icons.cancel),
-                label: Text(L10n.of(context).commonCancel),
-              ),
-            ],
-          );
-
-        case DownloadStatus.failed:
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                  '${L10n.of(context).commonDownloadFailed}: ${downloadState.error}',
-                  style: const TextStyle(color: Colors.red)),
-              const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: () => ref
-                    .read(fontDownloadsProvider.notifier)
-                    .startDownload(font),
-                icon: const Icon(Icons.refresh),
-                label: Text(L10n.of(context).commonRetry),
+                '${l10n.fontCancelled((downloadState.progress * 100).toStringAsFixed(1))}%',
+              ),
+              Wrap(
+                spacing: AppSpacing.tokens.s8,
+                runSpacing: AppSpacing.tokens.s8,
+                children: [
+                  AppButton(
+                    label: l10n.commonResume,
+                    icon: Icons.play_arrow,
+                    variant: AppButtonVariant.text,
+                    onPressed: () => fontDownloads.resumeDownload(font),
+                  ),
+                  AppButton(
+                    label: l10n.commonCancel,
+                    icon: Icons.cancel,
+                    variant: AppButtonVariant.text,
+                    onPressed: () => fontDownloads.cancelDownload(font.id),
+                  ),
+                ],
               ),
             ],
           );
-
-        default:
+        case DownloadStatus.failed:
+          return AppInlineFeedback(
+            message: l10n.commonDownloadFailed,
+            onRetry: () => fontDownloads.startDownload(font),
+          );
+        case DownloadStatus.none:
+        case DownloadStatus.completed:
           break;
       }
     }
 
-    return ElevatedButton.icon(
-      onPressed: () =>
-          ref.read(fontDownloadsProvider.notifier).startDownload(font),
-      icon: const Icon(Icons.download),
-      label: Text(L10n.of(context).commonDownload),
+    return AppButton(
+      label: l10n.commonDownload,
+      icon: Icons.download,
+      onPressed: () => fontDownloads.startDownload(font),
     );
   }
 }

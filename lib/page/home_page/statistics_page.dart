@@ -1,117 +1,131 @@
 import 'package:anx_reader/dao/book.dart';
 import 'package:anx_reader/dao/reading_time.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/chart_mode.dart';
 import 'package:anx_reader/enums/hint_key.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/page/book_detail.dart';
 import 'package:anx_reader/providers/statistic_data.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/utils/date/convert_seconds.dart';
 import 'package:anx_reader/utils/date/week_of_year.dart';
 import 'package:anx_reader/widgets/bookshelf/book_cover.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
-import 'package:anx_reader/widgets/common/container/outlined_container.dart';
 import 'package:anx_reader/widgets/hint/hint_banner.dart';
 import 'package:anx_reader/widgets/statistic/statistic_card.dart';
-import 'package:anx_reader/widgets/statistic/statistics_dashboard_title.dart';
 import 'package:anx_reader/widgets/statistic/statistics_dashboard.dart';
-import 'package:anx_reader/widgets/tips/statistic_tips.dart';
+import 'package:anx_reader/widgets/statistic/statistics_dashboard_title.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
 class StatisticPage extends StatefulWidget {
-  const StatisticPage({super.key, this.controller});
+  const StatisticPage({
+    super.key,
+    this.controller,
+    this.bookLoader,
+    this.onDelete,
+  });
 
   final ScrollController? controller;
+  final StatisticBookLoader? bookLoader;
+  final Future<void> Function(List<int> bookIds)? onDelete;
 
   @override
   State<StatisticPage> createState() => _StatisticPageState();
 }
 
 class _StatisticPageState extends State<StatisticPage> {
-  int totalNumberOfBook = 0;
-  int totalNumberOfDate = 0;
-  int totalNumberOfNotes = 0;
+  late final bool _ownsScrollController = widget.controller == null;
   late final ScrollController _scrollController =
       widget.controller ?? ScrollController();
+  final List<int> _deleteBookIds = [];
 
-  void setNumbers() async {
-    final numberOfBook = await readingTimeDao.selectTotalNumberOfBook();
-    final numberOfDate = await readingTimeDao.selectTotalNumberOfDate();
-    final numberOfNotes = await readingTimeDao.selectTotalNumberOfNotes();
-    setState(() {
-      totalNumberOfBook = numberOfBook;
-      totalNumberOfDate = numberOfDate;
-      totalNumberOfNotes = numberOfNotes;
-    });
+  void _markForDeletion(int bookId) {
+    if (_deleteBookIds.contains(bookId)) return;
+    setState(() => _deleteBookIds.add(bookId));
+  }
+
+  void _undoDeletion(int bookId) {
+    setState(() => _deleteBookIds.remove(bookId));
+  }
+
+  DateBooks _dateBooks() {
+    return DateBooks(
+      bookLoader: widget.bookLoader,
+      pendingDeletionIds: _deleteBookIds,
+      onMarkForDeletion: _markForDeletion,
+      onUndoDeletion: _undoDeletion,
+    );
   }
 
   @override
-  void initState() {
-    setNumbers();
-    super.initState();
+  void dispose() {
+    if (_deleteBookIds.isNotEmpty) {
+      final onDelete = widget.onDelete;
+      final bookIds = List<int>.unmodifiable(_deleteBookIds);
+      if (onDelete != null) {
+        onDelete(bookIds);
+      } else {
+        readingTimeDao.deleteReadingTimeByBookId(bookIds);
+      }
+    }
+    if (_ownsScrollController) _scrollController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // appBar: AppBar(
-      //   title: Text(context.navBarStatistics),
-      // ),
-      body: SafeArea(
+      body: AppSafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: AppStatisticsTokens.pagePadding,
           child: Column(
             children: [
-              StatisticsDashboardTitle(),
+              const StatisticsDashboardTitle(),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    if (constraints.maxWidth > 600) {
+                    if (constraints.maxWidth >
+                        AppStatisticsTokens.wideBreakpoint) {
                       return Row(
                         children: [
-                          Expanded(
+                          const Expanded(
                             child: SingleChildScrollView(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   StatisticsDashboard(),
-                                  const StatisticCard(),
+                                  StatisticCard(),
                                 ],
                               ),
                             ),
                           ),
-                          const SizedBox(width: 20),
+                          const SizedBox(
+                            width: AppStatisticsTokens.wideSpacing,
+                          ),
                           Expanded(
                             child: ListView(
                               controller: _scrollController,
-                              children: const [
-                                DateBooks(),
-                              ],
+                              children: [_dateBooks()],
                             ),
                           ),
                         ],
                       );
-                    } else {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: ListView(
-                                padding: const EdgeInsets.only(bottom: 80),
-                                controller: _scrollController,
-                                children: const [
-                                  StatisticsDashboard(),
-                                  StatisticCard(),
-                                  SizedBox(height: 20),
-                                  DateBooks(),
-                                ]),
-                          ),
-                        ],
-                      );
                     }
+                    return ListView(
+                      padding: AppStatisticsTokens.listPadding,
+                      controller: _scrollController,
+                      children: [
+                        const StatisticsDashboard(),
+                        const StatisticCard(),
+                        const SizedBox(
+                          height: AppStatisticsTokens.sectionSpacing,
+                        ),
+                        _dateBooks(),
+                      ],
+                    );
                   },
                 ),
               ),
@@ -123,29 +137,45 @@ class _StatisticPageState extends State<StatisticPage> {
   }
 }
 
+typedef StatisticBookLoader = Future<Book> Function(int bookId);
+
 class DateBooks extends ConsumerStatefulWidget {
-  const DateBooks({super.key});
+  const DateBooks({
+    super.key,
+    this.bookLoader,
+    this.onDelete,
+    this.pendingDeletionIds,
+    this.onMarkForDeletion,
+    this.onUndoDeletion,
+  });
+
+  final StatisticBookLoader? bookLoader;
+  final Future<void> Function(List<int> bookIds)? onDelete;
+  final List<int>? pendingDeletionIds;
+  final void Function(int bookId)? onMarkForDeletion;
+  final void Function(int bookId)? onUndoDeletion;
 
   @override
   ConsumerState<DateBooks> createState() => _DateBooksState();
 }
 
 class _DateBooksState extends ConsumerState<DateBooks> {
-  final TextStyle titleStyle = const TextStyle(
-    fontSize: 30,
-    fontFamily: 'SourceHanSerif',
-    fontWeight: FontWeight.bold,
-    overflow: TextOverflow.ellipsis,
-  );
+  final List<int> localDeleteBookIds = [];
 
-  List<int> deleteBookIds = [];
+  List<int> get deleteBookIds =>
+      widget.pendingDeletionIds ?? localDeleteBookIds;
 
   @override
   void dispose() {
-    super.dispose();
-    if (deleteBookIds.isNotEmpty) {
-      readingTimeDao.deleteReadingTimeByBookId(deleteBookIds);
+    if (widget.pendingDeletionIds == null && deleteBookIds.isNotEmpty) {
+      final onDelete = widget.onDelete;
+      if (onDelete != null) {
+        onDelete(List.unmodifiable(deleteBookIds));
+      } else {
+        readingTimeDao.deleteReadingTimeByBookId(deleteBookIds);
+      }
     }
+    super.dispose();
   }
 
   @override
@@ -155,59 +185,90 @@ class _DateBooksState extends ConsumerState<DateBooks> {
     Widget dragToDelete(Widget child, int bookId) {
       return StatefulBuilder(builder: (context, localSetState) {
         if (deleteBookIds.contains(bookId)) {
-          return OutlinedContainer(
-            margin: const EdgeInsets.only(bottom: 10),
-            height: 146,
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.delete,
-                          size: 30,
+          return AppCard(
+            margin: AppStatisticsTokens.cardMargin,
+            padding: AppStatisticsTokens.cardPadding,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: AppStatisticsTokens.deletedCardHeight,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: AppStatisticsTokens.sectionSpacing),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.delete,
+                              size: AppStatisticsTokens.deleteIconSize,
+                            ),
+                            Text(
+                              L10n.of(context).statisticDeletedRecords,
+                              style: AppStatisticsTokens.deletedTitleStyle,
+                            ),
+                          ],
                         ),
-                        Text(
-                          L10n.of(context).statisticDeletedRecords,
-                          style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    FilledButton(
+                      ),
+                      AppButton(
+                        label: L10n.of(context).commonUndo,
                         onPressed: () {
-                          localSetState(() {
-                            deleteBookIds.remove(bookId);
-                          });
+                          final onUndo = widget.onUndoDeletion;
+                          if (onUndo != null) {
+                            onUndo(bookId);
+                          } else {
+                            localSetState(
+                              () => localDeleteBookIds.remove(bookId),
+                            );
+                          }
                         },
-                        child: Text(L10n.of(context).commonUndo)),
-                  ],
-                ),
-                const Spacer(),
-                const Divider(),
-                Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 18),
-                    Text(L10n.of(context).statisticDeletedRecordsTips),
-                  ],
-                ),
-              ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppStatisticsTokens.sectionSpacing),
+                  const Divider(),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: AppStatisticsTokens.infoIconSize,
+                      ),
+                      const SizedBox(width: AppStatisticsTokens.contentSpacing),
+                      Expanded(
+                        child: Text(
+                          L10n.of(context).statisticDeletedRecordsTips,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
         }
-        ActionPane actionPane = ActionPane(
+        final actionPane = ActionPane(
           motion: const StretchMotion(),
           children: [
             SlidableAction(
-              onPressed: (context) {
-                localSetState(() {
-                  deleteBookIds.add(bookId);
-                });
+              onPressed: (context) async {
+                final confirmed = await AppDialog.confirm(
+                  context,
+                  title: L10n.of(context).commonDelete,
+                  message: L10n.of(context).statisticDeletedRecordsTips,
+                  confirmLabel: L10n.of(context).commonDelete,
+                  isDangerous: true,
+                  dangerDescription:
+                      L10n.of(context).statisticDeletedRecordsTips,
+                );
+                if (!confirmed || !mounted) return;
+                final onMark = widget.onMarkForDeletion;
+                if (onMark != null) {
+                  onMark(bookId);
+                } else if (!localDeleteBookIds.contains(bookId)) {
+                  localSetState(() => localDeleteBookIds.add(bookId));
+                }
               },
               icon: Icons.delete,
               label: L10n.of(context).commonDelete,
@@ -224,8 +285,10 @@ class _DateBooksState extends ConsumerState<DateBooks> {
       });
     }
 
-    return statisticData.when(
-      data: (data) {
+    return AppAsyncValue(
+      value: statisticData,
+      onRetry: () async => ref.invalidate(statisticDataProvider),
+      dataBuilder: (context, data) {
         final title = data.isSelectingDay
             ? data.date.toString().substring(0, 10)
             : data.mode == ChartMode.week
@@ -240,18 +303,24 @@ class _DateBooksState extends ConsumerState<DateBooks> {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: 10, top: 10, right: 10),
+              padding: AppStatisticsTokens.titlePadding,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: titleStyle),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: AppStatisticsTokens.dateTitleStyle,
+                    ),
+                  ),
                 ],
               ),
             ),
             if (books.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 50),
-                child: StatisticsTips(),
+              AppEmptyState(
+                title: L10n.of(context).statisticsTips_1,
+                message: L10n.of(context).statisticsTips_2,
+                icon: Icons.auto_stories_outlined,
               )
             else
               Column(
@@ -259,7 +328,7 @@ class _DateBooksState extends ConsumerState<DateBooks> {
                   HintBanner(
                     icon: const Icon(Icons.swipe_left),
                     hintKey: HintKey.statisticsSwipeToDelete,
-                    margin: const EdgeInsets.only(bottom: 10),
+                    margin: AppStatisticsTokens.cardMargin,
                     child: Text(L10n.of(context).statisticsSwipeToDeleteHint),
                   ),
                   ...books.map((bookMap) {
@@ -269,120 +338,156 @@ class _DateBooksState extends ConsumerState<DateBooks> {
                       BookStatisticItem(
                         bookId: book.id,
                         readingTime: readingTime,
+                        bookLoader: widget.bookLoader,
                       ),
                       book.id,
                     );
-                  })
+                  }),
                 ],
               ),
           ],
         );
       },
-      loading: () => const Center(
-        child: CircularProgressIndicator(),
-      ),
-      error: (error, stack) => Center(
-        child: Text('Error: $error'),
-      ),
     );
   }
 }
 
-class BookStatisticItem extends StatelessWidget {
-  const BookStatisticItem(
-      {super.key, required this.bookId, required this.readingTime});
+class BookStatisticItem extends StatefulWidget {
+  const BookStatisticItem({
+    super.key,
+    required this.bookId,
+    required this.readingTime,
+    this.bookLoader,
+  });
 
   final int bookId;
   final int readingTime;
-  final TextStyle bookTitleStyle = const TextStyle(
-    fontSize: 20,
-    fontFamily: 'SourceHanSerif',
-    fontWeight: FontWeight.bold,
-    overflow: TextOverflow.ellipsis,
-  );
-  final TextStyle bookAuthorStyle = const TextStyle(
-    fontSize: 12,
-    color: Colors.grey,
-    overflow: TextOverflow.ellipsis,
-  );
-  final TextStyle bookReadingTimeStyle = const TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.bold,
-  );
+  final StatisticBookLoader? bookLoader;
+
+  @override
+  State<BookStatisticItem> createState() => _BookStatisticItemState();
+}
+
+class _BookStatisticItemState extends State<BookStatisticItem> {
+  Future<Book> _loadBook() {
+    return widget.bookLoader?.call(widget.bookId) ??
+        bookDao.selectBookById(widget.bookId);
+  }
+
+  late Future<Book> _bookFuture = _loadBook();
+
+  Future<void> _retry() async {
+    setState(() {
+      _bookFuture = _loadBook();
+    });
+    await _bookFuture;
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Book>(
-      future: bookDao.selectBookById(bookId),
+      future: _bookFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done) {
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => BookDetail(book: snapshot.data!)));
-            },
-            child: FilledContainer(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                children: [
-                  Hero(
-                      tag: snapshot.data!.coverFullPath,
-                      child: BookCover(
-                        book: snapshot.data!,
-                        height: 130,
-                        width: 90,
-                        radius: 20,
-                      )),
-                  const SizedBox(width: 15),
-                  Flexible(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(snapshot.data!.title, style: bookTitleStyle),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: Text(snapshot.data!.author,
-                                    style: bookAuthorStyle),
-                              ),
-                              Text(
-                                  // getReadingTime(context),
-                                  convertSeconds(readingTime),
-                                  textAlign: TextAlign.end,
-                                  style: bookReadingTimeStyle),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: LinearProgressIndicator(
-                                  value: snapshot.data!.readingPercentage,
-                                  backgroundColor: Colors.grey[300],
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Theme.of(context).colorScheme.primary),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                  '${(snapshot.data!.readingPercentage * 100).toInt()} %'),
-                            ],
-                          ),
-                        ]),
-                  ),
-                ],
-              ),
+        final isDone = snapshot.connectionState == ConnectionState.done;
+        if (snapshot.hasError || (isDone && !snapshot.hasData)) {
+          return AppErrorState(onRetry: _retry);
+        }
+        if (!isDone) {
+          return AppSkeleton(
+            child: _BookStatisticContent(
+              book: Book.mock(),
+              readingTime: widget.readingTime,
             ),
           );
-        } else {
-          return const CircularProgressIndicator();
         }
+        final book = snapshot.requireData;
+        return _BookStatisticContent(
+          book: book,
+          readingTime: widget.readingTime,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => BookDetail(book: book)),
+            );
+          },
+        );
       },
+    );
+  }
+}
+
+class _BookStatisticContent extends StatelessWidget {
+  const _BookStatisticContent({
+    required this.book,
+    required this.readingTime,
+    this.onTap,
+  });
+
+  final Book book;
+  final int readingTime;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AppCard(
+      margin: AppStatisticsTokens.cardMargin,
+      padding: AppStatisticsTokens.cardPadding,
+      onTap: onTap,
+      child: Row(
+        children: [
+          Hero(
+            tag: book.coverFullPath,
+            child: BookCover(
+              book: book,
+              height: AppStatisticsTokens.coverHeight,
+              width: AppStatisticsTokens.coverWidth,
+              radius: AppStatisticsTokens.coverRadius,
+            ),
+          ),
+          const SizedBox(width: AppStatisticsTokens.coverSpacing),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(book.title, style: AppStatisticsTokens.bookTitleStyle),
+                const SizedBox(height: AppStatisticsTokens.contentSpacing),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        book.author,
+                        style: AppStatisticsTokens.bookAuthorStyle.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      convertSeconds(readingTime),
+                      textAlign: TextAlign.end,
+                      style: AppStatisticsTokens.bookReadingTimeStyle,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppStatisticsTokens.progressSpacing),
+                Row(
+                  children: [
+                    Expanded(
+                      child: LinearProgressIndicator(
+                        value: book.readingPercentage,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                      ),
+                    ),
+                    const SizedBox(width: AppStatisticsTokens.contentSpacing),
+                    Text('${(book.readingPercentage * 100).toInt()} %'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

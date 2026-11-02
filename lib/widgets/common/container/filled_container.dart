@@ -1,4 +1,5 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/widgets/common/container/base_rounded_container.dart';
 import 'package:anx_reader/widgets/common/container/outlined_container.dart';
 import 'package:flutter/material.dart';
@@ -52,7 +53,7 @@ class FilledContainer extends BaseRoundedContainer {
     return buildShapeDecoration(
       color: effectiveColor,
       borderSide: const BorderSide(
-          color: Colors.transparent,
+          color: AppColors.transparent,
           width: 1,
           strokeAlign: BorderSide.strokeAlignOutside),
       borderRadius: borderRadius,

@@ -37,8 +37,10 @@ void main() {
       expect(Prefs.encodePrefsEntry(42), {'type': 'int', 'value': 42});
       expect(Prefs.encodePrefsEntry(1.5), {'type': 'double', 'value': 1.5});
       expect(Prefs.encodePrefsEntry('x'), {'type': 'string', 'value': 'x'});
-      expect(Prefs.encodePrefsEntry(<String>['a', 'b']),
-          {'type': 'stringList', 'value': ['a', 'b']});
+      expect(Prefs.encodePrefsEntry(<String>['a', 'b']), {
+        'type': 'stringList',
+        'value': ['a', 'b']
+      });
       expect(Prefs.encodePrefsEntry(<dynamic>[1, 'a']), isNull);
       expect(Prefs.encodePrefsEntry(<String, String>{'k': 'v'}), isNull);
     });
@@ -52,8 +54,7 @@ void main() {
               prefs, 'k1', {'type': 'bool', 'value': true}),
           isTrue);
       expect(
-          await Prefs.applyPrefsEntry(
-              prefs, 'k2', {'type': 'int', 'value': 7}),
+          await Prefs.applyPrefsEntry(prefs, 'k2', {'type': 'int', 'value': 7}),
           isTrue);
       expect(
           await Prefs.applyPrefsEntry(
@@ -64,8 +65,10 @@ void main() {
               prefs, 'k4', {'type': 'string', 'value': 'v'}),
           isTrue);
       expect(
-          await Prefs.applyPrefsEntry(
-              prefs, 'k5', {'type': 'stringList', 'value': <String>['a']}),
+          await Prefs.applyPrefsEntry(prefs, 'k5', {
+            'type': 'stringList',
+            'value': <String>['a']
+          }),
           isTrue);
       expect(prefs.getBool('k1'), isTrue);
       expect(prefs.getInt('k2'), 7);
@@ -81,7 +84,8 @@ void main() {
               prefs, 'b1', {'type': 'bool', 'value': 'not-bool'}),
           isFalse);
       expect(
-          await Prefs.applyPrefsEntry(prefs, 'b2', {'type': 'nope', 'value': 1}),
+          await Prefs.applyPrefsEntry(
+              prefs, 'b2', {'type': 'nope', 'value': 1}),
           isFalse);
       expect(prefs.containsKey('b1'), isFalse);
       expect(prefs.containsKey('b2'), isFalse);

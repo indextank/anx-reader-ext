@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/lang_list.dart';
 import 'package:anx_reader/service/translate/index.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/widgets/common/axis_flex.dart';
 import 'package:flutter/material.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
-import 'dart:async';
 
 class TranslationMenu extends StatefulWidget {
   const TranslationMenu({
@@ -14,6 +17,7 @@ class TranslationMenu extends StatefulWidget {
     required this.axis,
     this.contextText,
   });
+
   final String content;
   final BoxDecoration decoration;
   final Axis axis;
@@ -35,15 +39,11 @@ class _TranslationMenuState extends State<TranslationMenu> {
   }
 
   void _initializeTranslation() {
-    // Use addPostFrameCallback to ensure the UI is rendered first
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _translationInitialized) return;
-
-      // Debounce: Delay the translation call to ensure context has stopped updating
       _debounceTimer?.cancel();
       _debounceTimer = Timer(const Duration(milliseconds: 300), () {
         if (!mounted || _translationInitialized) return;
-
         setState(() {
           final effectiveContextText =
               (widget.contextText?.trim().isEmpty ?? true)
@@ -66,8 +66,7 @@ class _TranslationMenuState extends State<TranslationMenu> {
   }
 
   Widget _langPicker(bool isFrom) {
-    final MenuController menuController = MenuController();
-
+    final menuController = MenuController();
     return PointerInterceptor(
       child: MenuAnchor(
         style: MenuStyle(
@@ -93,19 +92,19 @@ class _TranslationMenuState extends State<TranslationMenu> {
             ),
         ],
         builder: (context, controller, child) {
-          return GestureDetector(
-            onTap: () {
+          return AppButton(
+            label: isFrom
+                ? Prefs().translateFrom.getNative(context)
+                : Prefs().translateTo.getNative(context),
+            variant: AppButtonVariant.text,
+            size: AppButtonSize.small,
+            onPressed: () {
               if (controller.isOpen) {
                 controller.close();
               } else {
                 controller.open();
               }
             },
-            child: Text(
-              isFrom
-                  ? Prefs().translateFrom.getNative(context)
-                  : Prefs().translateTo.getNative(context),
-            ),
           );
         },
       ),
@@ -114,16 +113,19 @@ class _TranslationMenuState extends State<TranslationMenu> {
 
   @override
   Widget build(BuildContext context) {
-    // print('Building TranslationMenu');
     return Expanded(
       child: AnimatedSize(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
         child: Container(
-          height: widget.axis == Axis.vertical ? double.infinity : 150,
-          width: widget.axis == Axis.vertical ? 100 : double.infinity,
+          height: widget.axis == Axis.vertical
+              ? double.infinity
+              : AppReadingTokens.translationMenuHeight,
+          width: widget.axis == Axis.vertical
+              ? AppReadingTokens.translationMenuVerticalWidth
+              : double.infinity,
           decoration: widget.decoration,
-          padding: const EdgeInsets.all(8),
+          padding: AppReadingTokens.menuPadding,
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,36 +133,26 @@ class _TranslationMenuState extends State<TranslationMenu> {
               children: [
                 Text(
                   widget.content,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  style: Theme.of(context).textTheme.bodyLarge,
                 ),
-                const SizedBox(height: 8),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Show translation widget if initialized, otherwise show loading placeholder
-                    _translationWidget ??
-                        const SizedBox(
-                          height: 20,
-                          child: Center(child: Text('...')),
-                        ),
-                    const Divider(),
-                    AxisFlex(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      axis: widget.axis,
-                      children: [
-                        _langPicker(true),
-                        Transform.rotate(
-                            angle: widget.axis == Axis.horizontal ? 0 : 1.57,
-                            child: Icon(Icons.arrow_forward_ios, size: 16)),
-                        _langPicker(false),
-                        if (widget.axis == Axis.horizontal) const Spacer(),
-                      ],
+                _translationWidget ??
+                    const SizedBox(
+                      height: 48,
+                      child: Center(child: AppLoadingIndicator()),
                     ),
+                const Divider(),
+                AxisFlex(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  axis: widget.axis,
+                  children: [
+                    _langPicker(true),
+                    Transform.rotate(
+                      angle: widget.axis == Axis.horizontal ? 0 : 1.57,
+                      child: const Icon(Icons.arrow_forward_ios, size: 16),
+                    ),
+                    _langPicker(false),
+                    if (widget.axis == Axis.horizontal) const Spacer(),
                   ],
                 ),
               ],

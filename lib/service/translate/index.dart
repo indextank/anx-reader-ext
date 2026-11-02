@@ -1,6 +1,7 @@
 import 'dart:core';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/lang_list.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/service/config/config_item.dart';
@@ -175,10 +176,12 @@ abstract class TranslateServiceProvider {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
-                    onPressed: () =>
-                        Clipboard.setData(ClipboardData(text: snapshot.data!)),
-                    child: Text(L10n.of(context).commonCopy))
+                AppButton(
+                  label: L10n.of(context).commonCopy,
+                  variant: AppButtonVariant.text,
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: snapshot.data!)),
+                )
               ],
             )
           ],

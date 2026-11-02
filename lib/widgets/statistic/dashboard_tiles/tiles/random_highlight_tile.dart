@@ -1,8 +1,9 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book_note.dart';
 import 'package:anx_reader/providers/random_highlight_provider.dart';
 import 'package:anx_reader/utils/date/relative_time_formatter.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -32,21 +33,10 @@ class RandomHighlightTile extends StatisticsDashboardTileBase {
 
   @override
   Widget buildContent(BuildContext context, WidgetRef ref) {
-    final asyncValue = ref.watch(randomHighlightProvider);
-    return AsyncSkeletonWrapper<RandomHighlightData?>(
-      asyncValue: asyncValue,
-      builder: (data, _) {
-        if (data == null) {
-          return _EmptyHighlight(
-            onRefresh: () =>
-                ref.read(randomHighlightProvider.notifier).refresh(),
-          );
-        }
-        return _HighlightCard(
-          data: data,
-          onRefresh: () => ref.read(randomHighlightProvider.notifier).refresh(),
-        );
-      },
+    Future<void> retry() =>
+        ref.read(randomHighlightProvider.notifier).refresh();
+    return DashboardAsyncValue<RandomHighlightData?>(
+      value: ref.watch(randomHighlightProvider),
       mock: RandomHighlightData(
         note: BookNote(
           bookId: -1,
@@ -59,15 +49,25 @@ class RandomHighlightTile extends StatisticsDashboardTileBase {
         ),
         book: null,
       ),
+      onRetry: retry,
+      builder: (data, _) {
+        if (data == null) {
+          return AppEmptyState(
+            compact: true,
+            icon: Icons.sticky_note_2_outlined,
+            title: L10n.of(context).randomHighlightEmptyState,
+            actionLabel: L10n.of(context).commonRefresh,
+            onAction: () => retry(),
+          );
+        }
+        return _HighlightCard(data: data, onRefresh: () => retry());
+      },
     );
   }
 }
 
 class _HighlightCard extends StatelessWidget {
-  const _HighlightCard({
-    required this.data,
-    required this.onRefresh,
-  });
+  const _HighlightCard({required this.data, required this.onRefresh});
 
   final RandomHighlightData data;
   final VoidCallback onRefresh;
@@ -75,18 +75,13 @@ class _HighlightCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final quote = data.note.content.trim();
-    final timestamp = RelativeTimeFormatter.format(data.note.updateTime);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: SingleChildScrollView(
-            child: Text(
-              quote,
-              style: theme.textTheme.titleMedium,
-            ),
+            child: Text(data.note.content.trim(),
+                style: theme.textTheme.titleMedium),
           ),
         ),
         const Divider(height: 2),
@@ -105,44 +100,16 @@ class _HighlightCard extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                timestamp,
+                RelativeTimeFormatter.format(data.note.updateTime),
                 style: theme.textTheme.bodySmall,
               ),
             ),
-            IconButton(
+            AppIconButton(
               tooltip: L10n.of(context).commonRefresh,
               onPressed: onRefresh,
-              icon: const Icon(Icons.refresh),
-              visualDensity: VisualDensity.compact,
+              icon: Icons.refresh,
             ),
           ],
-        ),
-      ],
-    );
-  }
-}
-
-class _EmptyHighlight extends StatelessWidget {
-  const _EmptyHighlight({required this.onRefresh});
-
-  final VoidCallback onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.sticky_note_2_outlined, size: 32),
-        const SizedBox(height: 8),
-        Text(
-          L10n.of(context).randomHighlightEmptyState,
-          style: theme.textTheme.bodyMedium,
-        ),
-        TextButton.icon(
-          onPressed: onRefresh,
-          icon: const Icon(Icons.refresh),
-          label: Text(L10n.of(context).commonRefresh),
         ),
       ],
     );

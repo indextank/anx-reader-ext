@@ -447,7 +447,11 @@ class WdDio with DioMixin implements Dio {
         }
       });
     }
-    await DioMixin.listenCancelForAsyncTask(cancelToken, future);
+    // Same as dio's internal DioMixin.listenCancelForAsyncTask, expressed with
+    // the public CancelToken.whenCancel API: race the task against cancellation.
+    await (cancelToken == null
+        ? future
+        : Future.any([future, cancelToken.whenCancel.then((e) => throw e)]));
   }
 
   /// write a file with bytes

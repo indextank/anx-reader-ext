@@ -1,3 +1,4 @@
+import 'package:anx_reader/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
@@ -65,6 +66,6 @@ class SegmentData {
     required this.proportion,
     required this.color,
     this.showLabel = false,
-    this.labelColor = Colors.white,
+    this.labelColor = AppColors.white,
   });
 }

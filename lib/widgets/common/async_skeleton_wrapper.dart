@@ -1,3 +1,4 @@
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -84,11 +85,15 @@ class AsyncSkeletonWrapper<T> extends StatelessWidget {
         }
         return Center(
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: AppSpacing.all16,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error,
+                ),
                 const SizedBox(height: 8),
                 Text(
                   'Error: $error',
@@ -116,7 +121,7 @@ class AsyncSkeletonWrapper<T> extends StatelessWidget {
   }
 }
 
-/// Combines multiple AsyncValues into a single AsyncValue<List>.
+/// Combines multiple AsyncValues into a single `AsyncValue<List>`.
 ///
 /// This helper function simplifies handling multiple providers:
 /// - If ANY provider is loading, returns AsyncValue.loading()

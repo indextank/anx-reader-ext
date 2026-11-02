@@ -1,11 +1,11 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
-import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
 import 'package:anx_reader/providers/total_reading_time.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
 import 'package:anx_reader/widgets/highlight_digit.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,14 +31,11 @@ class TotalTimeTile extends StatisticsDashboardTileBase {
   String get title => metadata.title;
 
   @override
-  Widget buildContent(
-    BuildContext context,
-    WidgetRef ref,
-  ) {
-    final totalReadingTime = ref.watch(totalReadingTimeProvider);
-
-    return AsyncSkeletonWrapper<int>(
-      asyncValue: totalReadingTime,
+  Widget buildContent(BuildContext context, WidgetRef ref) {
+    return DashboardAsyncValue<int>(
+      value: ref.watch(totalReadingTimeProvider),
+      mock: 0,
+      onRetry: () async => ref.invalidate(totalReadingTimeProvider),
       builder: (seconds, _) => _TotalTimeContent(
         seconds: seconds,
         metadata: metadata,
@@ -48,10 +45,7 @@ class TotalTimeTile extends StatisticsDashboardTileBase {
 }
 
 class _TotalTimeContent extends StatelessWidget {
-  const _TotalTimeContent({
-    required this.seconds,
-    required this.metadata,
-  });
+  const _TotalTimeContent({required this.seconds, required this.metadata});
 
   final int seconds;
   final StatisticsDashboardTileMetadata metadata;
@@ -60,7 +54,6 @@ class _TotalTimeContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

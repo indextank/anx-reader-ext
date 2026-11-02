@@ -1,10 +1,13 @@
-import 'package:anx_reader/main.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/search_result_model.dart';
 import 'package:anx_reader/models/toc_item.dart';
 import 'package:anx_reader/page/book_player/epub_player.dart';
 import 'package:anx_reader/providers/book_toc.dart';
 import 'package:anx_reader/providers/toc_search.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -306,31 +309,35 @@ class _BookTocState extends ConsumerState<BookToc> {
         ? ''
         : '${currentState.chapterCurrentPage} / ${currentState.chapterTotalPages}';
 
-    var locatingButton = IconButton(
-      icon: const Icon(Icons.my_location),
+    final locatingButton = AppIconButton(
+      icon: Icons.my_location,
+      tooltip: L10n.of(context).readingTocLocateCurrent,
+      semanticLabel: L10n.of(context).readingTocLocateCurrent,
       onPressed: () {
         _scrollToCurrent(animated: true);
       },
     );
 
-    var searchBox = SizedBox(
-      height: 35,
+    final searchBox = SizedBox(
+      height: AppReadingTokens.searchFieldHeight,
       child: SearchBar(
         controller: searchBarController,
-        shadowColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+        shadowColor: const WidgetStatePropertyAll<Color>(AppColors.transparent),
         padding: const WidgetStatePropertyAll<EdgeInsets>(
-            EdgeInsets.symmetric(horizontal: 16.0)),
+          AppSpacing.horizontal16,
+        ),
         leading: const Icon(Icons.search),
         trailing: [
-          isSearchActive
-              ? IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () {
-                    searchBarController.clear();
-                    widget.epubPlayerKey.currentState?.clearSearch();
-                  },
-                )
-              : const SizedBox(),
+          if (isSearchActive)
+            AppIconButton(
+              icon: Icons.close,
+              tooltip: L10n.of(context).readingTocClearSearch,
+              semanticLabel: L10n.of(context).readingTocClearSearch,
+              onPressed: () {
+                searchBarController.clear();
+                widget.epubPlayerKey.currentState?.clearSearch();
+              },
+            ),
         ],
         onSubmitted: (value) {
           final trimmed = value.trim();
@@ -353,7 +360,13 @@ class _BookTocState extends ConsumerState<BookToc> {
           ),
         Expanded(
           child: searchResults.isEmpty
-              ? const SizedBox()
+              ? showSearchProgress
+                  ? const SizedBox()
+                  : AppEmptyState(
+                      compact: true,
+                      title: L10n.of(context).commonEmpty,
+                      icon: Icons.search_off,
+                    )
               : ListView.builder(
                   controller: searchResultsScrollController,
                   itemCount: searchResults.length,
@@ -381,38 +394,41 @@ class _BookTocState extends ConsumerState<BookToc> {
     columnChildren.add(
       isSearchActive
           ? searchResult
-          : Expanded(
-              child: ScrollablePositionedList.builder(
-                itemScrollController: _itemScrollController,
-                itemPositionsListener: _itemPositionsListener,
-                itemCount: _visibleItems.length,
-                itemBuilder: (context, index) {
-                  final entry = _visibleItems[index];
-                  final tocItem = entry.item;
-                  final key = entry.key;
-                  final isSelected = selectedKeys.contains(key);
-                  final isCurrentLeaf =
-                      currentHref == tocItem.href && tocItem.subitems.isEmpty;
+          : tocItems.isEmpty
+              ? const AppEmptyState(icon: Icons.menu_book_outlined)
+              : Expanded(
+                  child: ScrollablePositionedList.builder(
+                    itemScrollController: _itemScrollController,
+                    itemPositionsListener: _itemPositionsListener,
+                    itemCount: _visibleItems.length,
+                    itemBuilder: (context, index) {
+                      final entry = _visibleItems[index];
+                      final tocItem = entry.item;
+                      final key = entry.key;
+                      final isSelected = selectedKeys.contains(key);
+                      final isCurrentLeaf = currentHref == tocItem.href &&
+                          tocItem.subitems.isEmpty;
 
-                  return TocItemWidget(
-                    tocItem: tocItem,
-                    depth: entry.depth,
-                    isExpanded: entry.isExpanded,
-                    isSelected: isSelected,
-                    showProgress: isCurrentLeaf,
-                    progressText: currentProgress,
-                    onToggle: tocItem.subitems.isEmpty
-                        ? null
-                        : () => _toggleExpanded(tocItem),
-                    onTap: () {
-                      widget.hideAppBarAndBottomBar(false);
-                      widget.epubPlayerKey.currentState!.goToHref(tocItem.href);
-                      widget.closeDrawer();
+                      return TocItemWidget(
+                        tocItem: tocItem,
+                        depth: entry.depth,
+                        isExpanded: entry.isExpanded,
+                        isSelected: isSelected,
+                        showProgress: isCurrentLeaf,
+                        progressText: currentProgress,
+                        onToggle: tocItem.subitems.isEmpty
+                            ? null
+                            : () => _toggleExpanded(tocItem),
+                        onTap: () {
+                          widget.hideAppBarAndBottomBar(false);
+                          widget.epubPlayerKey.currentState!
+                              .goToHref(tocItem.href);
+                          widget.closeDrawer();
+                        },
+                      );
                     },
-                  );
-                },
-              ),
-            ),
+                  ),
+                ),
     );
     return Column(children: columnChildren);
   }
@@ -425,59 +441,39 @@ Widget searchResultWidget({
   required VoidCallback closeDrawer,
 }) {
   bool isExpanded = true;
-  TextStyle matchStyle = TextStyle(
-    color: Theme.of(navigatorKey.currentContext!).colorScheme.primary,
-    fontWeight: FontWeight.bold,
-  );
-  TextStyle prePostStyle = const TextStyle(
-    color: Colors.grey,
-  );
   return StatefulBuilder(
     builder: (context, setState) {
+      final matchStyle = TextStyle(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.bold,
+      );
+      final prePostStyle = TextStyle(color: AppReadingTokens.muted(context));
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                isExpanded = !isExpanded;
-              });
-            },
-            child: Row(
-              children: [
-                Flexible(child: Text(searchResult.label)),
-                isExpanded
-                    ? const Icon(Icons.expand_less)
-                    : const Icon(Icons.expand_more),
-                // const Spacer(),
-                Text(
-                  searchResult.subitems.length.toString(),
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
+          AppButton(
+            variant: AppButtonVariant.text,
+            onPressed: () => setState(() => isExpanded = !isExpanded),
+            icon: isExpanded ? Icons.expand_less : Icons.expand_more,
+            label: '${searchResult.label} (${searchResult.subitems.length})',
           ),
           if (isExpanded)
             for (var subItem in searchResult.subitems)
-              FilledContainer(
-                margin: EdgeInsets.only(bottom: 5),
-                width: double.infinity,
-                padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                radius: 10,
-                child: InkWell(
-                  onTap: () {
-                    hideAppBarAndBottomBar(false);
-                    epubPlayerKey.currentState!.goToCfi(subItem.cfi);
-                    closeDrawer();
-                  },
-                  child: RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(text: subItem.pre, style: prePostStyle),
-                        TextSpan(text: subItem.match, style: matchStyle),
-                        TextSpan(text: subItem.post, style: prePostStyle),
-                      ],
-                    ),
+              AppCard(
+                margin: AppReadingTokens.listItemGap,
+                padding: AppSpacing.symmetric(vertical: 8, horizontal: 12),
+                onTap: () {
+                  hideAppBarAndBottomBar(false);
+                  epubPlayerKey.currentState!.goToCfi(subItem.cfi);
+                  closeDrawer();
+                },
+                child: RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(text: subItem.pre, style: prePostStyle),
+                      TextSpan(text: subItem.match, style: matchStyle),
+                      TextSpan(text: subItem.post, style: prePostStyle),
+                    ],
                   ),
                 ),
               ),
@@ -509,98 +505,38 @@ class TocItemWidget extends StatelessWidget {
   final VoidCallback? onToggle;
   final VoidCallback onTap;
 
-  TextStyle _baseStyle(BuildContext context) => TextStyle(
-        fontSize: 15,
-        color: Theme.of(context).colorScheme.onSurface,
-      );
-
-  TextStyle _selectedStyle(BuildContext context) => TextStyle(
-        fontSize: 16,
-        color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.bold,
-      );
-
   @override
   Widget build(BuildContext context) {
-    final labelStyle =
-        isSelected ? _selectedStyle(context) : _baseStyle(context);
-    final percentageStyle =
-        (isSelected ? _selectedStyle(context) : _baseStyle(context))
-            .copyWith(fontSize: 14, fontWeight: FontWeight.w300);
-
-    return Column(
-      children: [
-        ConstrainedBox(
-          constraints: BoxConstraints(minHeight: showProgress ? 60 : 40),
-          child: Padding(
-            padding: EdgeInsets.only(left: depth == 0 ? 0 : depth * 40.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (tocItem.subitems.isNotEmpty)
-                  IconButton(
-                    padding: const EdgeInsets.all(0),
-                    icon: Icon(
-                      isExpanded ? Icons.expand_less : Icons.expand_more,
-                      size: 32,
-                    ),
-                    onPressed: onToggle,
-                  ),
-                Expanded(
-                  child: TextButton(
-                    onPressed: onTap,
-                    style: const ButtonStyle(
-                      alignment: Alignment.centerLeft,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tocItem.label.trim(),
-                                style: labelStyle,
-                              ),
-                              if (showProgress)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10.0),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                          Icons.keyboard_arrow_right_rounded),
-                                      const SizedBox(width: 10),
-                                      Text(progressText),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          tocItem.percentage,
-                          style: percentageStyle,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+    return AppListTile(
+      title: tocItem.label.trim(),
+      subtitle: showProgress ? progressText : null,
+      selected: isSelected,
+      semanticLabel: tocItem.label.trim(),
+      contentPadding: AppSpacing.only(
+        left: depth * AppReadingTokens.tocIndent,
+        right: AppSpacing.tokens.s8,
+      ),
+      leading: tocItem.subitems.isEmpty
+          ? null
+          : AppIconButton(
+              icon: isExpanded ? Icons.expand_less : Icons.expand_more,
+              tooltip: isExpanded
+                  ? L10n.of(context).readingTocCollapse
+                  : L10n.of(context).readingTocExpand,
+              semanticLabel: isExpanded
+                  ? L10n.of(context).readingTocCollapse
+                  : L10n.of(context).readingTocExpand,
+              onPressed: onToggle,
             ),
-          ),
-        ),
-        Divider(
-          indent: 10,
-          endIndent: 20,
-          thickness: 1,
-          color: Colors.grey.withAlpha(110),
-        ),
-      ],
+      trailing: Text(
+        tocItem.percentage,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : AppReadingTokens.muted(context),
+            ),
+      ),
+      onTap: onTap,
     );
   }
 }

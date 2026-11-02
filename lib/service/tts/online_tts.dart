@@ -93,8 +93,8 @@ class OnlineTts extends BaseTts {
 
   void _onSegmentSkipped(TtsSegment segment) {
     skippedSegmentsNotifier.value = skippedSegmentsNotifier.value + 1;
-    final head = segment.sentence.text.substring(
-        0, segment.sentence.text.length.clamp(0, 20));
+    final head = segment.sentence.text
+        .substring(0, segment.sentence.text.length.clamp(0, 20));
     AnxLog.severe(
         'TTS segment skipped after $_maxRetries retries (skipped so far: ${skippedSegmentsNotifier.value}): "$head..."');
   }
@@ -430,7 +430,8 @@ class OnlineTts extends BaseTts {
         // Play audio. A transient player failure would drop the whole
         // segment, so retry once before moving on.
         var played = false;
-        for (var attempt = 0; attempt < 2 && !played && !_shouldStop;
+        for (var attempt = 0;
+            attempt < 2 && !played && !_shouldStop;
             attempt++) {
           _playbackCompleter = Completer<void>();
           final source = BytesSource(segment.audio!, mimeType: 'audio/mp3');

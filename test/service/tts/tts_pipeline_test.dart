@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:anx_reader/service/tts/models/tts_segment.dart';
@@ -42,7 +41,7 @@ void main() {
     });
 
     test('falls back to soft punctuation before hard cuts', () {
-      final text = ('词，' * 100) + '尾'; // no sentence terminators
+      final text = '${'词，' * 100}尾'; // no sentence terminators
       final chunks = splitTtsText(text, 21);
       for (final chunk in chunks) {
         expect(chunk.length, lessThanOrEqualTo(21));
@@ -64,8 +63,7 @@ void main() {
     });
 
     test('mixed CJK and latin text round-trips exactly', () {
-      const text =
-          'Hello world. 这是中文测试，包含逗号。Second sentence with 3.14 numbers!'
+      const text = 'Hello world. 这是中文测试，包含逗号。Second sentence with 3.14 numbers!'
           '重复内容。他说。然后她走了。他说。他说。';
       for (final limit in [10, 17, 50, 800]) {
         final chunks = splitTtsText(text, limit);
@@ -82,7 +80,8 @@ void main() {
     test('splits a long sentence into ordered parts sharing the cfi', () {
       const cfi = 'epubcfi(/6/4!/4/10/2,/1:0,/1:99)';
       final text = '字' * 2500;
-      final segments = expandTtsSentence(TtsSentence(text: text, cfi: cfi), 1000);
+      final segments =
+          expandTtsSentence(TtsSentence(text: text, cfi: cfi), 1000);
       expect(segments.length, 3);
       expect(segments.map((s) => s.partIndex).toList(), [0, 1, 2]);
       for (final segment in segments) {
@@ -131,8 +130,8 @@ void main() {
   group('fetch policy with mock engine', () {
     test('out-of-order responses land on their own segments in order',
         () async {
-      final sentence = TtsSentence(
-          text: '零' * 1000 + '一' * 1000, cfi: 'cfi-long');
+      final sentence =
+          TtsSentence(text: '零' * 1000 + '一' * 1000, cfi: 'cfi-long');
       final segments = expandTtsSentence(sentence, 1000);
       expect(segments.length, 2);
       expect(segments[0].sentence.text, '零' * 1000);
@@ -158,11 +157,11 @@ void main() {
       // text even though the responses completed in reverse.
       expect(segments[0].audio, _bytesOf(segments[0].sentence.text));
       expect(segments[1].audio, _bytesOf(segments[1].sentence.text));
-      expect(
-          segments.map((s) => s.sentence.text).join(), sentence.text);
+      expect(segments.map((s) => s.sentence.text).join(), sentence.text);
     });
 
-    test('a permanently failing segment becomes silent without blocking or '
+    test(
+        'a permanently failing segment becomes silent without blocking or '
         'corrupting the others (retry policy of OnlineTts)', () async {
       var attempts = <String>[];
       Future<Uint8List> engine(String text) async {
@@ -189,14 +188,11 @@ void main() {
 
       final segments = [
         TtsSegment(
-            sentence: const TtsSentence(text: '好段一。', cfi: 'c1'),
-            partIndex: 0),
+            sentence: const TtsSentence(text: '好段一。', cfi: 'c1'), partIndex: 0),
         TtsSegment(
-            sentence: const TtsSentence(text: '坏段。', cfi: 'c2'),
-            partIndex: 0),
+            sentence: const TtsSentence(text: '坏段。', cfi: 'c2'), partIndex: 0),
         TtsSegment(
-            sentence: const TtsSentence(text: '好段二。', cfi: 'c3'),
-            partIndex: 0),
+            sentence: const TtsSentence(text: '好段二。', cfi: 'c3'), partIndex: 0),
       ];
       await Future.wait(segments.map(fetch));
 
@@ -215,8 +211,7 @@ void main() {
       expect(TtsService.stepaudio.provider.maxRequestChars, 1000);
     });
 
-    test('engines without a documented limit use the conservative default',
-        () {
+    test('engines without a documented limit use the conservative default', () {
       expect(TtsService.openai.provider.maxRequestChars, 800);
       expect(TtsService.aliyun.provider.maxRequestChars, 800);
       expect(TtsService.mimo.provider.maxRequestChars, 800);

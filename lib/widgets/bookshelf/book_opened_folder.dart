@@ -1,8 +1,11 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/providers/book_list.dart';
 import 'package:anx_reader/providers/tb_groups.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/widgets/bookshelf/book_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,15 +27,15 @@ class BookOpenedFolder extends ConsumerStatefulWidget {
 class _BookOpenedFolderState extends ConsumerState<BookOpenedFolder> {
   bool isEditing = false;
   bool isEditingName = false;
-  List<Book> books = [];
-  late TextEditingController _nameController;
-  String currentGroupName = "";
+  bool _updatingName = false;
+  bool _nameUpdateFailed = false;
+  late final List<Book> books = [...widget.books];
+  late final TextEditingController _nameController;
+  late String currentGroupName = widget.groupName;
 
   @override
   void initState() {
     super.initState();
-    books = widget.books;
-    currentGroupName = widget.groupName;
     _nameController = TextEditingController(text: currentGroupName);
   }
 
@@ -43,140 +46,148 @@ class _BookOpenedFolderState extends ConsumerState<BookOpenedFolder> {
   }
 
   Future<void> _updateGroupName() async {
-    if (books.isEmpty) return;
-
+    if (books.isEmpty || _updatingName) return;
     final groupId = books.first.groupId;
     if (groupId <= 0) return;
 
+    setState(() {
+      _updatingName = true;
+      _nameUpdateFailed = false;
+    });
     try {
       final group = await ref.read(groupDaoProvider.notifier).getGroup(groupId);
       if (group == null) return;
-      final updatedGroup = group.copyWith(name: _nameController.text);
-      await ref.read(groupDaoProvider.notifier).updateGroup(updatedGroup);
-
+      await ref
+          .read(groupDaoProvider.notifier)
+          .updateGroup(group.copyWith(name: _nameController.text));
+      if (!mounted) return;
       setState(() {
         currentGroupName = _nameController.text;
         isEditingName = false;
       });
-    } catch (e) {
-      // Handle error
-      setState(() {
-        isEditingName = false;
-      });
+    } catch (_) {
+      if (mounted) setState(() => _nameUpdateFailed = true);
+    } finally {
+      _updatingName = false;
+      if (mounted) setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: isEditingName
-          ? Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _nameController,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(),
-                    ),
-                    autofocus: true,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.check),
-                  onPressed: _updateGroupName,
-                ),
-                IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () {
-                    setState(() {
-                      _nameController.text = currentGroupName;
-                      isEditingName = false;
-                    });
-                  },
-                ),
-              ],
-            )
-          : InkWell(
-              onTap: () {
-                setState(() {
-                  isEditingName = true;
-                });
-              },
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      currentGroupName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.edit_outlined,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ],
-              ),
-            ),
+    final l10n = L10n.of(context);
+    return AppDialog(
+      title: currentGroupName,
       content: SizedBox(
-        width: MediaQuery.of(context).size.width * 0.7,
-        child: GridView.builder(
-            shrinkWrap: true,
-            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: Prefs().bookCoverWidth,
-              childAspectRatio: 1 / 2.2,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: books.length,
-            itemBuilder: (context, index) => Stack(
+        width: MediaQuery.of(context).size.width *
+            AppBookshelfTokens.folderDialogWidthFactor,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isEditingName) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        controller: _nameController,
+                        autofocus: true,
+                        enabled: !_updatingName,
+                        onSubmitted: (_) => _updateGroupName(),
+                      ),
+                    ),
+                    AppIconButton(
+                      icon: Icons.check,
+                      semanticLabel: l10n.commonSave,
+                      tooltip: l10n.commonSave,
+                      isLoading: _updatingName,
+                      onPressed: _updateGroupName,
+                    ),
+                    AppIconButton(
+                      icon: Icons.close,
+                      semanticLabel: l10n.commonCancel,
+                      tooltip: l10n.commonCancel,
+                      enabled: !_updatingName,
+                      onPressed: () {
+                        setState(() {
+                          _nameController.text = currentGroupName;
+                          isEditingName = false;
+                          _nameUpdateFailed = false;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                if (_nameUpdateFailed)
+                  AppInlineFeedback(onRetry: _updateGroupName),
+                SizedBox(height: AppSpacing.tokens.s12),
+              ] else
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: AppButton(
+                    label: l10n.commonEdit,
+                    icon: Icons.edit_outlined,
+                    variant: AppButtonVariant.text,
+                    onPressed: () => setState(() => isEditingName = true),
+                  ),
+                ),
+              GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: Prefs().bookCoverWidth,
+                  childAspectRatio: AppBookshelfTokens.folderDialogAspectRatio,
+                  crossAxisSpacing: AppBookshelfTokens.folderDialogSpacing,
+                  mainAxisSpacing: AppBookshelfTokens.folderDialogSpacing,
+                ),
+                itemCount: books.length,
+                itemBuilder: (context, index) => Stack(
                   children: [
                     BookItem(book: books[index]),
-                    isEditing
-                        ? Positioned(
-                            right: 0,
-                            top: 0,
-                            child: IconButton(
-                              onPressed: () {
-                                ref
-                                    .read(bookListProvider.notifier)
-                                    .removeFromGroup(books[index]);
-                                books.removeAt(index);
-                                if (books.isEmpty) {
-                                  Navigator.pop(context);
-                                }
-                                setState(() {});
-                              },
-                              icon: const Icon(
-                                Icons.remove_circle,
-                                size: 30,
-                                color: Colors.red,
-                              ),
-                            ),
-                          )
-                        : Container(),
+                    if (isEditing)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: AppIconButton(
+                          semanticLabel: l10n.commonRemove,
+                          tooltip: l10n.commonRemove,
+                          variant: AppButtonVariant.danger,
+                          onPressed: () {
+                            ref
+                                .read(bookListProvider.notifier)
+                                .removeFromGroup(books[index]);
+                            setState(() {
+                              books.removeAt(index);
+                              if (books.isEmpty) Navigator.pop(context);
+                            });
+                          },
+                          child: const Icon(
+                            Icons.remove_circle,
+                            size: AppBookshelfTokens.folderRemoveIconSize,
+                          ),
+                        ),
+                      ),
                   ],
-                )),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
       actions: [
-        TextButton(
-            onPressed: () {
-              ref.read(bookListProvider.notifier).dissolveGroup(books);
-              Navigator.pop(context);
-            },
-            child: Text(L10n.of(context).commonDissolve)),
-        TextButton(
-            onPressed: () {
-              isEditing = !isEditing;
-              setState(() {});
-            },
-            child: Text(isEditing
-                ? L10n.of(context).commonCancel
-                : L10n.of(context).commonEdit)),
+        AppButton(
+          label: l10n.commonDissolve,
+          variant: AppButtonVariant.outlined,
+          onPressed: () {
+            ref.read(bookListProvider.notifier).dissolveGroup(books);
+            Navigator.pop(context);
+          },
+        ),
+        AppButton(
+          label: isEditing ? l10n.commonCancel : l10n.commonEdit,
+          variant: AppButtonVariant.text,
+          onPressed: () => setState(() => isEditing = !isEditing),
+        ),
       ],
     );
   }

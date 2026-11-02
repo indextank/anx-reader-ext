@@ -196,12 +196,12 @@ void main() {
       final base = {'id': 'x', 'title': 'X', 'url': 'https://x'};
       for (final field in ['id', 'title', 'url']) {
         final missing = Map<String, dynamic>.of(base)..remove(field);
-        expect(() => AiProvider.fromJson(missing),
-            throwsA(isA<BadKeyException>()),
+        expect(
+            () => AiProvider.fromJson(missing), throwsA(isA<BadKeyException>()),
             reason: 'missing $field');
         final nulled = Map<String, dynamic>.of(base)..[field] = null;
-        expect(() => AiProvider.fromJson(nulled),
-            throwsA(isA<BadKeyException>()),
+        expect(
+            () => AiProvider.fromJson(nulled), throwsA(isA<BadKeyException>()),
             reason: 'null $field');
       }
     });

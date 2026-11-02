@@ -1,7 +1,9 @@
 import 'package:anx_reader/constants/note_annotations.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/models/book_note.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/time_to_human.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
 
 class BookNoteTile extends StatelessWidget {
@@ -12,7 +14,7 @@ class BookNoteTile extends StatelessWidget {
     this.onLongPress,
     this.trailing,
     this.backgroundColor,
-    this.margin = const EdgeInsets.only(bottom: 8),
+    this.margin = AppBookNotesTokens.tileMargin,
   });
 
   final BookNote note;
@@ -32,91 +34,87 @@ class BookNoteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = Color(int.tryParse('0xaa${note.color}') ?? 0xaa555555);
-    final infoStyle = const TextStyle(
-      fontSize: 14,
-      color: Colors.grey,
-    );
+    final colors = Theme.of(context).colorScheme;
+    final iconColor = AppBookNotesTokens.tileIconColor(note.color);
+    final infoStyle = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: colors.onSurfaceVariant);
 
-    return GestureDetector(
+    return AppCard(
+      color: backgroundColor,
+      padding: AppBookNotesTokens.tilePadding,
+      margin: margin,
       onTap: onTap,
       onLongPress: onLongPress,
       onSecondaryTap: onLongPress,
-      behavior: HitTestBehavior.opaque,
-      child: FilledContainer(
-        color: backgroundColor,
-        padding: const EdgeInsets.all(8.0),
-        margin: margin,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 10, right: 10, top: 10),
-              child: _buildIcon(iconColor),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    note.content,
-                    style: const TextStyle(
-                      fontSize: 16,
-                    ),
-                  ),
-                  if (note.readerNote != null && note.readerNote!.isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(height: 4),
-                        IntrinsicHeight(
-                          child: Row(
-                            children: [
-                              const VerticalDivider(
-                                thickness: 3,
-                              ),
-                              Expanded(
-                                child: Text(
-                                  note.readerNote!,
-                                  style: infoStyle.copyWith(
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                      ],
-                    ),
-                  Divider(
-                    indent: 4,
-                    height: 3,
-                    color: Colors.grey.shade300,
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: AppBookNotesTokens.tileIconPadding,
+            child: _buildIcon(iconColor),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  note.content,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                if (note.readerNote != null && note.readerNote!.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: Text(
-                          note.chapter,
-                          style: infoStyle,
-                          overflow: TextOverflow.ellipsis,
+                      SizedBox(height: AppSpacing.tokens.s4),
+                      IntrinsicHeight(
+                        child: Row(
+                          children: [
+                            VerticalDivider(
+                              thickness:
+                                  AppBookNotesTokens.tileDividerThickness,
+                              color: colors.outlineVariant,
+                            ),
+                            Expanded(
+                              child: Text(
+                                note.readerNote!,
+                                style: infoStyle,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        timeToHuman(note.createTime),
-                        style: infoStyle,
-                      ),
+                      SizedBox(height: AppSpacing.tokens.s4),
                     ],
                   ),
-                ],
-              ),
+                Divider(
+                  indent: AppBookNotesTokens.tileDividerIndent,
+                  height: AppBookNotesTokens.tileDividerHeight,
+                  color: colors.outlineVariant,
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        note.chapter,
+                        style: infoStyle,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      timeToHuman(note.createTime),
+                      style: infoStyle,
+                    ),
+                  ],
+                ),
+              ],
             ),
-            if (trailing != null) trailing!,
-          ],
-        ),
+          ),
+          if (trailing != null) trailing!,
+        ],
       ),
     );
   }

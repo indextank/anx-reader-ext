@@ -194,8 +194,7 @@ class SettingsSyncCatalog {
       final encoded = Prefs.encodePrefsEntry(prefs.get(key));
       if (encoded == null) continue;
       result
-          .putIfAbsent(
-              category.name, () => <String, Map<String, Object?>>{})
+          .putIfAbsent(category.name, () => <String, Map<String, Object?>>{})
           .putIfAbsent(key, () => Map<String, Object?>.from(encoded));
     }
     return result;

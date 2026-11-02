@@ -1,5 +1,8 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/service/config/config_item.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -23,22 +26,65 @@ class ServiceConfigForm extends StatefulWidget {
 
 class _ServiceConfigFormState extends State<ServiceConfigForm> {
   late Map<String, dynamic> _currentConfig;
-  // Track password visibility for each password field
   final Map<String, bool> _passwordVisibility = {};
+  final Map<String, TextEditingController> _controllers = {};
 
   @override
   void initState() {
     super.initState();
     _currentConfig = Map.from(widget.initialConfig);
+    _syncControllers();
   }
 
   @override
   void didUpdateWidget(ServiceConfigForm oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialConfig != widget.initialConfig) {
-      setState(() {
-        _currentConfig = Map.from(widget.initialConfig);
-      });
+    final configChanged = oldWidget.initialConfig != widget.initialConfig;
+    if (configChanged) {
+      _currentConfig = Map.from(widget.initialConfig);
+    }
+    _syncControllers(updateValues: configChanged);
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  String _textValue(ConfigItem item) {
+    return _currentConfig[item.key]?.toString() ??
+        item.defaultValue?.toString() ??
+        '';
+  }
+
+  void _syncControllers({bool updateValues = false}) {
+    final textItems = widget.configItems.where(
+      (item) => const {
+        ConfigItemType.text,
+        ConfigItemType.password,
+        ConfigItemType.number,
+      }.contains(item.type),
+    );
+    final keys = textItems.map((item) => item.key).toSet();
+    for (final key in _controllers.keys.toList()) {
+      if (!keys.contains(key)) {
+        _controllers.remove(key)!.dispose();
+      }
+    }
+    for (final item in textItems) {
+      final value = _textValue(item);
+      final controller = _controllers[item.key];
+      if (controller == null) {
+        _controllers[item.key] = TextEditingController(text: value);
+      } else if (updateValues && controller.text != value) {
+        controller.value = TextEditingValue(
+          text: value,
+          selection: TextSelection.collapsed(offset: value.length),
+        );
+      }
     }
   }
 
@@ -61,7 +107,7 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: widget.configItems.map((item) {
         return Padding(
-          padding: const EdgeInsets.only(bottom: 12.0),
+          padding: AppSpacing.only(bottom: AppSpacing.tokens.s12),
           child: _buildConfigItem(item),
         );
       }).toList(),
@@ -71,59 +117,38 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
   Widget _buildConfigItem(ConfigItem item) {
     switch (item.type) {
       case ConfigItemType.text:
-        return TextField(
-          decoration: InputDecoration(
-            labelText: item.label,
-            helperText: item.description,
-            border: const OutlineInputBorder(),
-          ),
-          controller: TextEditingController(
-            text: _currentConfig[item.key]?.toString() ??
-                item.defaultValue?.toString() ??
-                '',
-          )..selection = TextSelection.collapsed(
-              offset: _currentConfig[item.key]?.toString().length ?? 0),
+        return AppTextField(
+          label: item.label,
+          helperText: item.description,
+          controller: _controllers[item.key],
           onChanged: (value) => _updateConfig(item.key, value),
         );
 
       case ConfigItemType.password:
         final isVisible = _passwordVisibility[item.key] ?? false;
-        return TextField(
+        final visibilityLabel = isVisible
+            ? L10n.of(context).hidePassword
+            : L10n.of(context).showPassword;
+        return AppTextField(
           obscureText: !isVisible,
-          decoration: InputDecoration(
-            labelText: item.label,
-            helperText: item.description,
-            border: const OutlineInputBorder(),
-            suffixIcon: IconButton(
-              icon: Icon(
-                isVisible ? Icons.visibility_off : Icons.visibility,
-              ),
-              onPressed: () => _togglePasswordVisibility(item.key),
-            ),
+          label: item.label,
+          helperText: item.description,
+          controller: _controllers[item.key],
+          suffixIcon: AppIconButton(
+            icon: isVisible ? Icons.visibility_off : Icons.visibility,
+            tooltip: visibilityLabel,
+            semanticLabel: visibilityLabel,
+            onPressed: () => _togglePasswordVisibility(item.key),
           ),
-          controller: TextEditingController(
-            text: _currentConfig[item.key]?.toString() ??
-                item.defaultValue?.toString() ??
-                '',
-          )..selection = TextSelection.collapsed(
-              offset: _currentConfig[item.key]?.toString().length ?? 0),
           onChanged: (value) => _updateConfig(item.key, value),
         );
 
       case ConfigItemType.number:
-        return TextField(
-          decoration: InputDecoration(
-            labelText: item.label,
-            helperText: item.description,
-            border: const OutlineInputBorder(),
-          ),
+        return AppTextField(
+          label: item.label,
+          helperText: item.description,
           keyboardType: TextInputType.number,
-          controller: TextEditingController(
-            text: _currentConfig[item.key]?.toString() ??
-                item.defaultValue?.toString() ??
-                '',
-          )..selection = TextSelection.collapsed(
-              offset: _currentConfig[item.key]?.toString().length ?? 0),
+          controller: _controllers[item.key],
           onChanged: (value) =>
               _updateConfig(item.key, int.tryParse(value) ?? 0),
         );
@@ -140,34 +165,32 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              padding: AppSpacing.horizontal16,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.tokens.s8,
                 children: [
-                  Text(
-                    item.label,
-                    style: const TextStyle(fontSize: 16),
-                  ),
+                  Text(item.label,
+                      style: Theme.of(context).textTheme.bodyLarge),
                   Text(
                     '${currentValue.round()}$unit',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ],
               ),
             ),
             if (item.description != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: AppSpacing.horizontal16,
                 child: Text(
                   item.description!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ),
             Slider(
@@ -193,7 +216,7 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
 
       case ConfigItemType.select:
         if (item.options == null || item.options!.isEmpty) {
-          return const Text('No options');
+          return const AppEmptyState();
         }
 
         final String currentValue = _currentConfig[item.key]?.toString() ??
@@ -205,9 +228,8 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
           decoration: InputDecoration(
             labelText: item.label,
             helperText: item.description,
-            border: const OutlineInputBorder(),
           ),
-          value: currentValue,
+          initialValue: currentValue,
           items: item.options!.map((option) {
             return DropdownMenuItem<String>(
               value: option['value'].toString(),
@@ -223,35 +245,37 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
 
       case ConfigItemType.radio:
         if (item.options == null || item.options!.isEmpty) {
-          return const Text('No options');
+          return const AppEmptyState();
         }
 
         final currentValue = _currentConfig[item.key] ?? item.defaultValue;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text(
-                item.label,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            if (item.description != null)
+        return RadioGroup<dynamic>(
+          groupValue: currentValue,
+          onChanged: (value) => _updateConfig(item.key, value),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(item.description!),
+                padding: AppSpacing.only(bottom: AppSpacing.tokens.s8),
+                child: Text(
+                  item.label,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
               ),
-            ...item.options!.map((option) {
-              return RadioListTile<dynamic>(
-                title: Text(option['label'].toString()),
-                value: option['value'],
-                groupValue: currentValue,
-                onChanged: (value) => _updateConfig(item.key, value),
-              );
-            }),
-          ],
+              if (item.description != null)
+                Padding(
+                  padding: AppSpacing.only(bottom: AppSpacing.tokens.s8),
+                  child: Text(item.description!),
+                ),
+              ...item.options!.map((option) {
+                return RadioListTile<dynamic>(
+                  title: Text(option['label'].toString()),
+                  value: option['value'],
+                );
+              }),
+            ],
+          ),
         );
 
       case ConfigItemType.checkbox:
@@ -267,39 +291,37 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
         );
 
       case ConfigItemType.tip:
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
+        return AppCard(
+          padding: AppSpacing.all12,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline, size: 20),
-                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.info_outline,
+                    size: AppSpacing.tokens.s20,
+                    color: context.appTheme.colors.info,
+                  ),
+                  SizedBox(width: AppSpacing.tokens.s8),
                   Expanded(
                     child: Text(
                       item.defaultValue?.toString() ?? '',
-                      style: const TextStyle(fontSize: 14),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
                 ],
               ),
               if (item.link != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 28.0, top: 4.0),
-                  child: GestureDetector(
-                    onTap: () => launchUrl(
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: AppButton(
+                    label: L10n.of(context).settingsNarrateClickForHelp,
+                    variant: AppButtonVariant.text,
+                    onPressed: () => launchUrl(
                       Uri.parse(item.link!),
                       mode: LaunchMode.externalApplication,
-                    ),
-                    child: Text(
-                      L10n.of(context).settingsNarrateClickForHelp,
-                      style: TextStyle(
-                        color: Theme.of(context).primaryColor,
-                        decoration: TextDecoration.underline,
-                        fontSize: 14,
-                      ),
                     ),
                   ),
                 ),

@@ -48,6 +48,41 @@ class AnxHeadlessWebView {
     this.webViewEnvironment,
   });
 
+  // The plugin's deprecated onLoadError/onLoadHttpError were only forwarded
+  // for main-frame resources, with exactly the arguments mapped below (see
+  // the "onReceivedError"/"onReceivedHttpError" handlers in each platform
+  // controller). Reproduce that contract on top of the replacement callbacks
+  // so [onLoadError]/[onLoadHttpError] callers see no behavior change.
+  void _forwardLoadError(
+    InAppWebViewController controller,
+    WebResourceRequest request,
+    WebResourceError error,
+  ) {
+    if (!(request.isForMainFrame ?? false)) return;
+    final wrapped = _controller ?? InAppEpubWebViewController(controller);
+    onLoadError?.call(
+      wrapped,
+      request.url,
+      error.type.toNativeValue() ?? -1,
+      error.description,
+    );
+  }
+
+  void _forwardLoadHttpError(
+    InAppWebViewController controller,
+    WebResourceRequest request,
+    WebResourceResponse errorResponse,
+  ) {
+    if (!(request.isForMainFrame ?? false)) return;
+    final wrapped = _controller ?? InAppEpubWebViewController(controller);
+    onLoadHttpError?.call(
+      wrapped,
+      request.url,
+      errorResponse.statusCode ?? -1,
+      errorResponse.reasonPhrase ?? '',
+    );
+  }
+
   Future<void> run() async {
     if (AnxPlatform.isLinux) {
       _runLinuxCefOverlay();
@@ -96,14 +131,8 @@ class AnxHeadlessWebView {
           isError: message.messageLevel == ConsoleMessageLevel.ERROR,
         );
       },
-      onLoadError: (controller, url, code, message) {
-        final wrapped = _controller ?? InAppEpubWebViewController(controller);
-        onLoadError?.call(wrapped, url, code, message);
-      },
-      onLoadHttpError: (controller, url, statusCode, description) {
-        final wrapped = _controller ?? InAppEpubWebViewController(controller);
-        onLoadHttpError?.call(wrapped, url, statusCode, description);
-      },
+      onReceivedError: _forwardLoadError,
+      onReceivedHttpError: _forwardLoadHttpError,
     );
     try {
       await _headlessWebView?.run();
@@ -180,16 +209,8 @@ class AnxHeadlessWebView {
                 isError: message.messageLevel == ConsoleMessageLevel.ERROR,
               );
             },
-            onLoadError: (controller, url, code, message) {
-              final wrapped =
-                  _controller ?? InAppEpubWebViewController(controller);
-              onLoadError?.call(wrapped, url, code, message);
-            },
-            onLoadHttpError: (controller, url, statusCode, description) {
-              final wrapped =
-                  _controller ?? InAppEpubWebViewController(controller);
-              onLoadHttpError?.call(wrapped, url, statusCode, description);
-            },
+            onReceivedError: _forwardLoadError,
+            onReceivedHttpError: _forwardLoadHttpError,
           ),
         ),
       ),

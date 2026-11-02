@@ -1,7 +1,9 @@
 import 'package:anx_reader/dao/book_note.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book_note.dart';
 import 'package:anx_reader/page/reading_page.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/widgets/common/axis_flex.dart';
 import 'package:flutter/material.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
@@ -15,6 +17,8 @@ class ReaderNoteMenu extends StatefulWidget {
     required this.onVisibilityChange,
     required this.onSizeChanged,
     this.onSaved,
+    this.noteLoader,
+    this.noteSaver,
   });
 
   final int? noteId;
@@ -22,9 +26,9 @@ class ReaderNoteMenu extends StatefulWidget {
   final Axis axis;
   final ValueChanged<bool> onVisibilityChange;
   final VoidCallback onSizeChanged;
-
-  /// Close the selection menu after a successful save (desktop parity).
   final VoidCallback? onSaved;
+  final Future<BookNote?> Function(int id)? noteLoader;
+  final Future<void> Function(BookNote? note, String text)? noteSaver;
 
   @override
   State<ReaderNoteMenu> createState() => ReaderNoteMenuState();
@@ -33,6 +37,10 @@ class ReaderNoteMenu extends StatefulWidget {
 class ReaderNoteMenuState extends State<ReaderNoteMenu> {
   BookNote? note;
   bool _showNoteDialog = false;
+  bool _loading = false;
+  bool _loadFailed = false;
+  bool _savePending = false;
+  bool _saveFailed = false;
   final textFieldController = TextEditingController();
   final FocusNode _noteFocusNode = FocusNode(debugLabel: 'reader_note');
   bool showSaveButton = false;
@@ -53,7 +61,6 @@ class ReaderNoteMenuState extends State<ReaderNoteMenu> {
   void _focusNoteField() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Hand keyboard to Flutter; CEF otherwise keeps GTK/CEF focus.
       readingPageKey.currentState?.releaseReaderFocusForChrome();
       _noteFocusNode.requestFocus();
     });
@@ -61,17 +68,13 @@ class ReaderNoteMenuState extends State<ReaderNoteMenu> {
 
   void _notifyVisibility(bool visible) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        widget.onVisibilityChange(visible);
-      }
+      if (mounted) widget.onVisibilityChange(visible);
     });
   }
 
   void _notifySizeChange() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        widget.onSizeChanged();
-      }
+      if (mounted) widget.onSizeChanged();
     });
   }
 
@@ -80,36 +83,35 @@ class ReaderNoteMenuState extends State<ReaderNoteMenu> {
       _showNoteDialog = value;
       return;
     }
-    if (_showNoteDialog == value) {
-      setState(() {});
-      _notifySizeChange();
-      _notifyVisibility(value);
-      if (value) _focusNoteField();
-      return;
-    }
-    setState(() {
-      _showNoteDialog = value;
-    });
+    setState(() => _showNoteDialog = value);
     _notifyVisibility(value);
     _notifySizeChange();
     if (value) _focusNoteField();
   }
 
   Future<void> getNoteDetail(int? id) async {
-    if (id == null) return;
+    if (id == null || _loading) return;
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
     try {
-      final fetchedNote = await bookNoteDao.selectBookNoteById(id);
+      final loader = widget.noteLoader;
+      final fetchedNote = loader != null
+          ? await loader(id)
+          : await bookNoteDao.selectBookNoteById(id);
+      if (!mounted) return;
       note = fetchedNote;
-
-      if (note != null &&
-          note!.readerNote != null &&
-          note!.readerNote!.isNotEmpty) {
-        textFieldController.text = note!.readerNote!;
+      final readerNote = fetchedNote?.readerNote;
+      if (readerNote != null && readerNote.isNotEmpty) {
+        textFieldController.text = readerNote;
         _setShowNoteDialog(true);
       }
+    } catch (_) {
+      if (mounted) setState(() => _loadFailed = true);
     } finally {
       if (mounted) {
-        setState(() {});
+        setState(() => _loading = false);
         _notifySizeChange();
       }
     }
@@ -117,75 +119,116 @@ class ReaderNoteMenuState extends State<ReaderNoteMenu> {
 
   Future<void> showNoteDialog(int noteId) async {
     await getNoteDetail(noteId);
+    if (!mounted) return;
     _setShowNoteDialog(true);
   }
 
-  void saveNote() {
-    textFieldController.text = textFieldController.text.trim();
-    if (note != null) {
-      note!.readerNote = textFieldController.text;
-      bookNoteDao.updateBookNoteById(note!);
+  Future<void> saveNote() async {
+    if (_savePending) return;
+    final text = textFieldController.text.trim();
+    setState(() {
+      _savePending = true;
+      _saveFailed = false;
+    });
+    try {
+      final saver = widget.noteSaver;
+      if (saver != null) {
+        await saver(note, text);
+      } else if (note != null) {
+        note!.readerNote = text;
+        await bookNoteDao.updateBookNoteById(note!);
+      }
+      if (!mounted) return;
+      textFieldController.text = text;
+      if (mounted) setState(() => showSaveButton = false);
+      _notifySizeChange();
+      widget.onSaved?.call();
+    } catch (_) {
+      if (mounted) setState(() => _saveFailed = true);
+    } finally {
+      if (mounted) setState(() => _savePending = false);
     }
-    _notifySizeChange();
-    widget.onSaved?.call();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-        child: AnimatedSize(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: widget.axis == Axis.vertical ? double.infinity : 200,
-          maxWidth: widget.axis == Axis.vertical ? 100 : double.infinity,
-        ),
-        child: !_showNoteDialog
-            ? null
-            : Container(
-                decoration: widget.decoration,
-                padding: const EdgeInsets.all(8),
-                child: AxisFlex(
-                  reverse: false,
-                  axis: widget.axis,
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        // scrollDirection: widget.axis,
-                        child: TextField(
-                          controller: textFieldController,
-                          focusNode: _noteFocusNode,
-                          autofocus: true,
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            hintText: L10n.of(context).contextMenuAddNoteTips,
-                          ),
-                          maxLines: widget.axis == Axis.vertical
-                              ? double.maxFinite.toInt()
-                              : 5,
-                          minLines: 1,
-                          onSubmitted: (String value) {
-                            saveNote();
-                          },
-                          onChanged: (String value) {
-                            setState(() {
-                              showSaveButton = true;
-                            });
-                            _notifySizeChange();
-                          },
-                        ),
-                      ),
-                    ),
-                    if (showSaveButton)
-                      IconButton(
-                        icon: const Icon(EvaIcons.checkmark_circle_2_outline),
-                        onPressed: saveNote,
-                      ),
-                  ],
+    final l10n = L10n.of(context);
+    Widget content;
+    if (_loading) {
+      content = const Center(child: AppLoadingIndicator());
+    } else if (_loadFailed) {
+      content = AppErrorState(
+        compact: true,
+        onRetry: () => getNoteDetail(widget.noteId),
+      );
+    } else if (!_showNoteDialog) {
+      content = const SizedBox.shrink();
+    } else {
+      content = Container(
+        decoration: widget.decoration,
+        padding: AppReadingTokens.menuPadding,
+        child: AxisFlex(
+          axis: widget.axis,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: AppTextField(
+                  controller: textFieldController,
+                  focusNode: _noteFocusNode,
+                  autofocus: true,
+                  enabled: !_savePending,
+                  border: InputBorder.none,
+                  hintText: l10n.contextMenuAddNoteTips,
+                  maxLines: widget.axis == Axis.vertical
+                      ? double.maxFinite.toInt()
+                      : 5,
+                  minLines: 1,
+                  onSubmitted: (_) => saveNote(),
+                  onChanged: (_) {
+                    setState(() => showSaveButton = true);
+                    _notifySizeChange();
+                  },
                 ),
               ),
+            ),
+            if (showSaveButton || _savePending)
+              AppIconButton(
+                icon: EvaIcons.checkmark_circle_2_outline,
+                tooltip: l10n.commonSave,
+                isLoading: _savePending,
+                onPressed: saveNote,
+              ),
+          ],
+        ),
+      );
+    }
+
+    return Expanded(
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: widget.axis == Axis.vertical
+                ? double.infinity
+                : AppReadingTokens.noteMenuMaxHeight,
+            maxWidth: widget.axis == Axis.vertical
+                ? AppReadingTokens.noteMenuVerticalWidth
+                : double.infinity,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: content),
+              if (_saveFailed)
+                AppInlineFeedback(
+                  message: l10n.commonActionFailed,
+                  onRetry: saveNote,
+                ),
+            ],
+          ),
+        ),
       ),
-    ));
+    );
   }
 }

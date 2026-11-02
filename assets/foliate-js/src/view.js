@@ -3,6 +3,7 @@ import { TOCProgress, SectionProgress } from './progress.js'
 import { Overlayer } from './overlayer.js'
 import { textWalker } from './text-walker.js'
 import { Translator, TranslationMode } from './translator.js'
+import { getTokens } from './anx-tokens.js'
 const { TTS } = await import('./tts.js')
 
 const SEARCH_PREFIX = 'foliate-search:'
@@ -370,7 +371,7 @@ export class View extends HTMLElement {
           return
         }
         const range = doc ? anchor(doc) : anchor
-        overlayer.add(value, range, Overlayer.outline, { color: '#39c5bbaa' });
+        overlayer.add(value, range, Overlayer.outline, { color: getTokens().searchOutlineColor });
       }
       return
     }
@@ -599,7 +600,7 @@ export class View extends HTMLElement {
             overlayer.remove(this.oldValue);
           }
           value = this.getCFI(this.#index, range);
-          overlayer.add(value, range, Overlayer.highlight, { color: '#39c5bc83' });
+          overlayer.add(value, range, Overlayer.highlight, { color: getTokens().searchHighlightColor });
           this.oldValue = value;
         }
         this.renderer.scrollToAnchor(range);

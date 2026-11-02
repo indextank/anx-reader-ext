@@ -207,8 +207,7 @@ class SettingsSyncManager {
 
     // 6. Persist state from the actual post-sync local content so that an
     // upload-only run does not mistake unchanged local data for changes.
-    final afterLocal =
-        SettingsSyncCatalog.collect(prefs, excluded: excluded);
+    final afterLocal = SettingsSyncCatalog.collect(prefs, excluded: excluded);
     final newState = <String, dynamic>{};
     for (final entry in uploadCategories.entries) {
       if (excluded.contains(entry.key)) continue;
@@ -223,8 +222,7 @@ class SettingsSyncManager {
     if (direction != SyncDirection.upload) {
       Prefs().notifySettingsChanged();
     }
-    AnxLog.info(
-        'Settings sync done (${uploadCategories.length} categories)');
+    AnxLog.info('Settings sync done (${uploadCategories.length} categories)');
   }
 
   Map<String, Map<String, dynamic>> _loadState(SharedPreferences prefs) {
@@ -234,10 +232,7 @@ class SettingsSyncManager {
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) return {};
       return decoded.map((k, v) => MapEntry(
-          k,
-          v is Map
-              ? Map<String, dynamic>.from(v)
-              : <String, dynamic>{}));
+          k, v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{}));
     } catch (_) {
       return {};
     }

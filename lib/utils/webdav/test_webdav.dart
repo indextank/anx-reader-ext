@@ -6,6 +6,7 @@ import 'package:anx_reader/providers/sync.dart';
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/service/sync/sync_connection_tester.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/toast/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,7 +51,7 @@ void chooseDirection(WidgetRef ref) {
                     trigger: SyncTrigger.manual);
               },
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+                padding: AppSpacing.vertical8,
                 child: Text(L10n.of(context).webdavUpload),
               ),
             ),
@@ -61,7 +62,7 @@ void chooseDirection(WidgetRef ref) {
                     trigger: SyncTrigger.manual);
               },
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+                padding: AppSpacing.vertical8,
                 child: Text(L10n.of(context).webdavDownload),
               ),
             ),

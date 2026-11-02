@@ -1,4 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/enums/text_alignment.dart';
 import 'package:anx_reader/enums/writing_mode.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
@@ -44,7 +47,7 @@ class StyleSlider extends StatelessWidget {
         ),
         Expanded(
           child: Slider(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: AppReadingTokens.sliderPadding,
             value: value,
             onChanged: enabled ? onChanged : null,
             min: min,
@@ -69,19 +72,19 @@ class _StyleSettingsState extends State<StyleSettings> {
   @override
   Widget build(BuildContext context) {
     Widget useBookStylesSwitch() {
-      return SwitchListTile(
-        title: Text(L10n.of(context).useBookStyles),
-        subtitle: Text(
-          L10n.of(context).useBookStylesDescription,
-          style: Theme.of(context).textTheme.bodySmall,
+      return AppListTile(
+        title: L10n.of(context).useBookStyles,
+        subtitle: L10n.of(context).useBookStylesDescription,
+        contentPadding: AppSpacing.zero,
+        trailing: Switch(
+          value: Prefs().useBookStyles,
+          onChanged: (value) {
+            setState(() {
+              Prefs().useBookStyles = value;
+              epubPlayerKey.currentState?.changeStyle(Prefs().bookStyle);
+            });
+          },
         ),
-        value: Prefs().useBookStyles,
-        onChanged: (bool value) {
-          setState(() {
-            Prefs().useBookStyles = value;
-            epubPlayerKey.currentState?.changeStyle(Prefs().bookStyle);
-          });
-        },
       );
     }
 
@@ -166,7 +169,7 @@ class _StyleSettingsState extends State<StyleSettings> {
               ),
         Expanded(
           child: Slider(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: AppReadingTokens.sliderPadding,
             value: bookStyle.topMargin,
             onChanged: (double value) {
               setState(() {
@@ -192,7 +195,7 @@ class _StyleSettingsState extends State<StyleSettings> {
               ),
         Expanded(
           child: Slider(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: AppReadingTokens.sliderPadding,
             value: bookStyle.bottomMargin,
             onChanged: (double value) {
               setState(() {
@@ -334,7 +337,7 @@ class _StyleSettingsState extends State<StyleSettings> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(8.0),
+      padding: AppReadingTokens.settingsCompactPadding,
       child: Column(
         children: [
           useBookStylesSwitch(),

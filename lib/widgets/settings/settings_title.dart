@@ -1,3 +1,4 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/widgets/settings/settings_section.dart';
 import 'package:flutter/cupertino.dart';
@@ -14,12 +15,12 @@ Widget settingsTitle({
   required List<String> subtitle,
 }) {
   BuildContext context = navigatorKey.currentContext!;
-  return ListTile(
+  return AppListTile(
     leading: icon,
-    title: Text(title),
+    title: title,
     trailing: const Icon(Icons.chevron_right),
     selected: !isMobile && selectedIndex == id,
-    subtitle: Text(subtitle.join(' • ')),
+    subtitle: subtitle.join(' • '),
     onTap: () {
       if (!isMobile) {
         setDetail(subPage, id);
@@ -36,7 +37,6 @@ Widget settingsTitle({
 Widget settingsSections({
   required List<AbstractSettingsSection> sections,
 }) {
-  // return SettingsList(sections: sections);
   return ListView.builder(
     itemCount: sections.length,
     itemBuilder: (context, index) {

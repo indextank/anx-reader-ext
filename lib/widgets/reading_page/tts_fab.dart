@@ -1,7 +1,8 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/main.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
@@ -96,13 +97,12 @@ class _TtsFabState extends State<TtsFab> with SingleTickerProviderStateMixin {
                       );
                     },
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: FilledContainer(
+                      padding: AppReadingTokens.compactMargin,
+                      child: AppCard(
                         color:
                             Theme.of(context).colorScheme.surfaceContainerHigh,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6.0, vertical: 4.0),
+                          padding: AppReadingTokens.smallPadding,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -188,12 +188,9 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, size: 22),
+    return AppIconButton(
+      icon: icon,
       onPressed: onPressed,
-      splashRadius: 20,
-      visualDensity: VisualDensity.compact,
-      color: Theme.of(context).colorScheme.onSurface,
     );
   }
 }

@@ -4,7 +4,6 @@ import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/utils/log/string_to_level.dart';
 import 'package:anx_reader/utils/get_path/log_file.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 
 class AnxLog {
@@ -25,12 +24,6 @@ class AnxLog {
   String message;
 
   AnxLog(this.level, this.time, this.message);
-
-  get color => level == Level.SEVERE
-      ? Colors.red
-      : level == Level.WARNING
-          ? Colors.orange
-          : Colors.grey;
 
   static AnxLog parse(String log) {
     try {

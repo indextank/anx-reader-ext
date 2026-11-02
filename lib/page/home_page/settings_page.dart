@@ -1,8 +1,11 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/iap_page.dart';
 import 'package:anx_reader/page/settings_page/more_settings_page.dart';
 import 'package:anx_reader/providers/iap.dart';
 import 'package:anx_reader/service/iap/iap_service.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/widgets/settings/about.dart';
 import 'package:anx_reader/widgets/settings/theme_mode.dart';
@@ -20,66 +23,95 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  late final ScrollController _scrollController =
-      widget.controller ?? ScrollController();
+  late ScrollController _scrollController;
+  late bool _ownsScrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsScrollController = widget.controller == null;
+    _scrollController = widget.controller ?? ScrollController();
+  }
+
+  @override
+  void didUpdateWidget(SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.controller, widget.controller)) return;
+    final oldController = _scrollController;
+    final shouldDisposeOld = _ownsScrollController;
+    _ownsScrollController = widget.controller == null;
+    _scrollController = widget.controller ?? ScrollController();
+    if (shouldDisposeOld) oldController.dispose();
+  }
+
+  @override
+  void dispose() {
+    if (_ownsScrollController) _scrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      body: SingleChildScrollView(
-        controller: _scrollController,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 80),
-          child: Column(
-            children: [
-              GestureDetector(
-                onTap: () {},
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 60, 0, 20),
+      body: AppSafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          child: Padding(
+            padding: AppSettingsTokens.scrollPadding,
+            child: Column(
+              children: [
+                Padding(
+                  padding: AppSettingsTokens.brandPadding,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 500),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: AppSettingsTokens.aboutMaxWidth,
+                      ),
                       child: Text(
                         'Anx',
-                        style: TextStyle(
-                          fontSize: 130,
+                        style: theme.textTheme.displayLarge?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: theme.colorScheme.primary,
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const Divider(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 8, 10, 8),
-                child: ChangeThemeMode(),
-              ),
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: webdavSwitch(context, setState, ref),
-              ),
-              const Divider(),
-              const MoreSettings(),
-              if (EnvVar.enableInAppPurchase)
-                ListTile(
-                  title: Text(L10n.of(context).iapPageTitle),
-                  leading: const Icon(Icons.star_outline),
-                  subtitle: Text(ref.watch(iapProvider).maybeWhen(
-                        data: (state) => state.status.title(context),
-                        orElse: () => L10n.of(context).iapStatusUnknown,
-                      )),
-                  onTap: () {
-                    Navigator.push(
+                const Divider(),
+                const Padding(
+                  padding: AppSettingsTokens.themeModePadding,
+                  child: ChangeThemeMode(),
+                ),
+                const Divider(),
+                Padding(
+                  padding: AppSpacing.horizontal8,
+                  child: webdavSwitch(context, setState, ref),
+                ),
+                const Divider(),
+                const MoreSettings(),
+                if (EnvVar.enableInAppPurchase)
+                  AppListTile(
+                    title: L10n.of(context).iapPageTitle,
+                    leading: const Icon(Icons.star_outline),
+                    subtitle: ref.watch(iapProvider).maybeWhen(
+                          data: (state) => state.status.title(context),
+                          orElse: () => L10n.of(context).iapStatusUnknown,
+                        ),
+                    onTap: () {
+                      Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => const IAPPage()));
-                  },
-                ),
-              const About(),
-            ],
+                          builder: (context) => const IAPPage(),
+                        ),
+                      );
+                    },
+                  ),
+                const About(),
+              ],
+            ),
           ),
         ),
       ),

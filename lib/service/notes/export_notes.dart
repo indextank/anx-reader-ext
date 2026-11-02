@@ -6,7 +6,6 @@ import 'package:anx_reader/utils/convert_string_to_uint8list.dart';
 import 'package:anx_reader/utils/save_file_to_download.dart';
 import 'package:csv/csv.dart';
 import 'package:fast_gbk/fast_gbk.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/service/notes/notes_json.dart';
@@ -19,7 +18,9 @@ Future<void> exportNotes(
   ExportType exportType, {
   bool mergeChapterHeadings = false,
 }) async {
-  BuildContext context = navigatorKey.currentContext!;
+  // Resolve localized strings before any await so no BuildContext is used
+  // across an async gap.
+  final l10n = L10n.of(navigatorKey.currentContext!);
   if (notesList.isEmpty) {
     return;
   }
@@ -32,7 +33,7 @@ Future<void> exportNotes(
       notes += groups.map(_formatPlainGroup).join('\n\n');
 
       await Clipboard.setData(ClipboardData(text: notes));
-      AnxToast.show(L10n.of(context).notesPageCopied);
+      AnxToast.show(l10n.notesPageCopied);
       break;
 
     case ExportType.md:
@@ -45,7 +46,7 @@ Future<void> exportNotes(
           mimeType: 'text/markdown');
 
       if (filePath != null) {
-        AnxToast.show('${L10n.of(context).notesPageExportedTo} $filePath');
+        AnxToast.show('${l10n.notesPageExportedTo} $filePath');
       }
       break;
 
@@ -56,7 +57,7 @@ Future<void> exportNotes(
           fileName: '${book.title}.txt',
           mimeType: 'text/plain');
       if (filePath != null) {
-        AnxToast.show('${L10n.of(context).notesPageExportedTo} $filePath');
+        AnxToast.show('${l10n.notesPageExportedTo} $filePath');
       }
       break;
 
@@ -95,7 +96,7 @@ Future<void> exportNotes(
           fileName: '${book.title}.csv',
           mimeType: 'text/csv');
       if (filePath != null) {
-        AnxToast.show('${L10n.of(context).notesPageExportedTo} $filePath');
+        AnxToast.show('${l10n.notesPageExportedTo} $filePath');
       }
       break;
 
@@ -106,7 +107,7 @@ Future<void> exportNotes(
           fileName: '${book.title.replaceAll('\n', ' ')}.notes.json',
           mimeType: 'application/json');
       if (filePath != null) {
-        AnxToast.show('${L10n.of(context).notesPageExportedTo} $filePath');
+        AnxToast.show('${l10n.notesPageExportedTo} $filePath');
       }
       break;
   }

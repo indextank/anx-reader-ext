@@ -1,22 +1,25 @@
 import 'dart:io';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/dao/theme.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/main.dart';
 import 'package:anx_reader/models/book_style.dart';
 import 'package:anx_reader/models/font_model.dart';
+import 'package:anx_reader/models/read_theme.dart';
+import 'package:anx_reader/page/book_player/epub_player.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/page/settings_page/subpage/fonts.dart';
 import 'package:anx_reader/service/book_player/book_player_server.dart';
 import 'package:anx_reader/service/font.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/font_parser.dart';
 import 'package:anx_reader/utils/get_path/get_base_path.dart';
 import 'package:anx_reader/widgets/icon_and_text.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/more_settings.dart';
 import 'package:anx_reader/widgets/reading_page/widget_title.dart';
-import 'package:anx_reader/dao/theme.dart';
-import 'package:anx_reader/main.dart';
-import 'package:anx_reader/models/read_theme.dart';
-import 'package:anx_reader/page/book_player/epub_player.dart';
 import 'package:anx_reader/widgets/reading_page/widgets/bgimg_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -59,33 +62,33 @@ class StyleWidget extends StatefulWidget {
 class StyleWidgetState extends State<StyleWidget> {
   BookStyle bookStyle = Prefs().bookStyle;
   int? currentThemeId = Prefs().readTheme.id;
+  bool _addingTheme = false;
+  bool _themeActionFailed = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+    return SingleChildScrollView(
+      padding: AppReadingTokens.panelPadding,
       child: Column(
         children: [
           widgetTitle(L10n.of(context).readingPageStyle, ReadingSettings.theme),
           sliders(),
-          const SizedBox(height: 10),
           fontAndPageTurn(),
           const Divider(),
-          Row(
-            children: [
-              Expanded(child: themeSelector()),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                ),
-                onPressed: () {
-                  widget.setCurrentPage(const BgimgSelector());
-                },
-                icon: const Icon(Icons.arrow_forward_ios),
-                iconAlignment: IconAlignment.end,
-                label: Text(L10n.of(context).readingPageStyleBackground),
-              )
-            ],
+          themeSelector(),
+          if (_themeActionFailed)
+            AppInlineFeedback(
+              message: L10n.of(context).commonActionFailed,
+              onRetry: _addTheme,
+            ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: AppButton(
+              variant: AppButtonVariant.outlined,
+              onPressed: () => widget.setCurrentPage(const BgimgSelector()),
+              icon: Icons.arrow_forward_ios,
+              label: L10n.of(context).readingPageStyleBackground,
+            ),
           ),
         ],
       ),
@@ -93,8 +96,8 @@ class StyleWidgetState extends State<StyleWidget> {
   }
 
   List<FontModel> fonts() {
-    Directory fontDir = getFontDir();
-    List<FontModel> fontList = [
+    final fontDir = getFontDir();
+    final fontList = [
       FontModel(
         label: L10n.of(context).downloadFonts,
         name: 'download',
@@ -116,87 +119,75 @@ class StyleWidgetState extends State<StyleWidget> {
         path: 'system',
       ),
     ];
-    // fontDir.listSync().forEach((element) {
-    //   if (element is File) {
-    //     fontList.add(FontModel(
-    //       label: getFontNameFromFile(element),
-    //       name: 'customFont' + ,
-    //       path:
-    //           'http://127.0.0.1:${Server().port}/fonts/${element.path.split('/').last}',
-    //     ));
-    //   }
-    // });
-    // name = 'customFont' + index
-    for (int i = 0; i < fontDir.listSync().length; i++) {
-      File element = fontDir.listSync()[i] as File;
-      fontList.add(FontModel(
-        label: getFontNameFromFile(element),
-        name: 'customFont$i',
-        path:
-            'http://127.0.0.1:${Server().port}/fonts/${element.path.split(Platform.pathSeparator).last}',
-      ));
+    final files = fontDir.listSync();
+    for (int i = 0; i < files.length; i++) {
+      final element = files[i] as File;
+      fontList.add(
+        FontModel(
+          label: getFontNameFromFile(element),
+          name: 'customFont$i',
+          path:
+              'http://127.0.0.1:${Server().port}/fonts/${element.path.split(Platform.pathSeparator).last}',
+        ),
+      );
     }
-
     return fontList;
   }
 
   Widget fontAndPageTurn() {
-    FontModel? font = fonts().firstWhere(
-        (element) => element.path == Prefs().font.path,
-        orElse: () => FontModel(
-            label: L10n.of(context).followBook, name: 'book', path: 'book'));
+    final font = fonts().firstWhere(
+      (element) => element.path == Prefs().font.path,
+      orElse: () => FontModel(
+        label: L10n.of(context).followBook,
+        name: 'book',
+        path: 'book',
+      ),
+    );
 
     Widget? leadingIcon(String name) {
-      if (name == 'download') {
-        return const Icon(Icons.download);
-      } else if (name == 'newFont') {
-        return const Icon(Icons.add);
-      }
+      if (name == 'download') return const Icon(Icons.download);
+      if (name == 'newFont') return const Icon(Icons.add);
       return null;
     }
 
-    return Row(children: [
-      Expanded(
-        child: DropdownMenu<PageTurn>(
+    final inputDecorationTheme = InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: AppReadingTokens.pillRadius),
+    );
+    return Column(
+      children: [
+        DropdownMenu<PageTurn>(
           label: Text(L10n.of(context).readingPagePageTurningMethod),
           initialSelection: Prefs().pageTurnStyle,
-          expandedInsets: const EdgeInsets.only(right: 5),
-          inputDecorationTheme: InputDecorationTheme(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(50),
-            ),
-          ),
-          onSelected: (PageTurn? value) {
+          expandedInsets: AppSpacing.zero,
+          inputDecorationTheme: inputDecorationTheme,
+          onSelected: (value) {
             if (value != null) {
               Prefs().pageTurnStyle = value;
               epubPlayerKey.currentState!.changePageTurnStyle(value);
             }
           },
           dropdownMenuEntries: PageTurn.values
-              .map((e) => DropdownMenuEntry(
-                    value: e,
-                    label: e.getLabel(context),
-                  ))
+              .map(
+                (value) => DropdownMenuEntry(
+                  value: value,
+                  label: value.getLabel(context),
+                ),
+              )
               .toList(),
         ),
-      ),
-      Expanded(
-        child: DropdownMenu<FontModel>(
+        DropdownMenu<FontModel>(
           label: Text(L10n.of(context).font),
-          expandedInsets: const EdgeInsets.only(left: 5),
+          expandedInsets: AppSpacing.zero,
           initialSelection: font,
-          inputDecorationTheme: InputDecorationTheme(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(50),
-            ),
-          ),
-          onSelected: (FontModel? font) async {
+          inputDecorationTheme: inputDecorationTheme,
+          onSelected: (font) async {
             if (font == null) return;
             if (font.name == 'newFont') {
               widget.hideAppBarAndBottomBar(false);
               await importFont();
               return;
-            } else if (font.name == 'download') {
+            }
+            if (font.name == 'download') {
               widget.hideAppBarAndBottomBar(false);
               Navigator.push(
                 context,
@@ -204,91 +195,99 @@ class StyleWidgetState extends State<StyleWidget> {
                     builder: (context) => const FontsSettingPage()),
               );
               return;
-            } else {
-              epubPlayerKey.currentState!.changeFont(font);
-              Prefs().font = font;
             }
+            epubPlayerKey.currentState!.changeFont(font);
+            Prefs().font = font;
           },
           dropdownMenuEntries: fonts()
-              .map((font) => DropdownMenuEntry(
-                    value: font,
-                    label: font.label,
-                    leadingIcon: leadingIcon(font.name),
-                  ))
+              .map(
+                (font) => DropdownMenuEntry(
+                  value: font,
+                  label: font.label,
+                  leadingIcon: leadingIcon(font.name),
+                ),
+              )
               .toList(),
-        ),
-      ),
-    ]);
-  }
-
-  Padding sliders() {
-    return Padding(
-      padding: const EdgeInsets.all(3.0),
-      child: Column(
-        children: [
-          fontSizeSlider(),
-          lineHeightAndParagraphSpacingSlider(),
-        ],
-      ),
-    );
-  }
-
-  Row lineHeightAndParagraphSpacingSlider() {
-    bool enabled = !Prefs().useBookStyles;
-    return Row(
-      children: [
-        IconAndText(
-          icon: const Icon(Icons.line_weight),
-          text: L10n.of(context).readingPageLineSpacing,
-        ),
-        Expanded(
-          child: Slider(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              value: bookStyle.lineHeight,
-              onChanged: enabled
-                  ? (double value) {
-                      setState(() {
-                        bookStyle.lineHeight = value;
-                        widget.epubPlayerKey.currentState!
-                            .changeStyle(bookStyle);
-                        Prefs().saveBookStyleToPrefs(bookStyle);
-                      });
-                    }
-                  : null,
-              min: 0,
-              max: 3,
-              divisions: 10,
-              label: (bookStyle.lineHeight / 3 * 10).round().toString()),
-        ),
-        IconAndText(
-          icon: const Icon(Icons.height),
-          text: L10n.of(context).readingPageParagraphSpacing,
-        ),
-        Expanded(
-          child: Slider(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            value: bookStyle.paragraphSpacing,
-            onChanged: enabled
-                ? (double value) {
-                    setState(() {
-                      bookStyle.paragraphSpacing = value;
-                      widget.epubPlayerKey.currentState!.changeStyle(bookStyle);
-                      Prefs().saveBookStyleToPrefs(bookStyle);
-                    });
-                  }
-                : null,
-            min: 0,
-            max: 5,
-            divisions: 10,
-            label: (bookStyle.paragraphSpacing / 5 * 10).round().toString(),
-          ),
         ),
       ],
     );
   }
 
-  Row fontSizeSlider() {
-    bool enabled = !Prefs().useBookStyles;
+  Widget sliders() {
+    return Column(
+      children: [
+        fontSizeSlider(),
+        lineHeightAndParagraphSpacingSlider(),
+      ],
+    );
+  }
+
+  Widget lineHeightAndParagraphSpacingSlider() {
+    final enabled = !Prefs().useBookStyles;
+    return Column(
+      children: [
+        Row(
+          children: [
+            IconAndText(
+              icon: const Icon(Icons.line_weight),
+              text: L10n.of(context).readingPageLineSpacing,
+            ),
+            Expanded(
+              child: Slider(
+                padding: AppReadingTokens.sliderPadding,
+                value: bookStyle.lineHeight,
+                onChanged: enabled
+                    ? (value) {
+                        setState(() {
+                          bookStyle.lineHeight = value;
+                          widget.epubPlayerKey.currentState!
+                              .changeStyle(bookStyle);
+                          Prefs().saveBookStyleToPrefs(bookStyle);
+                        });
+                      }
+                    : null,
+                min: 0,
+                max: 3,
+                divisions: 10,
+                label: (bookStyle.lineHeight / 3 * 10).round().toString(),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            IconAndText(
+              icon: const Icon(Icons.height),
+              text: L10n.of(context).readingPageParagraphSpacing,
+            ),
+            Expanded(
+              child: Slider(
+                padding: AppReadingTokens.sliderPadding,
+                value: bookStyle.paragraphSpacing,
+                onChanged: enabled
+                    ? (value) {
+                        setState(() {
+                          bookStyle.paragraphSpacing = value;
+                          widget.epubPlayerKey.currentState!
+                              .changeStyle(bookStyle);
+                          Prefs().saveBookStyleToPrefs(bookStyle);
+                        });
+                      }
+                    : null,
+                min: 0,
+                max: 5,
+                divisions: 10,
+                label: (bookStyle.paragraphSpacing / 5 * 10).round().toString(),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget fontSizeSlider() {
+    final enabled = !Prefs().useBookStyles;
     return Row(
       children: [
         IconAndText(
@@ -299,7 +298,7 @@ class StyleWidgetState extends State<StyleWidget> {
           child: Slider(
             value: bookStyle.fontSize,
             onChanged: enabled
-                ? (double value) {
+                ? (value) {
                     setState(() {
                       bookStyle.fontSize = value;
                       widget.epubPlayerKey.currentState!.changeStyle(bookStyle);
@@ -308,7 +307,7 @@ class StyleWidgetState extends State<StyleWidget> {
                   }
                 : null,
             min: 0.5,
-            max: 3.0,
+            max: 3,
             divisions: 25,
             label: bookStyle.fontSize.toStringAsFixed(2),
           ),
@@ -317,109 +316,106 @@ class StyleWidgetState extends State<StyleWidget> {
     );
   }
 
-  SizedBox themeSelector() {
+  Future<void> _addTheme() async {
+    if (_addingTheme) return;
+    setState(() {
+      _addingTheme = true;
+      _themeActionFailed = false;
+    });
+    try {
+      final theme = ReadTheme(
+        backgroundColor: 'ff121212',
+        textColor: 'ffcccccc',
+        backgroundImagePath: '',
+      );
+      final id = await themeDao.insertTheme(theme);
+      widget.setCurrentPage(
+        ThemeChangeWidget(
+          readTheme: ReadTheme(
+            id: id,
+            backgroundColor: theme.backgroundColor,
+            textColor: theme.textColor,
+            backgroundImagePath: '',
+          ),
+          setCurrentPage: widget.setCurrentPage,
+        ),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _themeActionFailed = true);
+    } finally {
+      if (mounted) setState(() => _addingTheme = false);
+    }
+  }
+
+  Widget themeSelector() {
     const size = 40.0;
-    const paddingSize = 5.0;
-    EdgeInsetsGeometry padding = const EdgeInsets.all(paddingSize);
     return SizedBox(
-      height: size + paddingSize * 2,
+      height: 56,
       child: ListView.builder(
         itemCount: widget.themes.length + 1,
         scrollDirection: Axis.horizontal,
         itemBuilder: (context, index) {
           if (index == widget.themes.length) {
-            // add a new theme
             return Padding(
-              padding: padding,
-              child: Container(
-                  padding: padding,
+              padding: AppReadingTokens.smallPadding,
+              child: AppCard(
+                padding: AppReadingTokens.smallPadding,
+                borderRadius: AppReadingTokens.pillRadius,
+                onTap: _addTheme,
+                enabled: !_addingTheme,
+                child: SizedBox(
                   width: size,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(
-                      color: Colors.black45,
-                      width: 1,
-                    ),
+                  height: size,
+                  child: Center(
+                    child: _addingTheme
+                        ? const AppLoadingIndicator()
+                        : const Icon(Icons.add),
                   ),
-                  child: InkWell(
-                    onTap: () async {
-                      int currId = await themeDao.insertTheme(ReadTheme(
-                          backgroundColor: 'ff121212',
-                          textColor: 'ffcccccc',
-                          backgroundImagePath: ''));
-                      widget.setCurrentPage(ThemeChangeWidget(
-                        readTheme: ReadTheme(
-                            id: currId,
-                            backgroundColor: 'ff121212',
-                            textColor: 'ffcccccc',
-                            backgroundImagePath: ''),
-                        setCurrentPage: widget.setCurrentPage,
-                      ));
-                    },
-                    child: Icon(Icons.add,
-                        size: size / 2,
-                        color: Color(int.parse('0x${'ffcccccc'}'))),
-                  )),
-            );
-          }
-          // theme list
-          return Padding(
-            padding: padding,
-            child: Container(
-              padding: padding,
-              decoration: BoxDecoration(
-                color: Color(
-                    int.parse('0x${widget.themes[index].backgroundColor}')),
-                borderRadius: BorderRadius.circular(50),
-                border: Border.all(
-                  color: index + 1 == currentThemeId
-                      ? Theme.of(context).primaryColor
-                      : Colors.black45,
-                  width: index + 1 == currentThemeId ? 3 : 1,
                 ),
               ),
-              height: size,
-              width: size,
-              child: InkWell(
-                onTap: () {
-                  Prefs().saveReadThemeToPrefs(widget.themes[index]);
-                  widget.epubPlayerKey.currentState!
-                      .changeTheme(widget.themes[index]);
-                  setState(() {
-                    currentThemeId = widget.themes[index].id;
-                  });
-                },
-                onSecondaryTap: () {
-                  setState(() {
-                    widget.setCurrentPage(ThemeChangeWidget(
-                      readTheme: widget.themes[index],
-                      setCurrentPage: widget.setCurrentPage,
-                    ));
-                  });
-                },
-                onLongPress: () {
-                  setState(() {
-                    widget.setCurrentPage(ThemeChangeWidget(
-                      readTheme: widget.themes[index],
-                      setCurrentPage: widget.setCurrentPage,
-                    ));
-                  });
-                },
+            );
+          }
+          final theme = widget.themes[index];
+          final selected = index + 1 == currentThemeId;
+          return Padding(
+            padding: AppReadingTokens.smallPadding,
+            child: AppCard(
+              padding: AppReadingTokens.smallPadding,
+              borderRadius: AppReadingTokens.pillRadius,
+              color: Color(int.parse('0x${theme.backgroundColor}')),
+              onTap: () {
+                Prefs().saveReadThemeToPrefs(theme);
+                widget.epubPlayerKey.currentState!.changeTheme(theme);
+                setState(() => currentThemeId = theme.id);
+              },
+              onSecondaryTap: () => _editTheme(theme),
+              onLongPress: () => _editTheme(theme),
+              semanticLabel: selected ? '${theme.id}' : null,
+              child: SizedBox(
+                width: size,
+                height: size,
                 child: Center(
                   child: Text(
-                    "A",
-                    style: TextStyle(
-                      color: Color(
-                          int.parse('0x${widget.themes[index].textColor}')),
-                      fontSize: size / 3,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    'A',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Color(int.parse('0x${theme.textColor}')),
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ),
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _editTheme(ReadTheme theme) {
+    widget.setCurrentPage(
+      ThemeChangeWidget(
+        readTheme: theme,
+        setCurrentPage: widget.setCurrentPage,
       ),
     );
   }
@@ -448,89 +444,95 @@ class _ThemeChangeWidgetState extends State<ThemeChangeWidget> {
     readTheme = widget.readTheme;
   }
 
+  Future<void> _pickColor(bool background) async {
+    final pickingColor = await showColorPickerDialog(
+      background ? readTheme.backgroundColor : readTheme.textColor,
+    );
+    if (pickingColor != null && pickingColor.isNotEmpty && mounted) {
+      setState(() {
+        if (background) {
+          readTheme.backgroundColor = pickingColor;
+        } else {
+          readTheme.textColor = pickingColor;
+        }
+      });
+      await themeDao.updateTheme(readTheme);
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final l10n = L10n.of(context);
+    final deleted = await AppDialog.confirm(
+      context,
+      title: l10n.commonDelete,
+      message: l10n.readingPageTheme,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: l10n.readingPageTheme,
+      onConfirm: () async => themeDao.deleteTheme(readTheme.id!),
+    );
+    if (deleted) widget.setCurrentPage(const SizedBox(height: 1));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      IconButton(
-        onPressed: () async {
-          String? pickingColor =
-              await showColorPickerDialog(readTheme.backgroundColor);
-          if (pickingColor != '') {
-            setState(() {
-              readTheme.backgroundColor = pickingColor!;
-            });
-            themeDao.updateTheme(readTheme);
-          }
-        },
-        icon: Icon(Icons.circle,
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        AppIconButton(
+          onPressed: () => _pickColor(true),
+          child: Icon(
+            Icons.circle,
             size: 80,
-            color: Color(int.parse('0x${readTheme.backgroundColor}'))),
-      ),
-      IconButton(
-          onPressed: () async {
-            String? pickingColor =
-                await showColorPickerDialog(readTheme.textColor);
-            if (pickingColor != '') {
-              setState(() {
-                readTheme.textColor = pickingColor!;
-              });
-              themeDao.updateTheme(readTheme);
-            }
-          },
-          icon: Icon(Icons.text_fields,
-              size: 60, color: Color(int.parse('0x${readTheme.textColor}')))),
-      const Expanded(
-        child: SizedBox(),
-      ),
-      IconButton(
-        onPressed: () {
-          themeDao.deleteTheme(readTheme.id!);
-          widget.setCurrentPage(const SizedBox(height: 1));
-          // setState(() {});
-        },
-        icon: const Icon(
-          Icons.delete,
-          size: 40,
+            color: Color(int.parse('0x${readTheme.backgroundColor}')),
+          ),
         ),
-      ),
-    ]);
+        AppIconButton(
+          onPressed: () => _pickColor(false),
+          child: Icon(
+            Icons.text_fields,
+            size: 60,
+            color: Color(int.parse('0x${readTheme.textColor}')),
+          ),
+        ),
+        AppIconButton(
+          icon: Icons.delete,
+          tooltip: L10n.of(context).commonDelete,
+          variant: AppButtonVariant.danger,
+          onPressed: _confirmDelete,
+        ),
+      ],
+    );
   }
 
   Future<String?> showColorPickerDialog(String currColor) async {
-    Color pickedColor = Color(int.parse('0x$currColor'));
-
-    await showDialog<void>(
+    var pickedColor = Color(int.parse('0x$currColor'));
+    await showDialog<String>(
       context: navigatorKey.currentState!.overlay!.context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          content: SingleChildScrollView(
-            child: ColorPicker(
-              hexInputBar: true,
-              pickerColor: pickedColor,
-              onColorChanged: (Color color) {
-                pickedColor = color;
-              },
-              pickerAreaHeightPercent: 0.8,
-            ),
+      builder: (context) => AppDialog(
+        title: L10n.of(context).readingPageTheme,
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            hexInputBar: true,
+            pickerColor: pickedColor,
+            onColorChanged: (color) => pickedColor = color,
+            pickerAreaHeightPercent: 0.8,
           ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: const Text('OK'),
-              onPressed: () {
-                Navigator.of(context).pop(pickedColor.value.toRadixString(16));
-              },
-            ),
-          ],
-        );
-      },
+        ),
+        actions: [
+          AppButton(
+            variant: AppButtonVariant.text,
+            label: L10n.of(context).commonCancel,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          AppButton(
+            label: L10n.of(context).commonConfirm,
+            onPressed: () => Navigator.of(context)
+                .pop(pickedColor.toARGB32().toRadixString(16)),
+          ),
+        ],
+      ),
     );
-
-    return pickedColor.value.toRadixString(16);
+    return pickedColor.toARGB32().toRadixString(16);
   }
 }

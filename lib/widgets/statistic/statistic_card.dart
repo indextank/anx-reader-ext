@@ -1,8 +1,11 @@
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/chart_mode.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/models/statistic_data_model.dart';
 import 'package:anx_reader/providers/statistic_data.dart';
+import 'package:anx_reader/theme/app_motion.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/utils/date/week_of_year.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:anx_reader/widgets/common/anx_segmented_button.dart';
 import 'package:anx_reader/widgets/statistic/heatmap_chart.dart';
 import 'package:anx_reader/widgets/statistic/statistic_chart.dart';
@@ -19,20 +22,21 @@ class StatisticCard extends ConsumerWidget {
     ChartMode currentMode,
     DateTime currentDate,
   ) {
-    DateTime newDate = currentDate;
     final durationMap = {
       ChartMode.week: () => isPlus
           ? currentDate.add(const Duration(days: 7))
           : currentDate.subtract(const Duration(days: 7)),
-      ChartMode.month: () => DateTime(currentDate.year,
-          isPlus ? currentDate.month + 1 : currentDate.month - 1),
+      ChartMode.month: () => DateTime(
+            currentDate.year,
+            isPlus ? currentDate.month + 1 : currentDate.month - 1,
+          ),
       ChartMode.year: () => DateTime(
-          isPlus ? currentDate.year + 1 : currentDate.year - 1,
-          currentDate.month),
+            isPlus ? currentDate.year + 1 : currentDate.year - 1,
+            currentDate.month,
+          ),
     };
 
-    newDate = durationMap[currentMode]!();
-
+    var newDate = durationMap[currentMode]!();
     if (newDate.isAfter(DateTime.now())) {
       newDate = DateTime.now();
     } else if (newDate.isBefore(DateTime(2024))) {
@@ -45,7 +49,6 @@ class StatisticCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statisticData = ref.watch(statisticDataProvider);
-
     final segmentButtonItems = <SegmentButtonItem<ChartMode>>[
       SegmentButtonItem(
         value: ChartMode.week,
@@ -69,13 +72,13 @@ class StatisticCard extends ConsumerWidget {
       ),
     ];
 
-    Widget segmentButton(data) => Row(
+    Widget segmentButton(StatisticDataModel data) => Row(
           children: [
             Expanded(
               child: AnxSegmentedButton<ChartMode>(
                 segments: segmentButtonItems,
                 selected: {data.mode},
-                onSelectionChanged: (Set<ChartMode> newSelection) {
+                onSelectionChanged: (newSelection) {
                   ref
                       .read(statisticDataProvider.notifier)
                       .setMode(newSelection.first);
@@ -85,19 +88,20 @@ class StatisticCard extends ConsumerWidget {
           ],
         );
 
-    Widget barChart(data) => SizedBox(
-          height: 300,
+    Widget barChart(StatisticDataModel data) => SizedBox(
+          height: AppStatisticsTokens.chartHeight,
           child: Column(
             children: [
               Row(
                 children: [
-                  IconButton(
+                  AppIconButton(
                     onPressed: () =>
                         _changeDate(ref, false, data.mode, data.date),
-                    icon: const Icon(EvaIcons.arrow_ios_back_outline),
+                    icon: EvaIcons.arrow_ios_back_outline,
                   ),
                   const Spacer(),
-                  TextButton(
+                  AppButton(
+                    variant: AppButtonVariant.text,
                     onPressed: () async {
                       final newDate = await showDatePicker(
                         context: context,
@@ -112,61 +116,50 @@ class StatisticCard extends ConsumerWidget {
                             .setDate(newDate);
                       }
                     },
-                    child: Text(
-                      data.mode == ChartMode.week
-                          ? weekOfYear(data.date)
-                          : data.mode == ChartMode.month
-                              ? '${data.date.year}.${data.date.month}'
-                              : data.date.year.toString(),
-                    ),
+                    label: data.mode == ChartMode.week
+                        ? weekOfYear(data.date)
+                        : data.mode == ChartMode.month
+                            ? '${data.date.year}.${data.date.month}'
+                            : data.date.year.toString(),
                   ),
                   const Spacer(),
-                  IconButton(
+                  AppIconButton(
                     onPressed: () =>
                         _changeDate(ref, true, data.mode, data.date),
-                    icon: const Icon(EvaIcons.arrow_ios_forward_outline),
+                    icon: EvaIcons.arrow_ios_forward_outline,
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: AppStatisticsTokens.contentSpacing),
               Expanded(
-                child: statisticData.when(
-                  data: (data) => StatisticChart(
-                    readingTime: data.readingTime,
-                    xLabels: data.xLabels,
-                  ),
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                  error: (error, stack) => Center(
-                    child: Text('Error: $error'),
-                  ),
+                child: StatisticChart(
+                  readingTime: data.readingTime,
+                  xLabels: data.xLabels,
                 ),
-              )
+              ),
             ],
           ),
         );
+
     return AnimatedSize(
-      duration: const Duration(milliseconds: 300),
+      duration: AppMotion.tokens.emphasis,
       curve: Curves.easeOutBack,
       alignment: Alignment.topCenter,
-      child: FilledContainer(
-        padding: const EdgeInsets.fromLTRB(10, 0, 10, 5),
-        child: statisticData.when(
-            data: (data) => Column(
-                  children: [
-                    const SizedBox(height: 10),
-                    segmentButton(data),
-                    const SizedBox(height: 10),
-                    if (data.mode == ChartMode.heatmap) const HeatmapChart(),
-                    if (data.mode != ChartMode.heatmap) barChart(data),
-                    // HeatmapChart(),
-                  ],
-                ),
-            loading: () => const Center(
-                  child: CircularProgressIndicator(),
-                ),
-            error: (error, stack) => throw error),
+      child: AppCard(
+        padding: AppStatisticsTokens.cardPadding,
+        child: AppAsyncValue<StatisticDataModel>(
+          value: statisticData,
+          onRetry: () async => ref.invalidate(statisticDataProvider),
+          dataBuilder: (context, data) => Column(
+            children: [
+              const SizedBox(height: AppStatisticsTokens.contentSpacing),
+              segmentButton(data),
+              const SizedBox(height: AppStatisticsTokens.contentSpacing),
+              if (data.mode == ChartMode.heatmap) const HeatmapChart(),
+              if (data.mode != ChartMode.heatmap) barChart(data),
+            ],
+          ),
+        ),
       ),
     );
   }

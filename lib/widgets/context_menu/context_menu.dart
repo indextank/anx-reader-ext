@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/widgets/common/axis_flex.dart';
 import 'package:anx_reader/widgets/context_menu/excerpt_menu.dart';
@@ -12,6 +14,69 @@ import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import 'package:anx_reader/dao/book_note.dart';
 import 'package:anx_reader/models/book_note.dart';
+
+Rect readingMenuSafeViewport(Rect viewport, EdgeInsets padding) {
+  return padding.deflateRect(viewport);
+}
+
+class ReadingMenuGeometry {
+  const ReadingMenuGeometry({
+    required this.selectionRect,
+    required this.safeViewportRect,
+    required this.bottomInset,
+    required this.menuConstraints,
+  });
+
+  factory ReadingMenuGeometry.resolve({
+    required Rect viewportRect,
+    required EdgeInsets padding,
+    required EdgeInsets viewInsets,
+    required Rect normalizedSelection,
+    required bool footnote,
+  }) {
+    const horizontalMargin = 16.0;
+    const verticalMargin = 16.0;
+    final safeViewportRect = readingMenuSafeViewport(viewportRect, padding);
+    final selectionRect = Rect.fromLTRB(
+      viewportRect.left + normalizedSelection.left * viewportRect.width,
+      viewportRect.top + normalizedSelection.top * viewportRect.height,
+      viewportRect.left + normalizedSelection.right * viewportRect.width,
+      viewportRect.top + normalizedSelection.bottom * viewportRect.height,
+    );
+    final maxWidth = math.min(
+      350.0,
+      math.max(120.0, safeViewportRect.width - horizontalMargin * 2),
+    );
+    final effectiveHeight = math.max(
+      0.0,
+      safeViewportRect.height - viewInsets.bottom,
+    );
+    final maxHeightCandidate = effectiveHeight - verticalMargin * 2;
+    final rawMaxHeight = math.min(
+      footnote ? 350.0 : 550.0,
+      math.max(200.0, maxHeightCandidate),
+    );
+    final maxHeight = math.max(
+      0.0,
+      math.min(rawMaxHeight, maxHeightCandidate),
+    );
+
+    return ReadingMenuGeometry(
+      selectionRect: selectionRect,
+      safeViewportRect: safeViewportRect,
+      bottomInset: viewInsets.bottom,
+      menuConstraints: BoxConstraints(
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+      ),
+    );
+  }
+
+  final Rect selectionRect;
+  final Rect safeViewportRect;
+  final double bottomInset;
+  final BoxConstraints menuConstraints;
+}
 
 Future<void> showContextMenu(
     BuildContext context,
@@ -52,63 +117,40 @@ Future<void> showContextMenu(
     isNewNote = true;
   }
 
-  final renderBox =
-      epubPlayerKey.currentContext?.findRenderObject() as RenderBox?;
-  final renderBoxSize = renderBox?.size;
-
-  final mediaQuery = MediaQuery.of(context);
-  final double screenHeight = renderBoxSize?.height ?? mediaQuery.size.height;
-  final double screenWidth = renderBoxSize?.width ?? mediaQuery.size.width;
-  final double keyboardInset = mediaQuery.viewInsets.bottom;
-
-  final Offset localToGlobal =
-      renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
-
-  final viewportRect = Rect.fromLTWH(
-    localToGlobal.dx,
-    localToGlobal.dy,
-    screenWidth,
-    screenHeight,
-  );
-
-  final selectionRect = Rect.fromLTRB(
-    localToGlobal.dx + left * screenWidth,
-    localToGlobal.dy + top * screenHeight,
-    localToGlobal.dx + right * screenWidth,
-    localToGlobal.dy + bottom * screenHeight,
-  );
+  if (!context.mounted) return;
 
   const double horizontalMargin = 16;
   const double verticalMargin = 16;
   const double gap = 12;
+  final normalizedSelection = Rect.fromLTRB(left, top, right, bottom);
 
-  final double maxMenuWidth =
-      math.min(350, math.max(120, screenWidth - horizontalMargin * 2));
-  final double effectiveHeight = math.max(0, screenHeight - keyboardInset);
-  final double maxHeightCandidate = effectiveHeight - verticalMargin * 2;
-  final double rawMaxHeight = math.min(
-    footnote ? 350 : 550,
-    math.max(200, maxHeightCandidate),
-  );
-  final double maxMenuHeight = math.max(
-    0,
-    math.min(rawMaxHeight, maxHeightCandidate),
-  );
+  ReadingMenuGeometry resolveGeometry(BuildContext menuContext) {
+    final renderBox =
+        epubPlayerKey.currentContext?.findRenderObject() as RenderBox?;
+    final mediaQuery = MediaQuery.of(menuContext);
+    final size = renderBox?.size ?? mediaQuery.size;
+    final origin = renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
+    return ReadingMenuGeometry.resolve(
+      viewportRect:
+          Rect.fromLTWH(origin.dx, origin.dy, size.width, size.height),
+      padding: mediaQuery.padding,
+      viewInsets: mediaQuery.viewInsets,
+      normalizedSelection: normalizedSelection,
+      footnote: footnote,
+    );
+  }
 
-  final menuConstraints = BoxConstraints(
-    maxWidth: maxMenuWidth,
-    maxHeight: maxMenuHeight,
-  );
-
-  final initialPlacement = _resolveMenuPlacement(
+  final initialGeometry = resolveGeometry(context);
+  final initialPlacement = resolveReadingMenuPlacement(
     axis: axis,
-    selectionRect: selectionRect,
-    viewportRect: viewportRect,
-    menuSize: Size(maxMenuWidth, maxMenuHeight),
+    geometry: initialGeometry,
+    menuSize: Size(
+      initialGeometry.menuConstraints.maxWidth,
+      initialGeometry.menuConstraints.maxHeight,
+    ),
     horizontalMargin: horizontalMargin,
     verticalMargin: verticalMargin,
     gap: gap,
-    bottomInset: keyboardInset,
   );
 
   playerKey.removeOverlay();
@@ -121,20 +163,20 @@ Future<void> showContextMenu(
 
   final decoration = BoxDecoration(
     color: Prefs().eInkMode
-        ? Colors.white
+        ? AppColors.white
         : Theme.of(context).colorScheme.secondaryContainer,
-    borderRadius: BorderRadius.circular(10),
+    borderRadius: AppReadingTokens.contextMenuRadius,
     boxShadow: [
       if (!Prefs().eInkMode)
         BoxShadow(
-          color: Colors.black.withOpacity(0.1),
+          color: AppColors.black.withValues(alpha: 0.1),
           spreadRadius: 5,
           blurRadius: 7,
           offset: const Offset(0, 3),
         ),
       if (Prefs().eInkMode)
         const BoxShadow(
-          color: Colors.black,
+          color: AppColors.black,
           spreadRadius: 1,
           blurRadius: 0,
         ),
@@ -142,10 +184,10 @@ Future<void> showContextMenu(
   );
 
   playerKey.contextMenuEntry = OverlayEntry(builder: (context) {
-    return _ContextMenuOverlay(
+    return ReadingContextMenuOverlay(
       axis: axis,
-      selectionRect: selectionRect,
-      viewportRect: viewportRect,
+      initialGeometry: initialGeometry,
+      geometryResolver: resolveGeometry,
       annoContent: annoContent,
       annoCfi: annoCfi,
       annoId: annoId,
@@ -153,21 +195,22 @@ Future<void> showContextMenu(
       contextText: contextText,
       decoration: decoration,
       onClose: onClose,
-      menuConstraints: menuConstraints,
       initialPlacement: initialPlacement,
       showTranslationDefault: !isNewNote && Prefs().autoTranslateSelection,
       horizontalMargin: horizontalMargin,
       verticalMargin: verticalMargin,
       gap: gap,
-      initialBottomInset: keyboardInset,
     );
   });
 
   Overlay.of(context).insert(playerKey.contextMenuEntry!);
 }
 
-class _MenuPlacement {
-  const _MenuPlacement({required this.offset, required this.shouldReverse});
+class ReadingMenuPlacement {
+  const ReadingMenuPlacement({
+    required this.offset,
+    required this.shouldReverse,
+  });
 
   final Offset offset;
   final bool shouldReverse;
@@ -180,74 +223,76 @@ double _clampWithin(double value, double min, double max) {
   return value.clamp(min, max);
 }
 
-_MenuPlacement _resolveMenuPlacement({
+ReadingMenuPlacement resolveReadingMenuPlacement({
   required Axis axis,
-  required Rect selectionRect,
-  required Rect viewportRect,
+  required ReadingMenuGeometry geometry,
   required Size menuSize,
   required double horizontalMargin,
   required double verticalMargin,
   required double gap,
-  required double bottomInset,
 }) {
-  final double menuWidth = menuSize.width;
-  final double menuHeight = menuSize.height;
-
-  final double clampedViewportBottom =
-      math.max(viewportRect.top, viewportRect.bottom - bottomInset);
+  final menuWidth = menuSize.width;
+  final menuHeight = menuSize.height;
+  final selectionRect = geometry.selectionRect;
+  final viewportRect = geometry.safeViewportRect;
+  final clampedViewportBottom = math.max(
+    viewportRect.top,
+    viewportRect.bottom - geometry.bottomInset,
+  );
 
   if (axis == Axis.horizontal) {
-    final double spaceAbove = selectionRect.top - viewportRect.top;
-    final double spaceBelow = clampedViewportBottom - selectionRect.bottom;
-    final bool placeBelow =
+    final spaceAbove = selectionRect.top - viewportRect.top;
+    final spaceBelow = clampedViewportBottom - selectionRect.bottom;
+    final placeBelow =
         (spaceBelow >= menuHeight + gap) || (spaceBelow >= spaceAbove);
 
-    final double minTop = viewportRect.top + verticalMargin;
-    final double maxTop = clampedViewportBottom - menuHeight - verticalMargin;
+    final minTop = viewportRect.top + verticalMargin;
+    final maxTop = clampedViewportBottom - menuHeight - verticalMargin;
     double desiredTop = placeBelow
         ? selectionRect.bottom + gap
         : selectionRect.top - menuHeight - gap;
     desiredTop = _clampWithin(desiredTop, minTop, maxTop);
 
-    final double minLeft = viewportRect.left + horizontalMargin;
-    final double maxLeft = viewportRect.right - menuWidth - horizontalMargin;
+    final minLeft = viewportRect.left + horizontalMargin;
+    final maxLeft = viewportRect.right - menuWidth - horizontalMargin;
     double desiredLeft = selectionRect.center.dx - menuWidth / 2;
     desiredLeft = _clampWithin(desiredLeft, minLeft, maxLeft);
 
-    return _MenuPlacement(
+    return ReadingMenuPlacement(
       offset: Offset(desiredLeft, desiredTop),
       shouldReverse: !placeBelow,
     );
   }
 
-  final double spaceLeft = selectionRect.left - viewportRect.left;
-  final double spaceRight = viewportRect.right - selectionRect.right;
-  final bool placeRight =
+  final spaceLeft = selectionRect.left - viewportRect.left;
+  final spaceRight = viewportRect.right - selectionRect.right;
+  final placeRight =
       (spaceRight >= menuWidth + gap) || (spaceRight >= spaceLeft);
 
-  final double minLeft = viewportRect.left + horizontalMargin;
-  final double maxLeft = viewportRect.right - menuWidth - horizontalMargin;
+  final minLeft = viewportRect.left + horizontalMargin;
+  final maxLeft = viewportRect.right - menuWidth - horizontalMargin;
   double desiredLeft = placeRight
       ? selectionRect.right + gap
       : selectionRect.left - menuWidth - gap;
   desiredLeft = _clampWithin(desiredLeft, minLeft, maxLeft);
 
-  final double minTop = viewportRect.top + verticalMargin;
-  final double maxTop = clampedViewportBottom - menuHeight - verticalMargin;
+  final minTop = viewportRect.top + verticalMargin;
+  final maxTop = clampedViewportBottom - menuHeight - verticalMargin;
   double desiredTop = selectionRect.center.dy - menuHeight / 2;
   desiredTop = _clampWithin(desiredTop, minTop, maxTop);
 
-  return _MenuPlacement(
+  return ReadingMenuPlacement(
     offset: Offset(desiredLeft, desiredTop),
     shouldReverse: !placeRight,
   );
 }
 
-class _ContextMenuOverlay extends StatefulWidget {
-  const _ContextMenuOverlay({
+class ReadingContextMenuOverlay extends StatefulWidget {
+  const ReadingContextMenuOverlay({
+    super.key,
     required this.axis,
-    required this.selectionRect,
-    required this.viewportRect,
+    required this.initialGeometry,
+    required this.geometryResolver,
     required this.annoContent,
     required this.annoCfi,
     required this.annoId,
@@ -255,18 +300,17 @@ class _ContextMenuOverlay extends StatefulWidget {
     this.contextText,
     required this.decoration,
     required this.onClose,
-    required this.menuConstraints,
     required this.initialPlacement,
     required this.showTranslationDefault,
     required this.horizontalMargin,
     required this.verticalMargin,
     required this.gap,
-    required this.initialBottomInset,
+    this.menuBuilder,
   });
 
   final Axis axis;
-  final Rect selectionRect;
-  final Rect viewportRect;
+  final ReadingMenuGeometry initialGeometry;
+  final ReadingMenuGeometry Function(BuildContext context) geometryResolver;
   final String annoContent;
   final String annoCfi;
   final int? annoId;
@@ -274,19 +318,19 @@ class _ContextMenuOverlay extends StatefulWidget {
   final String? contextText;
   final BoxDecoration decoration;
   final VoidCallback onClose;
-  final BoxConstraints menuConstraints;
-  final _MenuPlacement initialPlacement;
+  final ReadingMenuPlacement initialPlacement;
   final bool showTranslationDefault;
   final double horizontalMargin;
   final double verticalMargin;
   final double gap;
-  final double initialBottomInset;
+  final WidgetBuilder? menuBuilder;
 
   @override
-  State<_ContextMenuOverlay> createState() => _ContextMenuOverlayState();
+  State<ReadingContextMenuOverlay> createState() =>
+      ReadingContextMenuOverlayState();
 }
 
-class _ContextMenuOverlayState extends State<_ContextMenuOverlay>
+class ReadingContextMenuOverlayState extends State<ReadingContextMenuOverlay>
     with WidgetsBindingObserver {
   final GlobalKey _menuKey = GlobalKey();
   final GlobalKey<ReaderNoteMenuState> _readerNoteMenuKey =
@@ -311,8 +355,8 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay>
     _reverse = widget.initialPlacement.shouldReverse;
     _showTranslationMenu = widget.showTranslationDefault;
     _noteId = widget.annoId;
-    _bottomInset = widget.initialBottomInset;
-    _menuConstraints = _buildConstraints(widget.initialBottomInset);
+    _bottomInset = widget.initialGeometry.bottomInset;
+    _menuConstraints = widget.initialGeometry.menuConstraints;
     _scheduleRecalculate();
   }
 
@@ -323,29 +367,10 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay>
     super.dispose();
   }
 
-  BoxConstraints _buildConstraints(double bottomInset) {
-    final original = widget.menuConstraints;
-    final double availableHeight = math.max(
-      0,
-      widget.viewportRect.height - bottomInset - widget.verticalMargin * 2,
-    );
-
-    double maxHeight;
-    if (original.hasBoundedHeight) {
-      maxHeight = math.min(original.maxHeight, availableHeight);
-    } else {
-      maxHeight = availableHeight;
-    }
-    maxHeight = math.max(0, maxHeight);
-
-    final double minHeight = math.min(original.minHeight, maxHeight);
-
-    return BoxConstraints(
-      minWidth: original.minWidth,
-      maxWidth: original.maxWidth,
-      minHeight: minHeight,
-      maxHeight: maxHeight,
-    );
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleRecalculate();
   }
 
   void _scheduleRecalculate({Duration delay = Duration.zero}) {
@@ -370,46 +395,40 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay>
 
   void _updatePlacement() {
     final renderBox = _menuKey.currentContext?.findRenderObject() as RenderBox?;
-    final double currentBottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final newConstraints = _buildConstraints(currentBottomInset);
+    final geometry = widget.geometryResolver(context);
+    final newConstraints = geometry.menuConstraints;
 
     if (renderBox == null) {
-      final bool needsStateUpdate =
-          (_bottomInset - currentBottomInset).abs() > 0.5 ||
+      final needsStateUpdate =
+          (_bottomInset - geometry.bottomInset).abs() > 0.5 ||
               _menuConstraints.maxHeight != newConstraints.maxHeight;
 
       if (needsStateUpdate) {
         setState(() {
-          _bottomInset = currentBottomInset;
+          _bottomInset = geometry.bottomInset;
           _menuConstraints = newConstraints;
         });
       }
       return;
     }
 
-    final size = renderBox.size;
-    final placement = _resolveMenuPlacement(
+    final placement = resolveReadingMenuPlacement(
       axis: widget.axis,
-      selectionRect: widget.selectionRect,
-      viewportRect: widget.viewportRect,
-      menuSize: size,
+      geometry: geometry,
+      menuSize: renderBox.size,
       horizontalMargin: widget.horizontalMargin,
       verticalMargin: widget.verticalMargin,
       gap: widget.gap,
-      bottomInset: currentBottomInset,
     );
 
-    final bool positionChanged =
-        (_position.dx - placement.offset.dx).abs() > 0.5 ||
-            (_position.dy - placement.offset.dy).abs() > 0.5;
-
-    final bool bottomInsetChanged =
-        (_bottomInset - currentBottomInset).abs() > 0.5;
-
-    final bool constraintsChanged =
+    final positionChanged = (_position.dx - placement.offset.dx).abs() > 0.5 ||
+        (_position.dy - placement.offset.dy).abs() > 0.5;
+    final bottomInsetChanged =
+        (_bottomInset - geometry.bottomInset).abs() > 0.5;
+    final constraintsChanged =
         _menuConstraints.maxHeight != newConstraints.maxHeight;
 
-    final bool shouldUpdate = _waitingForFirstMeasurement ||
+    final shouldUpdate = _waitingForFirstMeasurement ||
         positionChanged ||
         _reverse != placement.shouldReverse ||
         bottomInsetChanged ||
@@ -419,7 +438,7 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay>
       setState(() {
         _position = placement.offset;
         _reverse = placement.shouldReverse;
-        _bottomInset = currentBottomInset;
+        _bottomInset = geometry.bottomInset;
         _menuConstraints = newConstraints;
         _waitingForFirstMeasurement = false;
       });
@@ -510,86 +529,89 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay>
                   opacity: _waitingForFirstMeasurement ? 0 : 1,
                   child: Container(
                     key: _menuKey,
-                    color: Colors.transparent,
+                    color: AppColors.transparent,
                     constraints: _menuConstraints,
-                    child: AxisFlex(
-                      axis: flipAxis(widget.axis),
-                      reverse: _reverse,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+                    child: widget.menuBuilder?.call(context) ??
                         AxisFlex(
                           axis: flipAxis(widget.axis),
                           reverse: _reverse,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             AxisFlex(
-                              axis: widget.axis,
+                              axis: flipAxis(widget.axis),
+                              reverse: _reverse,
                               children: [
-                                ExcerptMenu(
-                                  annoCfi: widget.annoCfi,
-                                  annoContent: widget.annoContent,
-                                  id: widget.annoId,
-                                  onClose: widget.onClose,
-                                  footnote: widget.footnote,
-                                  decoration: widget.decoration,
-                                  toggleTranslationMenu: _toggleTranslationMenu,
-                                  toggleReaderNoteMenu: _toggleReaderNoteMenu,
-                                  toggleSearchMenu: _toggleSearchMenu,
-                                  openReaderNoteMenu: _openReaderNoteMenu,
-                                  onNoteCreated: _handleNoteCreated,
+                                AxisFlex(
                                   axis: widget.axis,
-                                  reverse: _reverse,
+                                  children: [
+                                    ExcerptMenu(
+                                      annoCfi: widget.annoCfi,
+                                      annoContent: widget.annoContent,
+                                      id: widget.annoId,
+                                      onClose: widget.onClose,
+                                      footnote: widget.footnote,
+                                      decoration: widget.decoration,
+                                      toggleTranslationMenu:
+                                          _toggleTranslationMenu,
+                                      toggleReaderNoteMenu:
+                                          _toggleReaderNoteMenu,
+                                      toggleSearchMenu: _toggleSearchMenu,
+                                      openReaderNoteMenu: _openReaderNoteMenu,
+                                      onNoteCreated: _handleNoteCreated,
+                                      axis: widget.axis,
+                                      reverse: _reverse,
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
+                            if (_showReaderNoteMenu) ...[
+                              const SizedBox.square(dimension: 10),
+                              AxisFlex(
+                                axis: widget.axis,
+                                children: [
+                                  ReaderNoteMenu(
+                                    key: _readerNoteMenuKey,
+                                    noteId: _noteId,
+                                    decoration: widget.decoration,
+                                    axis: widget.axis,
+                                    onVisibilityChange:
+                                        _handleReaderNoteVisibilityChange,
+                                    onSizeChanged: _handleReaderNoteSizeChanged,
+                                    onSaved: widget.onClose,
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (_showTranslationMenu) ...[
+                              const SizedBox.square(dimension: 10),
+                              AxisFlex(
+                                axis: widget.axis,
+                                children: [
+                                  TranslationMenu(
+                                    content: widget.annoContent,
+                                    decoration: widget.decoration,
+                                    axis: widget.axis,
+                                    contextText: widget.contextText,
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (_showSearchMenu) ...[
+                              const SizedBox.square(dimension: 10),
+                              AxisFlex(
+                                axis: widget.axis,
+                                children: [
+                                  SearchMenu(
+                                    query: _searchQuery,
+                                    decoration: widget.decoration,
+                                    axis: widget.axis,
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
-                        if (_showReaderNoteMenu) ...[
-                          const SizedBox.square(dimension: 10),
-                          AxisFlex(
-                            axis: widget.axis,
-                            children: [
-                              ReaderNoteMenu(
-                                key: _readerNoteMenuKey,
-                                noteId: _noteId,
-                                decoration: widget.decoration,
-                                axis: widget.axis,
-                                onVisibilityChange:
-                                    _handleReaderNoteVisibilityChange,
-                                onSizeChanged: _handleReaderNoteSizeChanged,
-                                onSaved: widget.onClose,
-                              ),
-                            ],
-                          ),
-                        ],
-                        if (_showTranslationMenu) ...[
-                          const SizedBox.square(dimension: 10),
-                          AxisFlex(
-                            axis: widget.axis,
-                            children: [
-                              TranslationMenu(
-                                content: widget.annoContent,
-                                decoration: widget.decoration,
-                                axis: widget.axis,
-                                contextText: widget.contextText,
-                              ),
-                            ],
-                          ),
-                        ],
-                        if (_showSearchMenu) ...[
-                          const SizedBox.square(dimension: 10),
-                          AxisFlex(
-                            axis: widget.axis,
-                            children: [
-                              SearchMenu(
-                                query: _searchQuery,
-                                decoration: widget.decoration,
-                                axis: widget.axis,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
               ),

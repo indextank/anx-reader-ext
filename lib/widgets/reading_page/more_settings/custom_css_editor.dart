@@ -1,7 +1,9 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/reading_page.dart';
-import 'package:anx_reader/utils/toast/common.dart';
+import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:flutter/material.dart';
 
 class CustomCSSEditor extends StatefulWidget {
@@ -50,7 +52,6 @@ class _CustomCSSEditorState extends State<CustomCSSEditor> {
       _hasValidationErrors = false;
       _validationMessage = '';
     });
-
     if (css.trim().isEmpty) return;
 
     final lines = css.split('\n');
@@ -62,7 +63,6 @@ class _CustomCSSEditorState extends State<CustomCSSEditor> {
           line.startsWith('*/')) {
         continue;
       }
-
       final openBraces = '{'.allMatches(css).length;
       final closeBraces = '}'.allMatches(css).length;
       if (openBraces != closeBraces) {
@@ -72,7 +72,6 @@ class _CustomCSSEditorState extends State<CustomCSSEditor> {
         });
         return;
       }
-
       if (line.contains(':') && !line.contains('{') && !line.contains('}')) {
         if (!line.endsWith(';') && !line.endsWith('{')) {
           setState(() {
@@ -92,14 +91,12 @@ class _CustomCSSEditorState extends State<CustomCSSEditor> {
 
   void _saveAndApply() {
     if (_hasValidationErrors) return;
-
     Prefs().customCSS = _tempCSS;
-
-    if (Prefs().customCSSEnabled) {
-      _applyCSS();
-    }
-
-    AnxToast.show(L10n.of(context).commonSaved);
+    if (Prefs().customCSSEnabled) _applyCSS();
+    AppFeedback.showSuccess(
+      context,
+      message: L10n.of(context).commonSaved,
+    );
   }
 
   void _restoreDefault() {
@@ -113,92 +110,63 @@ class _CustomCSSEditorState extends State<CustomCSSEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(child: Text(L10n.of(context).customCssEnabled)),
-            Switch(
-              value: Prefs().customCSSEnabled,
-              onChanged: (value) {
-                setState(() {
-                  Prefs().customCSSEnabled = value;
-                  _isExpanded = value;
-                  if (!_hasValidationErrors) {
-                    _applyCSS();
-                  }
-                });
-              },
-            ),
-          ],
+        AppListTile(
+          title: L10n.of(context).customCssEnabled,
+          contentPadding: AppSpacing.zero,
+          trailing: Switch(
+            value: Prefs().customCSSEnabled,
+            onChanged: (value) {
+              setState(() {
+                Prefs().customCSSEnabled = value;
+                _isExpanded = value;
+                if (!_hasValidationErrors) _applyCSS();
+              });
+            },
+          ),
         ),
         if (_isExpanded) ...[
-          const SizedBox(height: 16),
           if (_hasValidationErrors)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.withAlpha(30),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.red, width: 1),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _validationMessage,
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
+            Padding(
+              padding: AppReadingTokens.settingsRowGap,
+              child: AppInlineFeedback(message: _validationMessage),
+            ),
+          AppCard(
+            padding: AppSpacing.zero,
+            child: SizedBox(
+              height: AppReadingTokens.cssEditorHeight,
+              child: AppTextField(
+                controller: _cssController,
+                maxLines: null,
+                minLines: null,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontFamily: AppReadingTokens.codeFontFamily,
+                      height: 1.4,
                     ),
-                  ),
-                ],
-              ),
-            ),
-          Container(
-            height: 200,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.withAlpha(80)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: TextField(
-              controller: _cssController,
-              maxLines: null,
-              expands: true,
-              style: const TextStyle(
-                fontFamily: 'Courier New',
-                fontSize: 14,
-                height: 1.4,
-              ),
-              decoration: InputDecoration(
                 hintText: L10n.of(context).cssEditorHint,
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.all(12),
+                contentPadding: AppSpacing.all12,
               ),
-              textAlignVertical: TextAlignVertical.top,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: AppSpacing.tokens.s12,
+            runSpacing: AppSpacing.tokens.s8,
             children: [
-              TextButton.icon(
+              AppButton(
                 onPressed: _restoreDefault,
-                icon: const Icon(Icons.restore, size: 16),
-                label: Text(L10n.of(context).cssRestoreDefault),
+                icon: Icons.restore,
+                label: L10n.of(context).cssRestoreDefault,
+                variant: AppButtonVariant.text,
               ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: _hasValidationErrors ? null : _saveAndApply,
-                icon: const Icon(Icons.save, size: 16),
-                label: Text(L10n.of(context).cssSaveAndApply),
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
+              AppButton(
+                enabled: !_hasValidationErrors,
+                onPressed: _saveAndApply,
+                icon: Icons.save,
+                label: L10n.of(context).cssSaveAndApply,
               ),
             ],
           ),
-          const SizedBox(height: 8),
         ],
       ],
     );

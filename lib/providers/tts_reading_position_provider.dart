@@ -1,5 +1,4 @@
 import 'package:anx_reader/service/tts/models/tts_reading_position.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'tts_reading_position_provider.g.dart';

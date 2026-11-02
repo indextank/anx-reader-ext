@@ -1,4 +1,7 @@
-import 'package:anx_reader/widgets/common/container/outlined_container.dart';
+import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/theme/app_ai_tokens.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:flutter/material.dart';
 
 class ToolTileBase extends StatefulWidget {
@@ -19,14 +22,15 @@ class ToolTileBase extends StatefulWidget {
 
   bool get expandable => contentBuilder != null;
 
-  static Color statusColorFor(String status) {
+  static Color statusColorFor(BuildContext context, String status) {
+    final colors = context.appTheme.colors;
     switch (status) {
       case 'success':
-        return Colors.green;
+        return colors.success;
       case 'failed':
-        return Colors.red;
+        return colors.error;
       default:
-        return Colors.orange;
+        return colors.warning;
     }
   }
 
@@ -56,18 +60,20 @@ class _ToolTileBaseState extends State<ToolTileBase> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return OutlinedContainer(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-      radius: 14,
-      child: InkWell(
-        onTap: widget.expandable ? _toggle : null,
+    return AppCard(
+      padding: AppAiTokens.toolCardPadding,
+      borderRadius: AppAiTokens.toolCardRadius,
+      onTap: widget.expandable ? _toggle : null,
+      child: Semantics(
+        button: widget.expandable,
+        expanded: widget.expandable ? _expanded : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(widget.leadingIcon, size: 12),
-                const SizedBox(width: 8),
+                Icon(widget.leadingIcon, size: AppAiTokens.toolIconSize),
+                SizedBox(width: AppSpacing.tokens.s8),
                 Expanded(
                   child: Text(
                     widget.title,
@@ -75,8 +81,8 @@ class _ToolTileBaseState extends State<ToolTileBase> {
                   ),
                 ),
                 Container(
-                  width: 8,
-                  height: 8,
+                  width: AppAiTokens.toolStatusSize,
+                  height: AppAiTokens.toolStatusSize,
                   decoration: BoxDecoration(
                     color: widget.statusColor,
                     shape: BoxShape.circle,
@@ -85,7 +91,7 @@ class _ToolTileBaseState extends State<ToolTileBase> {
               ],
             ),
             if (widget.expandable && _expanded) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: AppSpacing.tokens.s8),
               widget.contentBuilder!(context),
             ],
           ],

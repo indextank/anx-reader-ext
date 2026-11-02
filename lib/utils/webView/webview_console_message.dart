@@ -1,4 +1,5 @@
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/utils/platform_utils.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:flutter/material.dart';
@@ -24,11 +25,13 @@ void showUnsupportedWebviewDialog(int version) {
           ],
         ),
         actions: [
-          TextButton(
-              onPressed: () {
-                SmartDialog.dismiss();
-              },
-              child: Text(L10n.of(context).webviewCancel)),
+          AppButton(
+            label: L10n.of(context).webviewCancel,
+            variant: AppButtonVariant.text,
+            onPressed: () {
+              SmartDialog.dismiss();
+            },
+          ),
         ],
       );
     },

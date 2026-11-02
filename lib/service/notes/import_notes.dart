@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:anx_reader/dao/book_note.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/models/book_note.dart';
@@ -20,13 +21,15 @@ Future<int?> importNotesJsonForBook(BuildContext context, Book book) async {
       title: Text(l10n.notesJsonImportTitle),
       content: Text(l10n.notesJsonImportRisk),
       actions: [
-        TextButton(
+        AppButton(
+          label: l10n.commonCancel,
+          variant: AppButtonVariant.text,
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text(l10n.commonCancel),
         ),
-        FilledButton(
+        AppButton(
+          label: l10n.commonConfirm,
+          variant: AppButtonVariant.primary,
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: Text(l10n.commonConfirm),
         ),
       ],
     ),
@@ -69,9 +72,10 @@ Future<int?> importNotesJsonForBook(BuildContext context, Book book) async {
           title: Text(l10n.notesJsonImportTitle),
           content: Text(l10n.notesJsonImportNoMatch),
           actions: [
-            FilledButton(
+            AppButton(
+              label: l10n.commonOk,
+              variant: AppButtonVariant.primary,
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.commonOk),
             ),
           ],
         ),
@@ -88,13 +92,15 @@ Future<int?> importNotesJsonForBook(BuildContext context, Book book) async {
         title: Text(l10n.commonAttention),
         content: Text(l10n.notesJsonImportFuzzyWarn),
         actions: [
-          TextButton(
+          AppButton(
+            label: l10n.commonCancel,
+            variant: AppButtonVariant.text,
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.commonCancel),
           ),
-          FilledButton(
+          AppButton(
+            label: l10n.commonConfirm,
+            variant: AppButtonVariant.primary,
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.commonConfirm),
           ),
         ],
       ),

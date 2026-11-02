@@ -1,5 +1,5 @@
 import 'package:anx_reader/providers/statictics_summary_value.dart';
-import 'package:anx_reader/widgets/common/async_skeleton_wrapper.dart';
+import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_async_value.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_base.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_registry.dart';
@@ -25,12 +25,11 @@ class NotesTotalTile extends StatisticsDashboardTileBase {
 
   @override
   Widget buildContent(BuildContext context, WidgetRef ref) {
-    final asyncValue =
-        ref.watch(StaticticsSummaryValueProvider(StatisticType.totalNotes));
-
-    return AsyncSkeletonWrapper<int>(
-      asyncValue: asyncValue,
+    final provider = StaticticsSummaryValueProvider(StatisticType.totalNotes);
+    return DashboardAsyncValue<int>(
+      value: ref.watch(provider),
       mock: 120,
+      onRetry: () async => ref.invalidate(provider),
       builder: (count, _) => DashboardMiniMetric(
         value: count,
         label: l10nLocal.tileNotesTotalUnit,

@@ -40,6 +40,7 @@ import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_regi
 import 'package:anx_reader/models/window_info.dart';
 import 'package:anx_reader/service/ai/tools/ai_tool_registry.dart';
 import 'package:anx_reader/service/translate/index.dart';
+import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/utils/get_current_language_code.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/widgets/reading_page/style_widget.dart';
@@ -110,16 +111,28 @@ class Prefs extends ChangeNotifier {
   /// Returns null for values that cannot be represented.
   static Map<String, Object?>? encodePrefsEntry(Object? value) {
     if (value is bool) {
-      return <String, Object?>{_prefsBackupEntryTypeKey: 'bool', _prefsBackupEntryValueKey: value};
+      return <String, Object?>{
+        _prefsBackupEntryTypeKey: 'bool',
+        _prefsBackupEntryValueKey: value
+      };
     }
     if (value is int) {
-      return <String, Object?>{_prefsBackupEntryTypeKey: 'int', _prefsBackupEntryValueKey: value};
+      return <String, Object?>{
+        _prefsBackupEntryTypeKey: 'int',
+        _prefsBackupEntryValueKey: value
+      };
     }
     if (value is double) {
-      return <String, Object?>{_prefsBackupEntryTypeKey: 'double', _prefsBackupEntryValueKey: value};
+      return <String, Object?>{
+        _prefsBackupEntryTypeKey: 'double',
+        _prefsBackupEntryValueKey: value
+      };
     }
     if (value is String) {
-      return <String, Object?>{_prefsBackupEntryTypeKey: 'string', _prefsBackupEntryValueKey: value};
+      return <String, Object?>{
+        _prefsBackupEntryTypeKey: 'string',
+        _prefsBackupEntryValueKey: value
+      };
     }
     if (value is List) {
       final bool allStrings =
@@ -175,7 +188,8 @@ class Prefs extends ChangeNotifier {
   }
 
   Color get themeColor {
-    int colorValue = prefs.getInt('themeColor') ?? Colors.blue.value;
+    int colorValue =
+        prefs.getInt('themeColor') ?? AppColors.defaultBrand.toARGB32();
     return Color(colorValue);
   }
 
@@ -213,6 +227,16 @@ class Prefs extends ChangeNotifier {
 
   Future<void> saveThemeModeToPrefs(String themeMode) async {
     await prefs.setString('themeMode', themeMode);
+    notifyListeners();
+  }
+
+  double get uiTextScale {
+    final value = prefs.getDouble('uiTextScale') ?? 1.0;
+    return value > 0 && value.isFinite ? value : 1.0;
+  }
+
+  Future<void> saveTextScaleToPrefs(double value) async {
+    await prefs.setDouble('uiTextScale', value);
     notifyListeners();
   }
 
@@ -568,7 +592,7 @@ class Prefs extends ChangeNotifier {
       prefs.setBool('openBookAnimation', false);
     }
     SmartDialog.config.custom = SmartConfigCustom(
-      maskColor: Colors.black.withAlpha(35),
+      maskColor: AppColors.scrim,
       useAnimation: !status,
       animationType: SmartAnimationType.centerFade_otherSlide,
     );

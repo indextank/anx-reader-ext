@@ -46,7 +46,8 @@ class StepAudioTtsProvider extends TtsServiceProvider {
         label: L10n.of(context).translateTip,
         type: ConfigItemType.tip,
         defaultValue: L10n.of(context).settingsNarrateStepAudioHelpText,
-        link: 'https://platform.stepfun.com/docs/zh/api-reference/audio/create-audio',
+        link:
+            'https://platform.stepfun.com/docs/zh/api-reference/audio/create-audio',
       ),
       ConfigItem(
         key: 'url',

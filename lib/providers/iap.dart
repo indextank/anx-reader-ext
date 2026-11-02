@@ -143,31 +143,43 @@ class Iap extends _$Iap {
     }
   }
 
+  bool _hasPendingOperation(IapState current) {
+    return current.isPurchasing || current.isRestoring || current.isRefreshing;
+  }
+
   Future<void> buy() async {
     final current = state.valueOrNull;
-    if (current == null || current.isPurchasing) return;
-
-    var products = current.products;
-    if (products.isEmpty) {
-      await loadProducts();
-      products = state.valueOrNull?.products ?? [];
-    }
-
-    if (products.isEmpty) {
-      _updateState(
-        (c) => c.copyWith(
-          errorMessage: 'No products available for purchase',
-          purchaseFlowStatus: IapPurchaseFlowStatus.error,
-        ),
-      );
-      return;
-    }
+    if (current == null || _hasPendingOperation(current)) return;
 
     _updateState((c) => c.copyWith(
           isPurchasing: true,
           errorMessage: null,
           purchaseFlowStatus: IapPurchaseFlowStatus.idle,
         ));
+
+    var products = current.products;
+    if (products.isEmpty) {
+      await loadProducts();
+      final afterLoad = state.valueOrNull;
+      if (afterLoad == null ||
+          !afterLoad.isPurchasing ||
+          afterLoad.isRestoring ||
+          afterLoad.isRefreshing) {
+        return;
+      }
+      products = afterLoad.products;
+    }
+
+    if (products.isEmpty) {
+      _updateState(
+        (c) => c.copyWith(
+          isPurchasing: false,
+          errorMessage: 'No products available for purchase',
+          purchaseFlowStatus: IapPurchaseFlowStatus.error,
+        ),
+      );
+      return;
+    }
 
     try {
       await _iapService.buy(products.first);
@@ -183,7 +195,7 @@ class Iap extends _$Iap {
 
   Future<void> restore() async {
     final current = state.valueOrNull;
-    if (current == null) return;
+    if (current == null || _hasPendingOperation(current)) return;
 
     _updateState(
       (c) => c.copyWith(
@@ -236,7 +248,7 @@ class Iap extends _$Iap {
 
   Future<void> refresh({bool userInitiated = false}) async {
     final current = state.valueOrNull;
-    if (current == null) return;
+    if (current == null || _hasPendingOperation(current)) return;
 
     final policy = userInitiated ? _RefreshPolicy.full : _RefreshPolicy.full;
 

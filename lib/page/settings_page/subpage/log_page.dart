@@ -1,15 +1,42 @@
 import 'dart:io';
 
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
-import 'package:anx_reader/utils/save_file_to_download.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_theme_extension.dart';
 import 'package:anx_reader/utils/get_path/log_file.dart';
-import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/utils/log/common.dart';
+import 'package:anx_reader/utils/save_file_to_download.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
+
+/// 日志级别胶囊的背景/前景配对（保证双亮度对比度 ≥ 4.5:1）。
+({Color background, Color foreground}) logLevelColors(
+  BuildContext context,
+  Level level,
+) {
+  final colors = context.appTheme.colors;
+  final scheme = Theme.of(context).colorScheme;
+  if (level == Level.SEVERE) {
+    return (background: colors.error, foreground: colors.onError);
+  }
+  if (level == Level.WARNING) {
+    return (background: colors.warning, foreground: colors.onWarning);
+  }
+  return (
+    background: scheme.surfaceContainerHighest,
+    foreground: scheme.onSurfaceVariant,
+  );
+}
 
 class LogPage extends StatefulWidget {
-  const LogPage({super.key});
+  const LogPage({super.key, this.loadLogFile, this.readLogLines});
+
+  final Future<File> Function()? loadLogFile;
+  final Future<List<String>> Function(File file)? readLogLines;
 
   @override
   State<LogPage> createState() => _LogPageState();
@@ -17,144 +44,197 @@ class LogPage extends StatefulWidget {
 
 class _LogPageState extends State<LogPage> {
   List<String> logs = [];
+  bool _isLoading = true;
+  bool _loadFailed = false;
+  bool _isExporting = false;
 
   @override
   void initState() {
-    initData();
     super.initState();
+    initData();
   }
 
   Future<void> initData() async {
-    // 日志文件可能被另一个实例独占/不可读，读取失败不应把异常抛给全局错误处理
-    List<String> loaded = [];
+    if (_isLoading && logs.isNotEmpty) return;
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     try {
-      final File logFile = await getLogFile();
-      loaded = logFile.readAsLinesSync().reversed.toList();
+      final logFile = await (widget.loadLogFile?.call() ?? getLogFile());
+      final loaded =
+          await (widget.readLogLines?.call(logFile) ?? logFile.readAsLines());
+      if (!mounted) return;
+      setState(() => logs = loaded.reversed.toList());
     } catch (e) {
       AnxLog.info('LogPage: failed to read log file: $e');
+      if (mounted) setState(() => _loadFailed = true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    if (!mounted) return;
-    setState(() {
-      logs = loaded;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(L10n.of(context).settingsAdvancedLog),
+        title: Text(l10n.settingsAdvancedLog),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              initData();
-            },
+          AppIconButton(
+            icon: Icons.refresh,
+            tooltip: l10n.commonRefresh,
+            isLoading: _isLoading,
+            onPressed: initData,
           ),
-          IconButton(
-              onPressed: () => showMoreAction(context),
-              icon: const Icon(Icons.more_vert)),
+          PopupMenuButton<String>(
+            enabled: !_isExporting,
+            onSelected: (action) {
+              if (action == 'clear') {
+                clearLog();
+              } else if (action == 'export') {
+                exportLog();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'clear',
+                child: Row(
+                  children: [
+                    const Icon(Icons.delete),
+                    SizedBox(width: AppSpacing.tokens.s12),
+                    Text(l10n.settingsAdvancedLogClearLog),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                child: Row(
+                  children: [
+                    const Icon(Icons.file_upload_outlined),
+                    SizedBox(width: AppSpacing.tokens.s12),
+                    Text(l10n.settingsAdvancedLogExportLog),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
-      body: ListView(
-        children: [for (final log in logs) logItem(log, context)],
+      body: AppSafeArea(
+        top: false,
+        child: _buildBody(),
       ),
     );
   }
 
-  void showMoreAction(BuildContext context) {
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        MediaQuery.of(context).size.width,
-        MediaQuery.of(context).padding.top + kToolbarHeight,
-        0.0,
-        0.0,
-      ),
-      items: [
-        PopupMenuItem(
-          child: ListTile(
-            leading: const Icon(Icons.delete),
-            title: Text(L10n.of(context).settingsAdvancedLogClearLog),
-            onTap: () => clearLog(),
-          ),
-        ),
-        PopupMenuItem(
-            child: ListTile(
-          leading: const Icon(Icons.file_upload_outlined),
-          title: Text(L10n.of(context).settingsAdvancedLogExportLog),
-          onTap: () => exportLog(),
-        ))
-      ],
+  Widget _buildBody() {
+    if (_isLoading && logs.isEmpty) {
+      return const Center(child: AppLoadingIndicator());
+    }
+    if (_loadFailed) {
+      return AppErrorState(onRetry: initData);
+    }
+    if (logs.isEmpty) {
+      return AppEmptyState(
+        message: L10n.of(context).settingsAdvancedLog,
+        actionLabel: L10n.of(context).commonRefresh,
+        onAction: initData,
+      );
+    }
+    return ListView(
+      children: [for (final log in logs) logItem(log, context)],
     );
   }
 
   Future<void> clearLog() async {
-    Navigator.pop(context);
-    AnxLog.clear();
-    initData();
+    final l10n = L10n.of(context);
+    await AppDialog.confirm(
+      context,
+      title: l10n.settingsAdvancedLogClearLog,
+      message: l10n.settingsAdvancedLogClearLog,
+      confirmLabel: l10n.commonDelete,
+      isDangerous: true,
+      dangerDescription: l10n.settingsAdvancedLogClearLog,
+      onConfirm: () async {
+        AnxLog.clear();
+        logs = [];
+        await initData();
+      },
+    );
   }
 
   Future<void> exportLog() async {
-    Navigator.pop(context);
+    if (_isExporting) return;
+    setState(() => _isExporting = true);
     try {
-      File logFile = await getLogFile();
-      // SaveFileDialogParams params = SaveFileDialogParams(
-      //   sourceFilePath: logFile.path,
-      // );
-      // await FlutterFileDialog.saveFile(params: params);
-      String fileName =
+      final logFile = await (widget.loadLogFile?.call() ?? getLogFile());
+      final fileName =
           'AnxReader-Log-${DateTime.now().year}-${DateTime.now().month}-${DateTime.now().day}.txt';
-      String? filePath = await saveFileToDownload(
-          bytes: await logFile.readAsBytes(),
-          fileName: fileName,
-          mimeType: 'text/plain');
-
-      AnxToast.show("saved $filePath");
+      final filePath = await saveFileToDownload(
+        bytes: await logFile.readAsBytes(),
+        fileName: fileName,
+        mimeType: 'text/plain',
+      );
+      if (!mounted) return;
+      if (filePath == null) {
+        AppFeedback.showInfo(context, message: L10n.of(context).commonCanceled);
+      } else {
+        AppFeedback.showSuccess(
+          context,
+          message: L10n.of(context).exportTo(filePath),
+        );
+      }
     } catch (e) {
-      // 日志文件不可读（被占用/无权限）时给出提示即可，不要抛出异常
       AnxLog.info('LogPage: failed to export log file: $e');
-      AnxToast.show('Failed to export log: $e');
+      if (mounted) {
+        AppFeedback.showError(context, onRetry: exportLog);
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
     }
   }
 }
 
 Widget logItem(String logStr, BuildContext context) {
   final log = AnxLog.parse(logStr);
+  final levelColors = logLevelColors(context, log.level);
   return SelectionArea(
-      child: Container(
-    padding: const EdgeInsets.all(20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(8, 1, 8, 1),
-          decoration: BoxDecoration(
-            color: log.color,
-            borderRadius: BorderRadius.circular(100),
+    child: Padding(
+      padding: AppSpacing.all20,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: AppSettingsBatchTokens.logLevelPadding,
+            decoration: BoxDecoration(
+              color: levelColors.background,
+              borderRadius: AppRadius.pill,
+            ),
+            child: Text(
+              log.level.name,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: levelColors.foreground,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
           ),
-          child: Text(log.level.name,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold)),
-        ),
-        Text(log.time.toString()),
-        const SizedBox(height: 5),
-        Text(log.message),
-        Row(
-          children: [
-            const Spacer(),
-            TextButton(
+          Text(log.time.toString()),
+          SizedBox(height: AppSpacing.tokens.s4),
+          Text(log.message),
+          Align(
+            alignment: Alignment.centerRight,
+            child: AppButton(
+              label: L10n.of(context).commonCopy,
+              variant: AppButtonVariant.text,
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: logStr));
               },
-              child: Text(L10n.of(context).commonCopy),
             ),
-          ],
-        ),
-        const Divider(),
-      ],
+          ),
+          const Divider(),
+        ],
+      ),
     ),
-  ));
+  );
 }

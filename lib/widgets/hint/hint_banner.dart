@@ -1,6 +1,8 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/hint_key.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/toast/common.dart';
 import 'package:anx_reader/widgets/common/container/filled_container.dart';
 import 'package:flutter/material.dart';
@@ -71,7 +73,9 @@ class _HintBannerState extends State<HintBanner>
               child: Stack(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 32, 12),
+                    // 右侧为 48dp 的 AppIconButton 预留整格，避免 hover pill 压字。
+                    padding:
+                        AppSpacing.fromLTRB(12, 12, AppSpacing.tokens.s48, 12),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -90,18 +94,10 @@ class _HintBannerState extends State<HintBanner>
                   Positioned(
                     right: 0,
                     top: 0,
-                    child: IconButton(
-                      onPressed: _handleClose,
-                      icon: Icon(
-                        Icons.close,
-                        size: 18,
-                        color: borderColor.withAlpha(220),
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints.tightFor(width: 32, height: 32),
-                      splashRadius: 18,
+                    child: AppIconButton(
+                      icon: Icons.close,
                       tooltip: L10n.of(context).close,
+                      onPressed: _handleClose,
                     ),
                   ),
                 ],

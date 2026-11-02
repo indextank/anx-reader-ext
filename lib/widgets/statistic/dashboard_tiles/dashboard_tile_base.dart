@@ -1,10 +1,14 @@
 import 'dart:math';
 
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/providers/dashboard_tiles_provider.dart';
 import 'package:anx_reader/service/vibration_service.dart';
-import 'package:anx_reader/widgets/common/container/filled_container.dart';
+import 'package:anx_reader/theme/app_motion.dart';
+import 'package:anx_reader/theme/app_radius.dart';
+import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/app_statistics_tokens.dart';
 import 'package:anx_reader/widgets/common/fitted_text.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_detail_view.dart';
 import 'package:anx_reader/widgets/statistic/dashboard_tiles/dashboard_tile_metadata.dart';
@@ -14,101 +18,87 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:heroine/heroine.dart';
 import 'package:staggered_reorderable/staggered_reorderable.dart';
 
-/// Base class for all statistics dashboard tiles.
 abstract class StatisticsDashboardTileBase {
   const StatisticsDashboardTileBase();
 
   StatisticsDashboardTileMetadata get metadata;
-
   StatisticsDashboardTileType get type => metadata.type;
 
-  /// Builds the tile body with access to BuildContext and WidgetRef.
   Widget buildContent(BuildContext context, WidgetRef ref);
-
-  /// Called when the tile is removed from the dashboard.
-  /// Override this method to perform cleanup or additional actions.
   void onRemove(BuildContext context, WidgetRef ref) {}
-
-  /// Builds an optional icon widget for the tile.
-  /// Override this method to provide a custom icon.
-  Widget buildCorner(BuildContext context, WidgetRef ref) => SizedBox.shrink();
+  Widget buildCorner(BuildContext context, WidgetRef ref) =>
+      const SizedBox.shrink();
 
   L10n get l10nLocal => L10n.of(navigatorKey.currentContext!);
 
   Widget buildTile(BuildContext context, WidgetRef ref) {
-    return FilledContainer(
-      width: double.infinity,
-      height: double.infinity,
-      radius: 16,
-      color: Theme.of(context).colorScheme.surfaceContainer,
-      child: Stack(
-        children: [
-          Positioned(
-            bottom: -20,
-            right: -20,
-            child: Opacity(
-              opacity: 0.1,
-              child: Transform.rotate(
-                angle: -0.2,
-                child: buildCorner(context, ref),
+    return SizedBox.expand(
+      child: AppCard(
+        borderRadius: AppRadius.border16,
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        padding: AppStatisticsTokens.tilePadding,
+        child: Stack(
+          children: [
+            Positioned(
+              bottom: AppStatisticsTokens.cornerOffset,
+              right: AppStatisticsTokens.cornerOffset,
+              child: Opacity(
+                opacity: AppStatisticsTokens.cornerOpacity,
+                child: Transform.rotate(
+                  angle: AppStatisticsTokens.cornerRotation,
+                  child: buildCorner(context, ref),
+                ),
               ),
             ),
-          ),
-          Container(
-            color: Colors.transparent,
-            padding: const EdgeInsets.all(6),
-            child: Column(
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 if (title.isNotEmpty)
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                Expanded(
-                  child: buildContent(context, ref),
-                ),
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Expanded(child: buildContent(context, ref)),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   String get title => '';
-
   bool get canFlip => true;
-
-  double get flipSquareSize => 120;
-
-  double get flipTitleSize => 100;
+  double get flipSquareSize => AppStatisticsTokens.flipSquareSize;
+  double get flipTitleSize => AppStatisticsTokens.flipTitleSize;
 
   Size tileSize(BuildContext context) {
-    final width = min(flipSquareSize * metadata.columnSpan,
-        MediaQuery.sizeOf(context).width * 0.9);
-    final height = min(flipSquareSize * metadata.rowSpan,
-        MediaQuery.sizeOf(context).height * 0.8);
+    final width = min(
+      flipSquareSize * metadata.columnSpan,
+      MediaQuery.sizeOf(context).width * AppStatisticsTokens.flipWidthFactor,
+    );
+    final height = min(
+      flipSquareSize * metadata.rowSpan,
+      MediaQuery.sizeOf(context).height * AppStatisticsTokens.flipHeightFactor,
+    );
     return Size(width, height);
   }
 
   Size flipSize(BuildContext context) {
-    final width = min(max(flipSquareSize * metadata.columnSpan, 300.0),
-        MediaQuery.sizeOf(context).width * 0.9);
-
-    final height = min(flipSquareSize * metadata.rowSpan + flipTitleSize,
-        MediaQuery.sizeOf(context).height * 0.8);
-
+    final width = min(
+      max(
+        flipSquareSize * metadata.columnSpan,
+        AppStatisticsTokens.flipMinWidth,
+      ),
+      MediaQuery.sizeOf(context).width * AppStatisticsTokens.flipWidthFactor,
+    );
+    final height = min(
+      flipSquareSize * metadata.rowSpan + flipTitleSize,
+      MediaQuery.sizeOf(context).height * AppStatisticsTokens.flipHeightFactor,
+    );
     return Size(width, height);
   }
 
   Widget buildFlipSide(BuildContext context, WidgetRef ref) {
-    return flipScaffold(
-      context,
-      ref,
-      buildTile(context, ref),
-    );
+    return flipScaffold(context, ref, buildTile(context, ref));
   }
 
   void onTap(BuildContext context, WidgetRef ref) {}
@@ -116,7 +106,7 @@ abstract class StatisticsDashboardTileBase {
   Widget cornerIcon(BuildContext context, IconData iconData) {
     return Icon(
       iconData,
-      size: 90,
+      size: AppStatisticsTokens.cornerIconSize,
       color: Theme.of(context).colorScheme.primary,
     );
   }
@@ -124,81 +114,77 @@ abstract class StatisticsDashboardTileBase {
   Widget cornerText(BuildContext context, String text) {
     return Text(
       text,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            fontSize: 80,
-            fontWeight: FontWeight.bold,
-          ),
+      style: AppStatisticsTokens.cornerTextStyle.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
     );
   }
 
   Widget flipScaffold(BuildContext context, WidgetRef ref, Widget flipContent) {
     final theme = Theme.of(context);
-    final spacing = 8.0;
-
-    return FilledContainer(
-      color: theme.scaffoldBackgroundColor,
-      width: flipSize(context).width,
-      height: flipSize(context).height,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FilledContainer(
-            radius: 29,
-            height: flipTitleSize - spacing - 5,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            color: theme.colorScheme.primaryContainer,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    final size = flipSize(context);
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: AppCard(
+        color: theme.scaffoldBackgroundColor,
+        padding: AppSpacing.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: flipTitleSize -
+                  AppStatisticsTokens.flipTitleSpacing -
+                  AppStatisticsTokens.flipTitleInset,
+              child: AppCard(
+                borderRadius: AppRadius.border32,
+                padding: AppStatisticsTokens.flipTitlePadding,
+                color: theme.colorScheme.primaryContainer,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      metadata.icon,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FittedText(
-                        metadata.title,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Icon(metadata.icon, color: theme.colorScheme.primary),
+                        const SizedBox(
+                          width: AppStatisticsTokens.completionSpacing,
                         ),
-                        maxHeight: 25,
-                      ),
+                        Expanded(
+                          child: FittedText(
+                            metadata.title,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: theme.colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxHeight: AppStatisticsTokens.flipTitleMaxHeight,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      metadata.description,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
-                Text(
-                  metadata.description,
-                  style: theme.textTheme.bodyMedium,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: spacing),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                    margin: const EdgeInsets.all(12),
-                    height: flipSquareSize * metadata.rowSpan -
-                        12 * 2, // minus margin
-                    child: flipContent),
               ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(height: AppStatisticsTokens.flipTitleSpacing),
+            Expanded(
+              child: Padding(
+                padding: AppStatisticsTokens.flipContentMargin,
+                child: flipContent,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  /// Returns the [ReorderableItem] used by the reorderable grid.
   ReorderableItem buildReorderableItem({required BuildContext context}) {
     return ReorderableItem(
       trackingNumber: type.index,
@@ -211,7 +197,7 @@ abstract class StatisticsDashboardTileBase {
         buildContent: buildContent,
       ),
       placeholder: Opacity(
-        opacity: 0.5,
+        opacity: AppStatisticsTokens.placeholderOpacity,
         child: DashboardTileShell(
           tileType: type,
           tile: this,
@@ -238,10 +224,8 @@ class DashboardTileShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(dashboardTilesProvider);
     final showRemoveButton = state.isEditing && state.workingTiles.length > 1;
-
     final notifier = ref.read(dashboardTilesProvider.notifier);
     final heroTag = 'dashboard_tile_${tileType.name}';
-
     return Heroine(
       tag: heroTag,
       flightShuttleBuilder: const FlipShuttleBuilder(
@@ -250,7 +234,7 @@ class DashboardTileShell extends ConsumerWidget {
       ),
       motion: Motion.bouncySpring(
         snapToEnd: true,
-        duration: const Duration(milliseconds: 500),
+        duration: AppMotion.tokens.emphasis,
       ),
       child: GestureDetector(
         onTap: () {
@@ -261,25 +245,21 @@ class DashboardTileShell extends ConsumerWidget {
           VibrationService.medium();
           Navigator.of(context)
               .push(
-            PageRouteBuilder(
-              opaque: false,
-              pageBuilder: (context, animation, secondaryAnimation) {
-                return AnimatedBuilder(
-                  animation: animation,
-                  builder: (context, child) {
-                    return DashboardTileDetailView(
-                      tile: tile,
-                      heroTag: heroTag,
-                      animationValue: animation.value,
+                PageRouteBuilder(
+                  opaque: false,
+                  pageBuilder: (context, animation, secondaryAnimation) {
+                    return AnimatedBuilder(
+                      animation: animation,
+                      builder: (context, child) => DashboardTileDetailView(
+                        tile: tile,
+                        heroTag: heroTag,
+                        animationValue: animation.value,
+                      ),
                     );
                   },
-                );
-              },
-            ),
-          )
-              .then((_) {
-            VibrationService.rigid();
-          });
+                ),
+              )
+              .then((_) => VibrationService.rigid());
         },
         child: Stack(
           children: [
@@ -288,15 +268,14 @@ class DashboardTileShell extends ConsumerWidget {
               Positioned(
                 top: 0,
                 right: 0,
-                child: IconButton.filledTonal(
-                  iconSize: 18,
-                  visualDensity: VisualDensity.compact,
+                child: AppIconButton(
                   tooltip: L10n.of(context).commonRemove,
+                  variant: AppButtonVariant.secondary,
                   onPressed: () {
                     notifier.removeTile(tileType);
                     tile.onRemove(context, ref);
                   },
-                  icon: const Icon(Icons.close),
+                  icon: Icons.close,
                 ),
               ),
           ],
