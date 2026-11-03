@@ -358,6 +358,8 @@
   "settingsAdvanced": "詳細設定",
   "settingsAdvancedLog": "ログ",
   "settingsAdvancedLogClearLog": "ログクリア",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "一致するログはありません",
   "settingsAdvancedLogExportLog": "ログエクスポート",
   "settingsAdvancedClearLogWhenStart": "開始時にログクリア",
   "settingsAdvancedUseOriginalCoverRatio": "オリジナルのカバー縦横比を使用",

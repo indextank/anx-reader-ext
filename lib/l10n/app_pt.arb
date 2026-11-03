@@ -358,6 +358,8 @@
   "settingsAdvanced": "Avançado",
   "settingsAdvancedLog": "Log",
   "settingsAdvancedLogClearLog": "Limpar Log",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "Nenhum registro correspondente",
   "settingsAdvancedLogExportLog": "Exportar Log",
   "settingsAdvancedClearLogWhenStart": "Limpar log ao iniciar",
   "settingsAdvancedUseOriginalCoverRatio": "Usar proporção original da capa",

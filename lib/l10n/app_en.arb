@@ -404,6 +404,8 @@
   "settingsAdvancedHttpProxyTestFailed": "Connection Failed",
   "settingsAdvancedLog": "Log",
   "settingsAdvancedLogClearLog": "Clear Log",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "No matching logs",
   "settingsAdvancedLogExportLog": "Export Log",
   "settingsAdvancedClearLogWhenStart": "Clear log when start",
   "settingsAdvancedUseOriginalCoverRatio": "Use original cover aspect ratio",

@@ -358,6 +358,8 @@
   "settingsAdvanced": "고급",
   "settingsAdvancedLog": "로그",
   "settingsAdvancedLogClearLog": "로그 지우기",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "일치하는 로그가 없습니다",
   "settingsAdvancedLogExportLog": "로그 내보내기",
   "settingsAdvancedClearLogWhenStart": "시작 시 로그 지우기",
   "settingsAdvancedUseOriginalCoverRatio": "원본 표지 비율 사용",

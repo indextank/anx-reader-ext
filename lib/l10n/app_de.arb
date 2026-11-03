@@ -358,6 +358,8 @@
   "settingsAdvanced": "Erweitert",
   "settingsAdvancedLog": "Protokoll",
   "settingsAdvancedLogClearLog": "Protokoll löschen",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "Keine passenden Protokolle",
   "settingsAdvancedLogExportLog": "Protokoll exportieren",
   "settingsAdvancedClearLogWhenStart": "Protokoll beim Start löschen",
   "settingsAdvancedUseOriginalCoverRatio": "Originales Seitenverhältnis des Covers verwenden",

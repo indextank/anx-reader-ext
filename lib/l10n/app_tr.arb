@@ -358,6 +358,8 @@
   "settingsAdvanced": "Gelişmiş",
   "settingsAdvancedLog": "Günlük",
   "settingsAdvancedLogClearLog": "Günlüğü Temizle",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "Eşleşen günlük yok",
   "settingsAdvancedLogExportLog": "Günlüğü Dışa Aktar",
   "settingsAdvancedClearLogWhenStart": "Başlangıçta günlüğü temizle",
   "settingsAdvancedUseOriginalCoverRatio": "Orijinal kapak en-boy oranını kullan",

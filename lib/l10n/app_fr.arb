@@ -358,6 +358,8 @@
   "settingsAdvanced": "Avancé",
   "settingsAdvancedLog": "Journal",
   "settingsAdvancedLogClearLog": "Vider le Journal",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "Aucun journal correspondant",
   "settingsAdvancedLogExportLog": "Exporter le Journal",
   "settingsAdvancedClearLogWhenStart": "Vider le journal au démarrage",
   "settingsAdvancedUseOriginalCoverRatio": "Utiliser le ratio d’origine de la couverture",

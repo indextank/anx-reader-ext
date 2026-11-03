@@ -358,6 +358,8 @@
   "settingsAdvanced": "Advanced",
   "settingsAdvancedLog": "Log",
   "settingsAdvancedLogClearLog": "Clear Log",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "Nicio jurnală corespunzătoare",
   "settingsAdvancedLogExportLog": "Export Log",
   "settingsAdvancedClearLogWhenStart": "Clear log when start",
   "settingsAdvancedUseOriginalCoverRatio": "Use original cover aspect ratio",

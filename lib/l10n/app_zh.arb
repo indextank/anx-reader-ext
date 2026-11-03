@@ -404,6 +404,8 @@
   "settingsAdvancedHttpProxyTestFailed": "连接失败",
   "settingsAdvancedLog": "日志",
   "settingsAdvancedLogClearLog": "清空日志",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "没有匹配的日志",
   "settingsAdvancedLogExportLog": "导出日志",
   "settingsAdvancedClearLogWhenStart": "启动时清空日志",
   "settingsAdvancedUseOriginalCoverRatio": "使用原始封面比例",

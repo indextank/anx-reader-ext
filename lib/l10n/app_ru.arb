@@ -358,6 +358,8 @@
   "settingsAdvanced": "Расширенные",
   "settingsAdvancedLog": "Логи",
   "settingsAdvancedLogClearLog": "Очистить логи",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "Нет совпадающих журналов",
   "settingsAdvancedLogExportLog": "Экспортировать логи",
   "settingsAdvancedClearLogWhenStart": "Очищать логи при запуске",
   "settingsAdvancedUseOriginalCoverRatio": "Родная пропорция обложки",

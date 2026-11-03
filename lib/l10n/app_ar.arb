@@ -358,6 +358,8 @@
   "settingsAdvanced": "متقدم",
   "settingsAdvancedLog": "السجل",
   "settingsAdvancedLogClearLog": "مسح السجل",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "لا توجد سجلات مطابقة",
   "settingsAdvancedLogExportLog": "تصدير السجل",
   "settingsAdvancedClearLogWhenStart": "مسح السجل عند البدء",
   "settingsAdvancedUseOriginalCoverRatio": "استخدم نسبة أبعاد الغلاف الأصلية",

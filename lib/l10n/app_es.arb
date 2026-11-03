@@ -358,6 +358,8 @@
   "settingsAdvanced": "Avanzado",
   "settingsAdvancedLog": "Registro",
   "settingsAdvancedLogClearLog": "Limpiar Registro",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "No hay registros coincidentes",
   "settingsAdvancedLogExportLog": "Exportar Registro",
   "settingsAdvancedClearLogWhenStart": "Limpiar registro al iniciar",
   "settingsAdvancedUseOriginalCoverRatio": "Usar la relación de aspecto original de la portada",

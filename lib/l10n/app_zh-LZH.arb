@@ -366,6 +366,8 @@
   "settingsAdvanced": "高級",
   "settingsAdvancedLog": "日誌",
   "settingsAdvancedLogClearLog": "清空日誌",
+  "settingsAdvancedLogFilterAll": "ALL",
+  "settingsAdvancedLogNoMatch": "無匹配日誌",
   "settingsAdvancedLogExportLog": "匯出日誌",
   "settingsAdvancedClearLogWhenStart": "啟動時清空日誌",
   "settingsAdvancedUseOriginalCoverRatio": "依封面原比例",
