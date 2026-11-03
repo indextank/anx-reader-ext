@@ -24,6 +24,7 @@ import 'package:anx_reader/service/ai/prompt_generate.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/utils/ui/status_bar.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
+import 'package:anx_reader/widgets/ai/ai_chat_session.dart';
 import 'package:anx_reader/widgets/ai/ai_stream.dart';
 import 'package:anx_reader/widgets/reading_page/notes_widget.dart';
 import 'package:anx_reader/models/reading_time.dart';
@@ -147,7 +148,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
   late String heroTag;
   String? _aiChatInitialMessage;
   var _aiChatSendImmediate = false;
-  String? _aiChatDraft;
+  final _aiChatSession = AiChatSession();
   final aiChatKey = GlobalKey<AiChatStreamState>();
   static const double _aiChatMinWidth = 240;
   late double _aiChatWidth;
@@ -235,6 +236,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     // }
     HardwareKeyboard.instance.removeHandler(_globalReaderKeyHandler);
     _readerFocusNode.dispose();
+    _aiChatSession.dispose();
     super.dispose();
   }
 
@@ -614,6 +616,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
             initialMessage: _aiChatInitialMessage,
             sendImmediate: _aiChatSendImmediate,
             quickPromptChips: _getAiQuickPromptChips(),
+            session: _aiChatSession,
             trailing: isRight ? null : _buildAiChatTrailing(context),
           ),
         ),
@@ -679,7 +682,6 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     }
 
     if (shouldShowAsPopup) {
-      _aiChatDraft = aiChatKey.currentState?.inputController.text;
       _panelCoordinatorKey.currentState?.closeAuxiliaryPanels();
       if (!mounted) return;
       await showModalBottomSheet<void>(
@@ -697,9 +699,10 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     minimum: AppReadingTokens.aiPopupPadding,
                     child: AiChatStream(
                       key: aiChatKey,
-                      initialMessage: content ?? _aiChatDraft,
+                      initialMessage: content,
                       sendImmediate: sendImmediate,
                       quickPromptChips: quickPrompts,
+                      session: _aiChatSession,
                     ),
                   ),
                 ),

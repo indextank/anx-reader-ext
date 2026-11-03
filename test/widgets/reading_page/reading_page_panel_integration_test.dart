@@ -9,6 +9,7 @@ import 'package:anx_reader/main.dart';
 import 'package:anx_reader/models/book.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/providers/ai_history.dart';
+import 'package:anx_reader/providers/ai_chat.dart';
 import 'package:anx_reader/service/ai/ai_history.dart';
 import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/theme/app_theme.dart';
@@ -20,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:langchain_core/chat_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 // Transitive platform interface is used only by this plugin test double.
@@ -51,12 +53,40 @@ class _FakeAiHistoryNotifier
   Future<void> refresh() async {}
 
   @override
+  Future<void> upsert(AiChatHistoryEntry entry) async {}
+
+  @override
   Future<void> clear() async {
     state = const AsyncValue.data([]);
   }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ControlledAiChat extends AiChat {
+  final response = StreamController<String>();
+
+  @override
+  Stream<List<ChatMessage>> sendMessageStream(
+    String message,
+    WidgetRef widgetRef,
+    bool isRegenerate,
+  ) async* {
+    final messages = <ChatMessage>[
+      ...state.value ?? const [],
+      ChatMessage.humanText(message),
+      ChatMessage.ai(''),
+    ];
+    state = AsyncData(messages);
+    yield messages;
+    await for (final chunk in response.stream) {
+      final updated = List<ChatMessage>.from(messages)
+        ..[messages.length - 1] = ChatMessage.ai(chunk);
+      state = AsyncData(updated);
+      yield updated;
+    }
+  }
 }
 
 class _ReadingPageHarness {
@@ -71,6 +101,7 @@ class _ReadingPageHarness {
 Future<_ReadingPageHarness> _pumpReadingPage(
   WidgetTester tester, {
   Map<String, Object> initialPrefs = const {},
+  _ControlledAiChat? aiChat,
 }) async {
   SharedPreferences.setMockInitialValues({
     'openBookAnimation': false,
@@ -95,6 +126,7 @@ Future<_ReadingPageHarness> _pumpReadingPage(
     ProviderScope(
       overrides: [
         aiHistoryProvider.overrideWith((ref) => _FakeAiHistoryNotifier()),
+        if (aiChat != null) aiChatProvider.overrideWith(() => aiChat),
       ],
       child: MaterialApp(
         navigatorKey: app.navigatorKey,
@@ -316,6 +348,104 @@ void main() {
     expect(find.byKey(const ValueKey('reading-tool-panel')), findsNothing);
     expect(find.byType(AiChatStream), findsOneWidget);
     expect(harness.coordinator.activeTool, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('production popup close preserves the latest draft for split',
+      (tester) async {
+    final harness = await _pumpReadingPage(
+      tester,
+      initialPrefs: {'aiChatDisplayMode': 'popup'},
+    );
+    unawaited(harness.pageKey.currentState!.showAiChat());
+    await tester.pump();
+    harness.pageKey.currentState!.aiChatKey.currentState!.inputController.text =
+        'latest-popup-draft';
+
+    Navigator.of(tester.element(find.byType(AiChatStream))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    Prefs().aiChatDisplayMode = AiChatDisplayMode.split;
+    await _openProductionAi(tester, harness);
+
+    expect(find.byType(ReadingSidePanelHost), findsOneWidget);
+    expect(
+      harness
+          .pageKey.currentState!.aiChatKey.currentState!.inputController.text,
+      'latest-popup-draft',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'production split streaming continues in popup with retry context',
+      (tester) async {
+    final aiChat = _ControlledAiChat();
+    final harness = await _pumpReadingPage(
+      tester,
+      initialPrefs: {'aiChatDisplayMode': 'split'},
+      aiChat: aiChat,
+    );
+    await _openProductionAi(tester, harness);
+    final l10n = L10n.of(tester.element(find.byType(AiChatStream)));
+    harness.pageKey.currentState!.aiChatKey.currentState!.inputController.text =
+        'stream-question';
+    await tester.tap(find.byTooltip(l10n.commonConfirm));
+    await tester.pump();
+    expect(find.byTooltip(l10n.commonCancel), findsOneWidget);
+
+    Prefs().aiChatDisplayMode = AiChatDisplayMode.popup;
+    unawaited(harness.pageKey.currentState!.showAiChat());
+    await tester.pump();
+    expect(find.byType(ReadingSidePanelHost), findsNothing);
+    expect(find.byType(AiChatStream), findsOneWidget);
+    expect(find.byTooltip(l10n.commonCancel), findsOneWidget);
+
+    aiChat.response.add('continued-response');
+    await tester.pump();
+    expect(find.text('continued-response'), findsOneWidget);
+    await aiChat.response.close();
+    await tester.pump();
+    expect(find.byTooltip(l10n.commonConfirm), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    Navigator.of(tester.element(find.byType(AiChatStream))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  testWidgets('production popup streaming continues after close into split',
+      (tester) async {
+    final aiChat = _ControlledAiChat();
+    final harness = await _pumpReadingPage(
+      tester,
+      initialPrefs: {'aiChatDisplayMode': 'popup'},
+      aiChat: aiChat,
+    );
+    unawaited(harness.pageKey.currentState!.showAiChat());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final l10n = L10n.of(tester.element(find.byType(AiChatStream)));
+    harness.pageKey.currentState!.aiChatKey.currentState!.inputController.text =
+        'popup-stream-question';
+    await tester.tap(find.byTooltip(l10n.commonConfirm));
+    await tester.pump();
+    expect(find.byTooltip(l10n.commonCancel), findsOneWidget);
+
+    Navigator.of(tester.element(find.byType(AiChatStream))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    Prefs().aiChatDisplayMode = AiChatDisplayMode.split;
+    await _openProductionAi(tester, harness);
+
+    expect(find.byType(ReadingSidePanelHost), findsOneWidget);
+    expect(find.byType(AiChatStream), findsOneWidget);
+    expect(find.byTooltip(l10n.commonCancel), findsOneWidget);
+    aiChat.response.add('popup-continued-response');
+    await tester.pump();
+    expect(find.text('popup-continued-response'), findsOneWidget);
+    await aiChat.response.close();
+    await tester.pump();
+    expect(find.byTooltip(l10n.commonConfirm), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
