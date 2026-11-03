@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:core';
 
@@ -44,6 +45,7 @@ import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/utils/get_current_language_code.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/widgets/reading_page/style_widget.dart';
+import 'package:anx_reader/widgets/reading_page/panel_position.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String prefsBackupVersionKey = '__prefsBackupVersion';
@@ -1695,6 +1697,32 @@ class Prefs extends ChangeNotifier {
   set aiPanelPosition(AiPanelPositionEnum position) {
     prefs.setString('aiPanelPosition', position.code);
     notifyListeners();
+  }
+
+  AiPanelPositionEnum get notesPanelPosition {
+    return readPanelPosition(() => prefs.getString('notesPanelPosition'));
+  }
+
+  set notesPanelPosition(AiPanelPositionEnum position) {
+    unawaited(() async {
+      await writePanelPosition(
+        () => prefs.setString('notesPanelPosition', position.code),
+      );
+      notifyListeners();
+    }());
+  }
+
+  AiPanelPositionEnum get stylePanelPosition {
+    return readPanelPosition(() => prefs.getString('stylePanelPosition'));
+  }
+
+  set stylePanelPosition(AiPanelPositionEnum position) {
+    unawaited(() async {
+      await writePanelPosition(
+        () => prefs.setString('stylePanelPosition', position.code),
+      );
+      notifyListeners();
+    }());
   }
 
   CodeHighlightThemeEnum get codeHighlightTheme {
