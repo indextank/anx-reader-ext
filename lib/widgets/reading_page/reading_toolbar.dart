@@ -20,6 +20,9 @@ class ReadingToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final appBarTheme = theme.appBarTheme;
+    final backTooltip = MaterialLocalizations.of(context).backButtonTooltip;
     final navigation = [
       AppIconButton(
         icon: Icons.toc,
@@ -28,6 +31,8 @@ class ReadingToolbar extends StatelessWidget {
       ),
       AppIconButton(
         icon: Icons.arrow_back,
+        tooltip: backTooltip,
+        semanticLabel: backTooltip,
         onPressed: onBack,
       ),
     ];
@@ -35,6 +40,7 @@ class ReadingToolbar extends StatelessWidget {
       title,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
+      style: appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge,
     );
 
     return LayoutBuilder(
@@ -52,30 +58,41 @@ class ReadingToolbar extends StatelessWidget {
           );
         }
 
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: kToolbarHeight,
-              child: Row(
-                children: [
-                  ...navigation,
-                  Expanded(child: titleText),
-                ],
-              ),
-            ),
-            SizedBox(
-              height: kToolbarHeight,
-              child: SingleChildScrollView(
-                key: const ValueKey('reading-toolbar-actions-scroll'),
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: actions,
+        return Material(
+          color: appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+          child: AppSafeArea(
+            bottom: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: kToolbarHeight,
+                  child: Row(
+                    children: [
+                      ...navigation,
+                      Expanded(
+                        child: Semantics(
+                          header: true,
+                          child: titleText,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                SizedBox(
+                  height: kToolbarHeight,
+                  child: SingleChildScrollView(
+                    key: const ValueKey('reading-toolbar-actions-scroll'),
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: actions,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );

@@ -9,6 +9,10 @@ import '../../design_system/design_system_test_utils.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  const longBookTitle =
+      'An exceptionally long book title that must stay on one line and '
+      'ellipsize when horizontal space is limited';
+
   setUp(() {
     final view =
         TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
@@ -25,7 +29,7 @@ void main() {
     bool showAi = true,
   }) {
     return ReadingToolbar(
-      title: 'A book title that stays on one line',
+      title: longBookTitle,
       onBack: () {},
       onToc: onToc,
       actions: [
@@ -126,6 +130,7 @@ void main() {
   });
 
   testWidgets('back button invokes its callback exactly once', (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
     var backCalls = 0;
 
     await pumpDesignSystem(
@@ -138,14 +143,24 @@ void main() {
       ),
     );
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(ReadingToolbar),
-        matching: find.byIcon(Icons.arrow_back),
-      ),
+    final backButtonFinder = find.ancestor(
+      of: find.byIcon(Icons.arrow_back),
+      matching: find.byType(AppIconButton),
+    );
+    final backTooltip = MaterialLocalizations.of(
+      tester.element(find.byType(ReadingToolbar)),
+    ).backButtonTooltip;
+    expect(find.byTooltip(backTooltip), findsOneWidget);
+    expect(find.bySemanticsLabel(backTooltip), findsWidgets);
+    expect(
+      tester.widget<AppIconButton>(backButtonFinder).semanticLabel,
+      backTooltip,
     );
 
+    await tester.tap(backButtonFinder);
+
     expect(backCalls, 1);
+    semanticsHandle.dispose();
   });
 
   testWidgets('hidden AI action does not change remaining action order',
@@ -204,6 +219,25 @@ void main() {
       textScaler: const TextScaler.linear(1.3),
     );
 
+    final titleFinder = find.text(longBookTitle);
+    final titleText = tester.widget<Text>(titleFinder);
+    expect(titleText.maxLines, 1);
+    expect(titleText.overflow, TextOverflow.ellipsis);
+    final theme = Theme.of(tester.element(find.byType(ReadingToolbar)));
+    expect(
+      titleText.style,
+      theme.appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge,
+    );
+    expect(
+      find.ancestor(
+        of: titleFinder,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.header == true,
+        ),
+      ),
+      findsOneWidget,
+    );
+
     final scrollFinder = find.byKey(
       const ValueKey('reading-toolbar-actions-scroll'),
     );
@@ -227,6 +261,71 @@ void main() {
         tester.state<ScrollableState>(scrollableFinder).position.pixels;
     expect(scrolledOffset, greaterThan(initialOffset));
     expect(scrolledOffset, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('narrow toolbar respects top view padding and app bar surface',
+      (tester) async {
+    const topPadding = 32.0;
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.viewPadding = const FakeViewPadding(top: topPadding);
+    addTearDown(tester.view.reset);
+
+    await pumpDesignSystem(
+      tester,
+      MediaQuery(
+        data: const MediaQueryData(
+          padding: EdgeInsets.only(top: topPadding),
+          viewPadding: EdgeInsets.only(top: topPadding),
+        ),
+        child: toolbar(
+          onToc: () {},
+          onNotes: () {},
+          onStyle: () {},
+          onTts: () {},
+        ),
+      ),
+      textScaler: const TextScaler.linear(1.3),
+    );
+
+    final toolbarFinder = find.byType(ReadingToolbar);
+    final toolbarContext = tester.element(toolbarFinder);
+    final mediaQuery = MediaQuery.of(toolbarContext);
+    expect(mediaQuery.viewPadding.top, topPadding);
+    expect(mediaQuery.padding.top, topPadding);
+    expect(mediaQuery.viewInsets.top, 0);
+
+    final tocButton = find.ancestor(
+      of: find.byIcon(Icons.toc),
+      matching: find.byType(AppIconButton),
+    );
+    final backButton = find.ancestor(
+      of: find.byIcon(Icons.arrow_back),
+      matching: find.byType(AppIconButton),
+    );
+    expect(tester.getTopLeft(tocButton).dy, greaterThanOrEqualTo(topPadding));
+    expect(tester.getTopLeft(backButton).dy, greaterThanOrEqualTo(topPadding));
+
+    final safeAreaFinder = find.descendant(
+      of: toolbarFinder,
+      matching: find.byType(AppSafeArea),
+    );
+    expect(safeAreaFinder, findsOneWidget);
+    expect(tester.widget<AppSafeArea>(safeAreaFinder).bottom, isFalse);
+
+    final materialFinder = find.descendant(
+      of: toolbarFinder,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Material && widget.type == MaterialType.canvas,
+      ),
+    );
+    expect(materialFinder, findsOneWidget);
+    final theme = Theme.of(toolbarContext);
+    expect(
+      tester.widget<Material>(materialFinder).color,
+      theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+    );
     expect(tester.takeException(), isNull);
   });
 }
