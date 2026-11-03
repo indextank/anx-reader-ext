@@ -4,6 +4,7 @@ import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart' show navigatorKey;
 import 'package:anx_reader/page/settings_page/ai.dart';
 import 'package:anx_reader/page/settings_page/translate.dart';
+import 'package:anx_reader/widgets/settings/single_row_setting_tile.dart';
 import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -163,14 +164,20 @@ void main() {
       // （分组卡 margin 8 + tile 内容 padding 16）。
       expect(label.left, closeTo(24, 0.5), reason: '标签应与页面统一左缘对齐');
 
-      final segmentRects = segmentedFinder()
-          .evaluate()
-          .map((e) => tester.getRect(find.byWidget(e.widget)))
-          .where((r) => r.top >= label.top)
-          .toList();
-      expect(segmentRects, isNotEmpty, reason: '面板位置行下方应有分段控件');
-      expect(segmentRects.first.left, closeTo(label.left, 0.5),
-          reason: '分段控件应与其标签起始对齐');
+      // 单行化后：分段控件在标签右侧、同一行（垂直区间重叠）。
+      final panelTile = find.ancestor(
+        of: find.text('面板位置').first,
+        matching: find.byType(SingleRowSettingTile),
+      );
+      expect(panelTile, findsOneWidget, reason: '面板位置应为单行设置项');
+      final segRect = tester.getRect(
+        find.descendant(of: panelTile, matching: segmentedFinder()),
+      );
+      expect(segRect.left, greaterThan(label.right), reason: '控件应在标签右侧');
+      expect(label.bottom, greaterThan(segRect.top), reason: '标题与控件同行');
+      expect(label.top, lessThan(segRect.bottom), reason: '标题与控件同行');
+      expect(tester.getRect(panelTile).height, lessThan(96),
+          reason: '应为单行紧凑高度');
 
       // 分组卡片应占满内容宽度，而不是收缩为最宽子项。
       final card = sectionCardOf(tester, find.text('面板位置').first);

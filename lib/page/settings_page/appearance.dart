@@ -4,12 +4,12 @@ import 'package:anx_reader/enums/bookshelf_folder_style.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/providers/ui_settings.dart';
 import 'package:anx_reader/theme/app_page_tokens.dart';
-import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/widgets/common/anx_segmented_button.dart';
 import 'package:anx_reader/widgets/settings/settings_section.dart';
 import 'package:anx_reader/widgets/settings/settings_tile.dart';
 import 'package:anx_reader/widgets/settings/settings_title.dart';
+import 'package:anx_reader/widgets/settings/single_row_setting_tile.dart';
 import 'package:anx_reader/widgets/settings/simple_dialog.dart';
 import 'package:anx_reader/widgets/settings/theme_mode.dart';
 import 'package:flutter/material.dart';
@@ -109,25 +109,18 @@ class _AppearanceSettingState extends ConsumerState<AppearanceSetting> {
               },
             ),
             CustomSettingsTile(
-              child: ListTile(
-                title: Text(L10n.of(context).settingsAppearanceTextScale),
-                subtitle: Row(
-                  children: [
-                    Text('${(settings.textScale * 100).round()}%'),
-                    Expanded(
-                      child: Slider(
-                        value: settings.textScale,
-                        min: 0.8,
-                        max: 1.5,
-                        divisions: 7,
-                        onChanged: (value) {
-                          ref
-                              .read(uiSettingsProvider.notifier)
-                              .setTextScale(value);
-                        },
-                      ),
-                    ),
-                  ],
+              child: SingleRowSettingTile(
+                title: L10n.of(context).settingsAppearanceTextScale,
+                valueLabel: '${(settings.textScale * 100).round()}%',
+                pinnedTrailing: true,
+                trailing: Slider(
+                  value: settings.textScale,
+                  min: 0.8,
+                  max: 1.5,
+                  divisions: 7,
+                  onChanged: (value) {
+                    ref.read(uiSettingsProvider.notifier).setTextScale(value);
+                  },
                 ),
               ),
             ),
@@ -178,55 +171,46 @@ class _AppearanceSettingState extends ConsumerState<AppearanceSetting> {
           title: Text(L10n.of(context).settingsBookshelfCover),
           tiles: [
             CustomSettingsTile(
-              child: ListTile(
-                title: Text(L10n.of(context).settingsBookshelfCoverWidth),
-                subtitle: Row(
-                  children: [
-                    Text(Prefs().bookCoverWidth.toStringAsFixed(0)),
-                    Expanded(
-                      child: Slider(
-                        value: Prefs().bookCoverWidth,
-                        onChanged: (value) {
-                          setState(() {
-                            Prefs().bookCoverWidth = value;
-                          });
-                        },
-                        max: 260,
-                        min: 80,
-                        divisions: 18,
-                      ),
-                    ),
-                  ],
+              child: SingleRowSettingTile(
+                title: L10n.of(context).settingsBookshelfCoverWidth,
+                valueLabel: Prefs().bookCoverWidth.toStringAsFixed(0),
+                pinnedTrailing: true,
+                trailing: Slider(
+                  value: Prefs().bookCoverWidth,
+                  onChanged: (value) {
+                    setState(() {
+                      Prefs().bookCoverWidth = value;
+                    });
+                  },
+                  max: 260,
+                  min: 80,
+                  divisions: 18,
                 ),
               ),
             ),
             CustomSettingsTile(
-              child: ListTile(
-                title: Text(L10n.of(context).settingsBookshelfFolderStyle),
-                subtitle: Padding(
-                  padding: AppSpacing.vertical8,
-                  child: AnxSegmentedButton<BookshelfFolderStyle>(
-                    segments: [
-                      SegmentButtonItem(
-                        label: L10n.of(context)
-                            .settingsBookshelfFolderStyleOverlap,
-                        value: BookshelfFolderStyle.stacked,
-                        icon: const Icon(Icons.layers),
-                      ),
-                      SegmentButtonItem(
-                        label:
-                            L10n.of(context).settingsBookshelfFolderStyleGrid,
-                        value: BookshelfFolderStyle.grid2x2,
-                        icon: const Icon(Icons.grid_view),
-                      ),
-                    ],
-                    selected: {settings.bookshelfFolderStyle},
-                    onSelectionChanged: (value) {
-                      ref
-                          .read(uiSettingsProvider.notifier)
-                          .setBookshelfFolderStyle(value.first);
-                    },
-                  ),
+              child: SingleRowSettingTile(
+                title: L10n.of(context).settingsBookshelfFolderStyle,
+                trailing: AnxSegmentedButton<BookshelfFolderStyle>(
+                  segments: [
+                    SegmentButtonItem(
+                      label:
+                          L10n.of(context).settingsBookshelfFolderStyleOverlap,
+                      value: BookshelfFolderStyle.stacked,
+                      icon: const Icon(Icons.layers),
+                    ),
+                    SegmentButtonItem(
+                      label: L10n.of(context).settingsBookshelfFolderStyleGrid,
+                      value: BookshelfFolderStyle.grid2x2,
+                      icon: const Icon(Icons.grid_view),
+                    ),
+                  ],
+                  selected: {settings.bookshelfFolderStyle},
+                  onSelectionChanged: (value) {
+                    ref
+                        .read(uiSettingsProvider.notifier)
+                        .setBookshelfFolderStyle(value.first);
+                  },
                 ),
               ),
             ),
