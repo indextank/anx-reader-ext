@@ -66,6 +66,8 @@ class _FakeAiHistoryNotifier
 
 class _ControlledAiChat extends AiChat {
   final response = StreamController<String>();
+  final sentMessages = <String>[];
+  var failNext = false;
 
   @override
   Stream<List<ChatMessage>> sendMessageStream(
@@ -73,6 +75,7 @@ class _ControlledAiChat extends AiChat {
     WidgetRef widgetRef,
     bool isRegenerate,
   ) async* {
+    sentMessages.add(message);
     final messages = <ChatMessage>[
       ...state.value ?? const [],
       ChatMessage.humanText(message),
@@ -80,6 +83,10 @@ class _ControlledAiChat extends AiChat {
     ];
     state = AsyncData(messages);
     yield messages;
+    if (failNext) {
+      failNext = false;
+      throw StateError('private controlled failure');
+    }
     await for (final chunk in response.stream) {
       final updated = List<ChatMessage>.from(messages)
         ..[messages.length - 1] = ChatMessage.ai(chunk);
@@ -446,6 +453,84 @@ void main() {
     await aiChat.response.close();
     await tester.pump();
     expect(find.byTooltip(l10n.commonConfirm), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('production split failure retries successfully in popup',
+      (tester) async {
+    final aiChat = _ControlledAiChat()..failNext = true;
+    final harness = await _pumpReadingPage(
+      tester,
+      initialPrefs: {'aiChatDisplayMode': 'split'},
+      aiChat: aiChat,
+    );
+    await _openProductionAi(tester, harness);
+    final l10n = L10n.of(tester.element(find.byType(AiChatStream)));
+    harness.pageKey.currentState!.aiChatKey.currentState!.inputController.text =
+        'retry-split-question';
+    await tester.tap(find.byTooltip(l10n.commonConfirm));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Retry'), findsOneWidget);
+
+    Prefs().aiChatDisplayMode = AiChatDisplayMode.popup;
+    unawaited(harness.pageKey.currentState!.showAiChat());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Retry'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+        aiChat.sentMessages, ['retry-split-question', 'retry-split-question']);
+    expect(find.text('Retry'), findsNothing);
+    aiChat.response.add('split-retry-recovered');
+    await tester.pump();
+    expect(find.text('split-retry-recovered'), findsOneWidget);
+    await aiChat.response.close();
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'production popup failure retries successfully after split reopen',
+      (tester) async {
+    final aiChat = _ControlledAiChat()..failNext = true;
+    final harness = await _pumpReadingPage(
+      tester,
+      initialPrefs: {'aiChatDisplayMode': 'popup'},
+      aiChat: aiChat,
+    );
+    unawaited(harness.pageKey.currentState!.showAiChat());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final l10n = L10n.of(tester.element(find.byType(AiChatStream)));
+    harness.pageKey.currentState!.aiChatKey.currentState!.inputController.text =
+        'retry-popup-question';
+    await tester.tap(find.byTooltip(l10n.commonConfirm));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Retry'), findsOneWidget);
+
+    Navigator.of(tester.element(find.byType(AiChatStream))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    Prefs().aiChatDisplayMode = AiChatDisplayMode.split;
+    await _openProductionAi(tester, harness);
+    expect(find.text('Retry'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+        aiChat.sentMessages, ['retry-popup-question', 'retry-popup-question']);
+    expect(find.text('Retry'), findsNothing);
+    aiChat.response.add('popup-retry-recovered');
+    await tester.pump();
+    expect(find.text('popup-retry-recovered'), findsOneWidget);
+    await aiChat.response.close();
+    await tester.pump();
     expect(tester.takeException(), isNull);
   });
 }

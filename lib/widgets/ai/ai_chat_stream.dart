@@ -927,14 +927,16 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
                           stream: _messageStream,
                           initialData: _session.latestMessages,
                           builder: (context, snapshot) {
-                            if (snapshot.hasError) {
+                            if (_session.latestError != null) {
                               return Center(
                                 child: AppInlineFeedback(
                                   onRetry: _retryLastMessage,
                                 ),
                               );
                             }
-                            if (!snapshot.hasData) {
+                            final messages =
+                                _session.latestMessages ?? snapshot.data;
+                            if (messages == null) {
                               return AppSkeleton(
                                 child: Center(
                                   child: Text(L10n.of(context).commonLoading),
@@ -942,7 +944,6 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
                               );
                             }
 
-                            final messages = snapshot.data!;
                             if (messages.isEmpty) {
                               return buildEmptyState();
                             }

@@ -10,7 +10,10 @@ class AiChatSession extends ChangeNotifier {
   StreamController<List<ChatMessage>>? messageController;
   StreamSubscription<List<ChatMessage>>? messageSubscription;
   List<ChatMessage>? latestMessages;
+  Object? latestError;
+  StackTrace? latestStackTrace;
   bool isStreaming = false;
+  bool isComplete = false;
   String? lastSentMessage;
   bool lastSendWasRegenerate = false;
   List<ChatMessage> preSendMessages = const [];
@@ -35,6 +38,9 @@ class AiChatSession extends ChangeNotifier {
     }
     messageController = controller;
     messageStream = controller.stream;
+    latestError = null;
+    latestStackTrace = null;
+    isComplete = false;
     isStreaming = true;
     notifyListeners();
     messageSubscription = source.listen(
@@ -44,16 +50,20 @@ class AiChatSession extends ChangeNotifier {
         onEvent();
       },
       onError: (error, stack) {
+        latestError = error;
+        latestStackTrace = stack;
+        isStreaming = false;
+        isComplete = true;
         if (!controller.isClosed) {
           controller.addError(error, stack);
           controller.close();
         }
-        isStreaming = false;
         notifyListeners();
       },
       onDone: () {
-        if (!controller.isClosed) controller.close();
         isStreaming = false;
+        isComplete = true;
+        if (!controller.isClosed) controller.close();
         notifyListeners();
       },
       cancelOnError: false,
@@ -71,7 +81,10 @@ class AiChatSession extends ChangeNotifier {
     messageController = null;
     messageStream = null;
     latestMessages = null;
+    latestError = null;
+    latestStackTrace = null;
     isStreaming = false;
+    isComplete = false;
   }
 
   @override
