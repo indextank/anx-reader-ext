@@ -5,8 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('reading page uses the new toolbar and tool panel without legacy UI',
       () {
-    final source = File('lib/page/reading_page.dart').readAsStringSync();
+    final source = [
+      File('lib/page/reading_page.dart'),
+      File('lib/widgets/reading_page/reading_chrome.dart'),
+    ].map((file) => file.readAsStringSync()).join('\n');
 
+    expect(source, contains('ReadingChrome('));
     expect(source, contains('ReadingToolbar('));
     expect(source, contains('ReadingToolPanel('));
     expect(source, contains('kind: ReadingToolPanelKind.notes'));

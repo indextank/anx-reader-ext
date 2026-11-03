@@ -1,10 +1,19 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
+import 'package:anx_reader/enums/bgimg_alignment.dart';
+import 'package:anx_reader/enums/bgimg_type.dart';
+import 'package:anx_reader/models/bgimg.dart';
 import 'package:anx_reader/models/read_theme.dart';
+import 'package:anx_reader/providers/bgimg.dart';
 import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
+import 'package:anx_reader/widgets/reading_page/widgets/bgimg_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../design_system/design_system_test_utils.dart';
 
@@ -273,6 +282,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final size in <Size>[
+    const Size(320, 640),
+    const Size(640, 360),
+    const Size(800, 1200),
+  ]) {
+    testWidgets(
+        'real background selector enters and returns without overflow at '
+        '${size.width}x${size.height}', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await Prefs().initPrefs();
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final kind = ValueNotifier(ReadingToolPanelKind.style);
+      addTearDown(kind.dispose);
+
+      final container = ProviderContainer(
+        overrides: [bgimgProvider.overrideWith(_EmptyBgimg.new)],
+      );
+      addTearDown(container.dispose);
+
+      await pumpDesignSystem(
+        tester,
+        UncontrolledProviderScope(
+          container: container,
+          child: Column(
+            children: [
+              const Spacer(),
+              _host(
+                kind: kind,
+                styleBuilder: (context, themes, setCurrentPage) => AppButton(
+                  label: 'Background',
+                  onPressed: () => setCurrentPage(const BgimgSelector()),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Background'));
+      await tester.pump();
+
+      expect(find.byType(BgimgSelector), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      final panelRect = tester.getRect(find.byType(BottomSheet));
+      final listRect = tester.getRect(
+        find.descendant(
+          of: find.byType(BgimgSelector),
+          matching: find.byType(ListView),
+        ),
+      );
+      expect(
+        panelRect.height,
+        lessThanOrEqualTo(math.min(size.height * 0.7, 600.0) + 1),
+      );
+      expect(listRect.bottom, lessThanOrEqualTo(panelRect.bottom + 1));
+      expect(listRect.height, lessThanOrEqualTo(panelRect.height));
+
+      final backTooltip = MaterialLocalizations.of(
+        tester.element(find.byType(ReadingToolPanel)),
+      ).backButtonTooltip;
+      await tester.tap(find.byTooltip(backTooltip));
+      await tester.pump();
+
+      expect(find.text('Background'), findsOneWidget);
+      expect(find.byType(BgimgSelector), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final size in <Size>[const Size(320, 640), const Size(1200, 800)]) {
     testWidgets(
         'long scrolling content stays bounded at ${size.width}x${size.height}',
@@ -332,4 +412,15 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+}
+
+class _EmptyBgimg extends Bgimg {
+  @override
+  List<BgimgModel> build() => const [
+        BgimgModel(
+          type: BgimgType.none,
+          path: 'none',
+          alignment: BgimgAlignment.center,
+        ),
+      ];
 }

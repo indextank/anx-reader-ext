@@ -477,8 +477,7 @@ class _BgimgSelectorState extends ConsumerState<BgimgSelector> {
       child: Column(
         children: [
           _buildBgimgFitSelector(context),
-          SizedBox(
-            height: MediaQuery.of(context).size.height * 0.5,
+          Expanded(
             child: ListView.builder(
               itemCount: bgimgList.length + 1,
               itemBuilder: (context, index) {

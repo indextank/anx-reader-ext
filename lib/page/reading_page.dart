@@ -27,6 +27,7 @@ import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/ai/ai_stream.dart';
 import 'package:anx_reader/widgets/reading_page/notes_widget.dart';
 import 'package:anx_reader/models/reading_time.dart';
+import 'package:anx_reader/widgets/reading_page/reading_chrome.dart';
 import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
 import 'package:anx_reader/widgets/reading_page/reading_toolbar.dart';
 import 'package:anx_reader/widgets/reading_page/tts_fab.dart';
@@ -117,12 +118,14 @@ class ReadingChapterCopyButton extends StatelessWidget {
 class ReadingPageState extends ConsumerState<ReadingPage>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey<ReadingChromeState> _readingChromeKey =
+      GlobalKey<ReadingChromeState>();
   late Book _book;
-  ReadingToolPanelKind _toolPanelKind = ReadingToolPanelKind.none;
   final Stopwatch _readTimeWatch = Stopwatch();
   DateTime? _sessionStart;
   Timer? _awakeTimer;
-  bool bottomBarOffstage = true;
+  bool get bottomBarOffstage =>
+      _readingChromeKey.currentState?.bottomBarOffstage ?? true;
   late String heroTag;
   Widget? _aiChat;
   final aiChatKey = GlobalKey<AiChatStreamState>();
@@ -407,22 +410,11 @@ class ReadingPageState extends ConsumerState<ReadingPage>
   }
 
   void showBottomBar() {
-    setState(() {
-      showStatusBarWithoutResize();
-      bottomBarOffstage = false;
-      _releaseReaderFocus();
-    });
+    _readingChromeKey.currentState?.showBottomBar();
   }
 
   void hideBottomBar() {
-    setState(() {
-      _toolPanelKind = ReadingToolPanelKind.none;
-      bottomBarOffstage = true;
-      if (Prefs().hideStatusBar) {
-        hideStatusBar();
-      }
-      requestReaderFocus();
-    });
+    _readingChromeKey.currentState?.hideBottomBar();
   }
 
   void showOrHideAppBarAndBottomBar(bool show) {
@@ -439,7 +431,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
   }
 
   void _showToolPanel({required ReadingToolPanelKind kind}) {
-    setState(() => _toolPanelKind = kind);
+    _readingChromeKey.currentState?.showToolPanel(kind);
   }
 
   void noteHandler() => _showToolPanel(kind: ReadingToolPanelKind.notes);
@@ -762,100 +754,84 @@ class ReadingPageState extends ConsumerState<ReadingPage>
       },
       child: const Icon(Icons.auto_awesome),
     );
-    Offstage controller = Offstage(
-      offstage: bottomBarOffstage,
-      child: PointerInterceptor(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                  onTap: () {
-                    showOrHideAppBarAndBottomBar(false);
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragUpdate: (details) {},
-                  onVerticalDragEnd: (details) {},
-                  child: Container(
-                    color: AppReadingTokens.scrim(context),
-                  )),
-            ),
-            Column(
-              children: [
-                ReadingToolbar(
-                  title: _book.title,
-                  onBack: () {
-                    // close reading page
-                    Navigator.pop(context);
-                  },
-                  onToc: tocHandler,
-                  actions: [
-                    AppIconButton(
-                      tooltip: L10n.of(context).navBarNotes,
-                      onPressed: noteHandler,
-                      child: const Icon(EvaIcons.edit),
-                    ),
-                    AppIconButton(
-                      tooltip: L10n.of(context).readingPageStyle,
-                      onPressed: styleHandler,
-                      child: const Icon(Icons.color_lens),
-                    ),
-                    AppIconButton(
-                      tooltip: L10n.of(context).ttsNarrator,
-                      onPressed: ttsHandler,
-                      child: const Icon(EvaIcons.headphones),
-                    ),
-                    if (EnvVar.enableAIFeature) aiButton,
-                    ReadingChapterCopyButton(
-                      contentLoader: () async =>
-                          epubPlayerKey.currentState?.theChapterContent(),
-                    ),
-                    AppIconButton(
-                        tooltip: L10n.of(context).readingPageBookmark,
-                        onPressed: () {
-                          if (bookmarkExists) {
-                            epubPlayerKey.currentState!.removeAnnotation(
-                              epubPlayerKey.currentState!.bookmarkCfi,
-                            );
-                          } else {
-                            epubPlayerKey.currentState!.addBookmarkHere();
-                          }
-                        },
-                        child: bookmarkExists
-                            ? const Icon(Icons.bookmark)
-                            : const Icon(Icons.bookmark_border)),
-                    AppIconButton(
-                      tooltip: L10n.of(context).readingPageBookDetails,
-                      child: const Icon(EvaIcons.more_vertical),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          CupertinoPageRoute(
-                            builder: (context) => BookDetail(book: widget.book),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+    ReadingChrome controller = ReadingChrome(
+      key: _readingChromeKey,
+      toolbar: ReadingToolbar(
+        title: _book.title,
+        onBack: () {
+          // close reading page
+          Navigator.pop(context);
+        },
+        onToc: tocHandler,
+        actions: [
+          AppIconButton(
+            tooltip: L10n.of(context).navBarNotes,
+            onPressed: noteHandler,
+            child: const Icon(EvaIcons.edit),
+          ),
+          AppIconButton(
+            tooltip: L10n.of(context).readingPageStyle,
+            onPressed: styleHandler,
+            child: const Icon(Icons.color_lens),
+          ),
+          AppIconButton(
+            tooltip: L10n.of(context).ttsNarrator,
+            onPressed: ttsHandler,
+            child: const Icon(EvaIcons.headphones),
+          ),
+          if (EnvVar.enableAIFeature) aiButton,
+          ReadingChapterCopyButton(
+            contentLoader: () async =>
+                epubPlayerKey.currentState?.theChapterContent(),
+          ),
+          AppIconButton(
+              tooltip: L10n.of(context).readingPageBookmark,
+              onPressed: () {
+                if (bookmarkExists) {
+                  epubPlayerKey.currentState!.removeAnnotation(
+                    epubPlayerKey.currentState!.bookmarkCfi,
+                  );
+                } else {
+                  epubPlayerKey.currentState!.addBookmarkHere();
+                }
+              },
+              child: bookmarkExists
+                  ? const Icon(Icons.bookmark)
+                  : const Icon(Icons.bookmark_border)),
+          AppIconButton(
+            tooltip: L10n.of(context).readingPageBookDetails,
+            child: const Icon(EvaIcons.more_vertical),
+            onPressed: () {
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => BookDetail(book: widget.book),
                 ),
-                const Spacer(),
-                ReadingToolPanel(
-                  kind: _toolPanelKind,
-                  notesBuilder: (_) => ReadingNotes(book: _book),
-                  ttsBuilder: (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
-                  styleThemesLoader: themeDao.selectThemes,
-                  styleBuilder: (context, themes, setCurrentPage) =>
-                      StyleWidget(
-                    themes: themes,
-                    epubPlayerKey: epubPlayerKey,
-                    setCurrentPage: setCurrentPage,
-                    hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+              );
+            },
+          ),
+        ],
       ),
+      onShow: () {
+        showStatusBarWithoutResize();
+        _releaseReaderFocus();
+      },
+      onHide: () {
+        if (Prefs().hideStatusBar) {
+          hideStatusBar();
+        }
+        requestReaderFocus();
+      },
+      notesBuilder: (_) => ReadingNotes(book: _book),
+      ttsBuilder: (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
+      styleThemesLoader: themeDao.selectThemes,
+      styleBuilder: (context, themes, setCurrentPage) => StyleWidget(
+        themes: themes,
+        epubPlayerKey: epubPlayerKey,
+        setCurrentPage: setCurrentPage,
+        hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
+      ),
+      ttsFab: const TtsFab(),
     );
 
     return Scaffold(
@@ -1026,20 +1002,6 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     ],
                   ),
                   controller,
-                  // TTS floating action button: always in the tree when toolbar
-                  // is hidden; TtsFab handles its own show/hide internally so
-                  // its State (expanded flag) is never destroyed mid-session.
-                  if (bottomBarOffstage)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: AppSafeArea(
-                        top: false,
-                        avoidViewInsets: false,
-                        minimum: AppReadingTokens.ttsFabSafePadding,
-                        child: const TtsFab(),
-                      ),
-                    ),
                 ],
               ),
             ),
