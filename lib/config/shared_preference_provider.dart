@@ -1699,17 +1699,21 @@ class Prefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> Function(String key, String value)? _panelPositionWriter;
+
+  @visibleForTesting
+  set panelPositionWriterForTesting(
+    Future<bool> Function(String key, String value)? writer,
+  ) {
+    _panelPositionWriter = writer;
+  }
+
   AiPanelPositionEnum get notesPanelPosition {
     return readPanelPosition(() => prefs.getString('notesPanelPosition'));
   }
 
   set notesPanelPosition(AiPanelPositionEnum position) {
-    unawaited(() async {
-      await writePanelPosition(
-        () => prefs.setString('notesPanelPosition', position.code),
-      );
-      notifyListeners();
-    }());
+    unawaited(_savePanelPosition('notesPanelPosition', position));
   }
 
   AiPanelPositionEnum get stylePanelPosition {
@@ -1717,12 +1721,20 @@ class Prefs extends ChangeNotifier {
   }
 
   set stylePanelPosition(AiPanelPositionEnum position) {
-    unawaited(() async {
-      await writePanelPosition(
-        () => prefs.setString('stylePanelPosition', position.code),
-      );
-      notifyListeners();
-    }());
+    unawaited(_savePanelPosition('stylePanelPosition', position));
+  }
+
+  Future<void> _savePanelPosition(
+    String key,
+    AiPanelPositionEnum position,
+  ) async {
+    final writer = _panelPositionWriter;
+    await writePanelPosition(
+      () => writer == null
+          ? prefs.setString(key, position.code)
+          : writer(key, position.code),
+    );
+    notifyListeners();
   }
 
   CodeHighlightThemeEnum get codeHighlightTheme {

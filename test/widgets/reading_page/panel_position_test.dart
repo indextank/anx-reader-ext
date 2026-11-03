@@ -96,7 +96,7 @@ void main() {
       expect(ai.popupTool, isNull);
     });
 
-    test('close is selective and reopening as popup clears side identity', () {
+    test('close ignores other tools and clears the requested tool', () {
       final notes = const ReadingPanelActivity().open(
         ReadingPanelTool.notes,
         presentation: ReadingPanelPresentation.side,
@@ -107,10 +107,24 @@ void main() {
       expect(afterOtherClose.sidePanelTool, ReadingPanelTool.notes);
       expect(afterOtherClose.popupTool, isNull);
 
-      final reopened = afterOtherClose.close(ReadingPanelTool.notes).open(
-            ReadingPanelTool.notes,
-            presentation: ReadingPanelPresentation.popup,
-          );
+      final closed = afterOtherClose.close(ReadingPanelTool.notes);
+
+      expect(closed.activeTool, isNull);
+      expect(closed.sidePanelTool, isNull);
+      expect(closed.popupTool, isNull);
+    });
+
+    test('open switches directly from side to popup and clears old identity',
+        () {
+      final notes = const ReadingPanelActivity().open(
+        ReadingPanelTool.notes,
+        presentation: ReadingPanelPresentation.side,
+      );
+
+      final reopened = notes.open(
+        ReadingPanelTool.notes,
+        presentation: ReadingPanelPresentation.popup,
+      );
 
       expect(reopened.activeTool, ReadingPanelTool.notes);
       expect(reopened.sidePanelTool, isNull);
