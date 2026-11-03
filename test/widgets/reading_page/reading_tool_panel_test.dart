@@ -92,13 +92,13 @@ void main() {
     final kind = ValueNotifier(ReadingToolPanelKind.style);
     addTearDown(kind.dispose);
     var attempts = 0;
+    final requests = <Completer<List<ReadTheme>>>[];
 
-    Future<List<ReadTheme>> loadThemes() async {
+    Future<List<ReadTheme>> loadThemes() {
       attempts++;
-      if (attempts == 1) {
-        throw StateError('private database detail');
-      }
-      return const <ReadTheme>[];
+      final request = Completer<List<ReadTheme>>();
+      requests.add(request);
+      return request.future;
     }
 
     Widget styleBuilder(
@@ -128,6 +128,8 @@ void main() {
     );
 
     await tester.pump();
+    requests.single.completeError(StateError('private database detail'));
+    await tester.pump();
 
     expect(
       find.text("Content couldn't be loaded. Try again."),
@@ -136,11 +138,9 @@ void main() {
     expect(find.textContaining('private database detail'), findsNothing);
 
     await tester.tap(find.text('Retry'));
-    for (var i = 0;
-        i < 10 && find.text('style-panel').evaluate().isEmpty;
-        i++) {
-      await tester.pump();
-    }
+    await tester.pump();
+    requests[1].complete(const <ReadTheme>[]);
+    await tester.pump();
 
     expect(attempts, 2);
     expect(find.text('style-panel'), findsOneWidget);
@@ -150,6 +150,16 @@ void main() {
 
     expect(find.text('background-panel'), findsOneWidget);
     expect(find.text('style-panel'), findsNothing);
+
+    final backTooltip = MaterialLocalizations.of(
+      tester.element(find.byType(ReadingToolPanel)),
+    ).backButtonTooltip;
+    await tester.tap(find.byTooltip(backTooltip));
+    await tester.pump();
+
+    expect(find.text('style-panel'), findsOneWidget);
+    expect(find.text('background-panel'), findsNothing);
+    expect(attempts, 2);
   });
 
   testWidgets('stale style future does not replace the notes panel',
@@ -179,4 +189,147 @@ void main() {
     expect(find.text('style-panel'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('late success from an earlier style request cannot replace B',
+      (tester) async {
+    final kind = ValueNotifier(ReadingToolPanelKind.style);
+    addTearDown(kind.dispose);
+    final requestA = Completer<List<ReadTheme>>();
+    final requestB = Completer<List<ReadTheme>>();
+    final requests = <Completer<List<ReadTheme>>>[requestA, requestB];
+    var attempts = 0;
+
+    await pumpDesignSystem(
+      tester,
+      _host(
+        kind: kind,
+        notesBuilder: (context) => const Text('notes-panel'),
+        styleThemesLoader: () => requests[attempts++].future,
+        styleBuilder: (context, themes, setCurrentPage) =>
+            Text(themes.isEmpty ? 'style-B' : 'style-A'),
+      ),
+    );
+
+    kind.value = ReadingToolPanelKind.notes;
+    await tester.pump();
+    kind.value = ReadingToolPanelKind.style;
+    await tester.pump();
+
+    requestB.complete(const <ReadTheme>[]);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('style-B'), findsOneWidget);
+
+    requestA.complete(<ReadTheme>[
+      ReadTheme(
+        backgroundColor: 'FF000000',
+        textColor: 'FFFFFFFF',
+        backgroundImagePath: '',
+      ),
+    ]);
+    await tester.pump();
+
+    expect(find.text('style-B'), findsOneWidget);
+    expect(find.text('style-A'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('late failure from an earlier style request cannot replace B',
+      (tester) async {
+    final kind = ValueNotifier(ReadingToolPanelKind.style);
+    addTearDown(kind.dispose);
+    final requestA = Completer<List<ReadTheme>>();
+    final requestB = Completer<List<ReadTheme>>();
+    final requests = <Completer<List<ReadTheme>>>[requestA, requestB];
+    var attempts = 0;
+
+    await pumpDesignSystem(
+      tester,
+      _host(
+        kind: kind,
+        notesBuilder: (context) => const Text('notes-panel'),
+        styleThemesLoader: () => requests[attempts++].future,
+        styleBuilder: (context, themes, setCurrentPage) =>
+            const Text('style-B'),
+      ),
+    );
+
+    kind.value = ReadingToolPanelKind.notes;
+    await tester.pump();
+    kind.value = ReadingToolPanelKind.style;
+    await tester.pump();
+
+    requestB.complete(const <ReadTheme>[]);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('style-B'), findsOneWidget);
+
+    requestA.completeError(StateError('stale private failure'));
+    await tester.pump();
+
+    expect(find.text('style-B'), findsOneWidget);
+    expect(find.byType(AppErrorState), findsNothing);
+    expect(find.textContaining('stale private failure'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in <Size>[const Size(320, 640), const Size(1200, 800)]) {
+    testWidgets(
+        'long scrolling content stays bounded at ${size.width}x${size.height}',
+        (tester) async {
+      final view = tester.view;
+      view.physicalSize = size;
+      view.devicePixelRatio = 1.0;
+      addTearDown(view.reset);
+      final kind = ValueNotifier(ReadingToolPanelKind.style);
+      addTearDown(kind.dispose);
+
+      await pumpDesignSystem(
+        tester,
+        Column(
+          children: [
+            const Spacer(),
+            _host(
+              kind: kind,
+              styleBuilder: (context, themes, setCurrentPage) =>
+                  SingleChildScrollView(
+                child: Column(
+                  children: List.generate(
+                    80,
+                    (index) => SizedBox(
+                      height: 24,
+                      child: Text('long-style-row-$index'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      final scrollable = find.byType(Scrollable);
+      expect(scrollable, findsOneWidget);
+      final viewportHeight = tester.getSize(scrollable).height;
+      expect(viewportHeight, lessThan(size.height));
+      expect(
+        tester.getSize(find.byType(BottomSheet)).height,
+        lessThanOrEqualTo(size.height),
+      );
+      expect(
+        tester
+            .widget<Scrollable>(scrollable)
+            .controller!
+            .position
+            .maxScrollExtent,
+        greaterThan(0),
+      );
+
+      await tester.drag(scrollable, const Offset(0, -200));
+      await tester.pump();
+      expect(find.text('long-style-row-79'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
