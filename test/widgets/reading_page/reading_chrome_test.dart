@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
+import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/read_theme.dart';
 import 'package:anx_reader/widgets/reading_page/panel_position.dart';
 import 'package:anx_reader/widgets/reading_page/reading_chrome.dart';
@@ -161,9 +162,17 @@ class _CoordinatorHarness extends StatefulWidget {
 class _CoordinatorHarnessState extends State<_CoordinatorHarness> {
   final coordinatorKey = GlobalKey<ReadingPanelCoordinatorState>();
   final chromeKey = GlobalKey<ReadingChromeState>();
+  final readerFocusNode = FocusNode(debugLabel: 'coordinator-test-reader');
   var aiPosition = AiPanelPositionEnum.right;
   var notesPosition = AiPanelPositionEnum.popup;
   var stylePosition = AiPanelPositionEnum.popup;
+  var notesContentCalls = 0;
+
+  @override
+  void dispose() {
+    readerFocusNode.dispose();
+    super.dispose();
+  }
 
   void setNotesPosition(AiPanelPositionEnum value) {
     setState(() => notesPosition = value);
@@ -203,7 +212,10 @@ class _CoordinatorHarnessState extends State<_CoordinatorHarness> {
     return ReadingPanelCoordinator(
       key: coordinatorKey,
       chromeKey: chromeKey,
-      reader: const Text('reader-content'),
+      reader: Focus(
+        focusNode: readerFocusNode,
+        child: const Text('reader-content'),
+      ),
       toolbar: ReadingToolbar(
         title: 'Book',
         onBack: () {},
@@ -234,10 +246,18 @@ class _CoordinatorHarnessState extends State<_CoordinatorHarness> {
           ),
         ],
       ),
-      onShow: () {},
-      onHide: () {},
+      onShow: readerFocusNode.unfocus,
+      onHide: readerFocusNode.requestFocus,
       aiBuilder: (_) => const Text('ai-panel'),
-      notesBuilder: (_) => const Text('notes-panel'),
+      notesBuilder: (_) => Column(
+        children: [
+          const Text('notes-panel'),
+          AppButton(
+            label: 'notes-content-action',
+            onPressed: () => notesContentCalls++,
+          ),
+        ],
+      ),
       ttsBuilder: (_) => const Text('tts-panel'),
       styleThemesLoader: widget.styleThemesLoader,
       styleBuilder: widget.styleBuilder,
@@ -280,6 +300,27 @@ Future<_CoordinatorHarnessState> _pumpCoordinator(
 Future<void> _tapCoordinatorTool(WidgetTester tester, String tooltip) async {
   await tester.tap(find.byTooltip(tooltip));
   await tester.pump();
+}
+
+Future<void> _openCoordinatorTool(
+  WidgetTester tester,
+  _CoordinatorHarnessState harness,
+  String tooltip,
+) async {
+  if (harness.chromeKey.currentState!.bottomBarOffstage) {
+    harness.chromeKey.currentState!.showBottomBar();
+    await tester.pump();
+  }
+  await _tapCoordinatorTool(tester, tooltip);
+}
+
+Offstage _coordinatorChromeOffstage(WidgetTester tester) {
+  return tester.widget<Offstage>(
+    find.descendant(
+      of: find.byType(ReadingChrome),
+      matching: find.byType(Offstage),
+    ),
+  );
 }
 
 void main() {
@@ -480,7 +521,7 @@ void main() {
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
       expect(find.text('notes-panel'), findsOneWidget);
 
-      await _tapCoordinatorTool(tester, 'AI');
+      await _openCoordinatorTool(tester, harness, 'AI');
       expect(
           harness.coordinatorKey.currentState!.activeTool, ReadingPanelTool.ai);
       expect(find.text('ai-panel'), findsOneWidget);
@@ -507,6 +548,97 @@ void main() {
       expect(find.byType(BottomSheet), findsNothing);
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
       expect(find.text('Background'), findsOneWidget);
+    });
+
+    testWidgets('right notes content and host controls are really clickable',
+        (tester) async {
+      final harness = await _pumpCoordinator(tester);
+      harness.setNotesPosition(AiPanelPositionEnum.right);
+      await tester.pump();
+      await _openCoordinatorTool(tester, harness, 'Notes');
+
+      final host = find.byType(ReadingSidePanelHost);
+      expect(host, findsOneWidget);
+      await tester.tap(find.text('notes-content-action'));
+      await tester.pump();
+      expect(harness.notesContentCalls, 1);
+      expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
+      expect(find.byKey(_ttsFabKey), findsOneWidget);
+      expect(harness.readerFocusNode.hasFocus, isTrue);
+
+      final l10n = L10n.of(tester.element(host));
+      await tester.tap(
+        find.descendant(of: host, matching: find.byTooltip(l10n.close)),
+      );
+      await tester.pump();
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+      expect(find.text('notes-panel'), findsNothing);
+      expect(find.byKey(_ttsFabKey), findsOneWidget);
+      expect(harness.readerFocusNode.hasFocus, isTrue);
+
+      await _openCoordinatorTool(tester, harness, 'Notes');
+      final reopenedHost = find.byType(ReadingSidePanelHost);
+      final reopenedL10n = L10n.of(tester.element(reopenedHost));
+      await tester.tap(
+        find.descendant(
+          of: reopenedHost,
+          matching: find.byTooltip(reopenedL10n.aiShowAtBottom),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      await tester.pump();
+
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.text('notes-panel'), findsOneWidget);
+      expect(_coordinatorChromeOffstage(tester).offstage, isFalse);
+      expect(find.byKey(_ttsFabKey), findsNothing);
+    });
+
+    testWidgets('right style content and host controls are really clickable',
+        (tester) async {
+      final harness = await _pumpCoordinator(tester);
+      harness.setStylePosition(AiPanelPositionEnum.right);
+      await tester.pump();
+      await _openCoordinatorTool(tester, harness, 'Style');
+      await tester.pump();
+
+      final host = find.byType(ReadingSidePanelHost);
+      expect(host, findsOneWidget);
+      await tester.tap(find.text('Background'));
+      await tester.pump();
+      expect(find.byKey(_themeSubpageKey), findsOneWidget);
+      expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
+
+      final l10n = L10n.of(tester.element(host));
+      await tester.tap(
+        find.descendant(of: host, matching: find.byTooltip(l10n.close)),
+      );
+      await tester.pump();
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+      expect(find.byKey(_themeSubpageKey), findsNothing);
+      expect(find.byKey(_ttsFabKey), findsOneWidget);
+      expect(harness.readerFocusNode.hasFocus, isTrue);
+
+      await _openCoordinatorTool(tester, harness, 'Style');
+      await tester.pump();
+      final reopenedHost = find.byType(ReadingSidePanelHost);
+      final reopenedL10n = L10n.of(tester.element(reopenedHost));
+      await tester.tap(
+        find.descendant(
+          of: reopenedHost,
+          matching: find.byTooltip(reopenedL10n.aiShowAtBottom),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.text('Background'), findsOneWidget);
+      expect(find.byKey(_themeSubpageKey), findsNothing);
     });
 
     testWidgets('position change clears the previous style subpage',
@@ -577,9 +709,11 @@ void main() {
       final harness = await _pumpCoordinator(tester);
       harness.chromeKey.currentState!.showBottomBar();
       await tester.pump();
-      await _tapCoordinatorTool(tester, 'AI');
+      await _openCoordinatorTool(tester, harness, 'AI');
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
       expect(find.text('ai-panel'), findsOneWidget);
+      expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
+      expect(find.byKey(_ttsFabKey), findsOneWidget);
 
       harness.setAiPosition(AiPanelPositionEnum.bottom);
       await tester.pump();
@@ -605,7 +739,7 @@ void main() {
       await _tapCoordinatorTool(tester, 'Notes');
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
 
-      await _tapCoordinatorTool(tester, 'Narrator');
+      await _openCoordinatorTool(tester, harness, 'Narrator');
 
       expect(find.byType(ReadingSidePanelHost), findsNothing);
       expect(find.byType(BottomSheet), findsOneWidget);

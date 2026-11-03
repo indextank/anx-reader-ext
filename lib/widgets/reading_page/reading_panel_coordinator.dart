@@ -140,6 +140,9 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
     final chrome = widget.chromeKey.currentState;
     if (presentation == ReadingPanelPresentation.side) {
       chrome?.closeToolPanel();
+      if (chrome != null && !chrome.bottomBarOffstage) {
+        chrome.hideBottomBar();
+      }
       return;
     }
 
