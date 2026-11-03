@@ -18,6 +18,21 @@ class AiProviderListPage extends ConsumerWidget {
     final selectedId =
         ref.watch(aiProvidersProvider.notifier).getSelectedProvider()?.id;
 
+    // 已启用的供应商排在前面（当前默认项再排最前），未启用的保持原有
+    // 相对顺序；用原下标做平级决胜保证排序稳定。
+    final indexed = providers.asMap().entries.toList()
+      ..sort((a, b) {
+        int rank(int index) {
+          final provider = providers[index];
+          if (provider.id == selectedId) return 0;
+          return provider.enabled ? 1 : 2;
+        }
+
+        final byRank = rank(a.key).compareTo(rank(b.key));
+        return byRank != 0 ? byRank : a.key.compareTo(b.key);
+      });
+    final sortedProviders = [for (final entry in indexed) entry.value];
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.settingsAiProviders),
@@ -40,9 +55,9 @@ class AiProviderListPage extends ConsumerWidget {
               )
             : ListView.builder(
                 padding: AppSpacing.vertical8,
-                itemCount: providers.length,
+                itemCount: sortedProviders.length,
                 itemBuilder: (context, index) {
-                  final provider = providers[index];
+                  final provider = sortedProviders[index];
                   return _buildProviderTile(
                     context,
                     ref,
@@ -63,6 +78,7 @@ class AiProviderListPage extends ConsumerWidget {
   ) {
     final l10n = L10n.of(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final hasActions = !isSelected || !provider.isBuiltin;
     return AppCard(
       margin: AppSpacing.symmetric(
         horizontal: AppSpacing.tokens.s8,
@@ -75,11 +91,45 @@ class AiProviderListPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 首行：logo + 名称/URL/警告（纵向紧凑排列），右侧开关。
+          // URL 与警告并入标题列，避免各占一整行导致卡片过高。
           Row(
             children: [
               _buildProviderLogo(provider),
               SizedBox(width: AppSpacing.tokens.s12),
-              Expanded(child: Text(provider.title)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(child: Text(provider.title)),
+                        if (isSelected) ...[
+                          SizedBox(width: AppSpacing.tokens.s8),
+                          Chip(label: Text(l10n.settingsAiProviderDefault)),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      provider.url,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    if (!provider.hasValidKey)
+                      Text(
+                        l10n.settingsAiProviderNoValidKeys,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.error,
+                            ),
+                      ),
+                  ],
+                ),
+              ),
               Semantics(
                 label: provider.enabled
                     ? l10n.settingsAiProviderEnabled
@@ -95,51 +145,41 @@ class AiProviderListPage extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: AppSpacing.tokens.s8),
-          Text(
-            provider.url,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-          ),
-          if (!provider.hasValidKey) ...[
+          // 操作行：仅在存在动作（未设为默认 / 可删除）时渲染，
+          // 右对齐；默认内置供应商因此只有首行，高度最紧凑。
+          if (hasActions) ...[
             SizedBox(height: AppSpacing.tokens.s4),
-            Text(
-              l10n.settingsAiProviderNoValidKeys,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.error,
-                  ),
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: AppSpacing.tokens.s8,
+                runSpacing: AppSpacing.tokens.s4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (!isSelected)
+                    AppButton(
+                      label: l10n.settingsAiProviderSetDefault,
+                      variant: AppButtonVariant.text,
+                      size: AppButtonSize.small,
+                      onPressed: () {
+                        ref
+                            .read(aiProvidersProvider.notifier)
+                            .setSelectedProvider(provider.id);
+                      },
+                    ),
+                  if (!provider.isBuiltin)
+                    AppButton(
+                      label: l10n.commonDelete,
+                      icon: Icons.delete_outline,
+                      variant: AppButtonVariant.text,
+                      size: AppButtonSize.small,
+                      onPressed: () => _deleteProvider(context, ref, provider),
+                    ),
+                ],
+              ),
             ),
           ],
-          SizedBox(height: AppSpacing.tokens.s8),
-          Wrap(
-            spacing: AppSpacing.tokens.s8,
-            runSpacing: AppSpacing.tokens.s4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (isSelected)
-                Chip(label: Text(l10n.settingsAiProviderDefault))
-              else
-                AppButton(
-                  label: l10n.settingsAiProviderSetDefault,
-                  variant: AppButtonVariant.text,
-                  size: AppButtonSize.small,
-                  onPressed: () {
-                    ref
-                        .read(aiProvidersProvider.notifier)
-                        .setSelectedProvider(provider.id);
-                  },
-                ),
-              if (!provider.isBuiltin)
-                AppButton(
-                  label: l10n.commonDelete,
-                  icon: Icons.delete_outline,
-                  variant: AppButtonVariant.text,
-                  size: AppButtonSize.small,
-                  onPressed: () => _deleteProvider(context, ref, provider),
-                ),
-            ],
-          ),
         ],
       ),
     );
