@@ -48,12 +48,16 @@ class StyleWidget extends StatefulWidget {
     required this.epubPlayerKey,
     required this.setCurrentPage,
     required this.hideAppBarAndBottomBar,
+    this.embedded = false,
+    this.themeInserter,
   });
 
   final List<ReadTheme> themes;
   final GlobalKey<EpubPlayerState> epubPlayerKey;
   final Function setCurrentPage;
   final Function hideAppBarAndBottomBar;
+  final bool embedded;
+  final Future<int> Function(ReadTheme)? themeInserter;
 
   @override
   StyleWidgetState createState() => StyleWidgetState();
@@ -67,31 +71,42 @@ class StyleWidgetState extends State<StyleWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: AppReadingTokens.panelPadding,
-      child: Column(
-        children: [
+    final content = Column(
+      children: [
+        if (!widget.embedded)
           widgetTitle(L10n.of(context).readingPageStyle, ReadingSettings.theme),
-          sliders(),
-          fontAndPageTurn(),
-          const Divider(),
-          themeSelector(),
-          if (_themeActionFailed)
-            AppInlineFeedback(
-              message: L10n.of(context).commonActionFailed,
-              onRetry: _addTheme,
-            ),
+        sliders(),
+        fontAndPageTurn(),
+        const Divider(),
+        if (widget.themes.isEmpty)
           Align(
-            alignment: Alignment.centerRight,
-            child: AppButton(
-              variant: AppButtonVariant.outlined,
-              onPressed: () => widget.setCurrentPage(const BgimgSelector()),
-              icon: Icons.arrow_forward_ios,
-              label: L10n.of(context).readingPageStyleBackground,
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: AppReadingTokens.settingsRowGap,
+              child: Text(L10n.of(context).readingThemesEmpty),
             ),
           ),
-        ],
-      ),
+        themeSelector(),
+        if (_themeActionFailed)
+          AppInlineFeedback(
+            message: L10n.of(context).commonActionFailed,
+            onRetry: _addTheme,
+          ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: AppButton(
+            variant: AppButtonVariant.outlined,
+            onPressed: () => widget.setCurrentPage(const BgimgSelector()),
+            icon: Icons.arrow_forward_ios,
+            label: L10n.of(context).readingPageStyleBackground,
+          ),
+        ),
+      ],
+    );
+    if (widget.embedded) return content;
+    return SingleChildScrollView(
+      padding: AppReadingTokens.panelPadding,
+      child: content,
     );
   }
 
@@ -328,7 +343,8 @@ class StyleWidgetState extends State<StyleWidget> {
         textColor: 'ffcccccc',
         backgroundImagePath: '',
       );
-      final id = await themeDao.insertTheme(theme);
+      final insertTheme = widget.themeInserter ?? themeDao.insertTheme;
+      final id = await insertTheme(theme);
       widget.setCurrentPage(
         ThemeChangeWidget(
           readTheme: ReadTheme(

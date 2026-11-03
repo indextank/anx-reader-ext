@@ -12,21 +12,28 @@ class ReadingNotes extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.of(context).size.height;
-    return Container(
-      padding: AppReadingTokens.panelPadding,
-      height: (height - 300).clamp(0.0, height),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          widgetTitle(L10n.of(context).navBarNotes, null),
-          Expanded(
-            child: ListView(
-              children: [BookNotesList(book: book, reading: true)],
-            ),
+    final screenHeight = MediaQuery.of(context).size.height;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : (screenHeight * 0.7).clamp(0.0, screenHeight);
+        return Container(
+          padding: AppReadingTokens.panelPadding,
+          height: height,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              widgetTitle(L10n.of(context).navBarNotes, null),
+              Expanded(
+                child: ListView(
+                  children: [BookNotesList(book: book, reading: true)],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

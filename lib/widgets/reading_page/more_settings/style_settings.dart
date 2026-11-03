@@ -9,6 +9,7 @@ import 'package:anx_reader/models/book_style.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/widgets/icon_and_text.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/custom_css_editor.dart';
+import 'package:anx_reader/widgets/settings/single_row_setting_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
 
@@ -285,37 +286,35 @@ class _StyleSettingsState extends State<StyleSettings> {
       ];
 
       return StatefulBuilder(
-        builder: (context, setState) => Row(
-          children: [
-            Icon(Icons.format_align_left,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(width: 12),
-            Text(L10n.of(context).textAlignment),
-            const Spacer(),
-            DropdownMenu<TextAlignmentEnum>(
-              width: 140,
-              initialSelection: Prefs().textAlignment,
-              inputDecorationTheme: InputDecorationTheme(
-                isDense: false,
-                border: InputBorder.none,
-              ),
-              dropdownMenuEntries: items.map((item) {
-                return DropdownMenuEntry<TextAlignmentEnum>(
-                  value: item["value"] as TextAlignmentEnum,
-                  label: item["text"] as String,
-                  leadingIcon: Icon(item["icon"] as IconData),
-                );
-              }).toList(),
-              onSelected: (value) {
-                if (value != null) {
-                  setState(() {
-                    Prefs().textAlignment = value;
-                    epubPlayerKey.currentState?.changeStyle(Prefs().bookStyle);
-                  });
-                }
-              },
+        builder: (context, setState) => SingleRowSettingTile(
+          title: L10n.of(context).textAlignment,
+          leading: Icon(
+            Icons.format_align_left,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          trailing: DropdownMenu<TextAlignmentEnum>(
+            width: 140,
+            initialSelection: Prefs().textAlignment,
+            inputDecorationTheme: InputDecorationTheme(
+              isDense: false,
+              border: InputBorder.none,
             ),
-          ],
+            dropdownMenuEntries: items.map((item) {
+              return DropdownMenuEntry<TextAlignmentEnum>(
+                value: item["value"] as TextAlignmentEnum,
+                label: item["text"] as String,
+                leadingIcon: Icon(item["icon"] as IconData),
+              );
+            }).toList(),
+            onSelected: (value) {
+              if (value != null) {
+                setState(() {
+                  Prefs().textAlignment = value;
+                  epubPlayerKey.currentState?.changeStyle(Prefs().bookStyle);
+                });
+              }
+            },
+          ),
         ),
       );
     }

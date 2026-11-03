@@ -26,6 +26,7 @@ import 'package:anx_reader/utils/ui/status_bar.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_session.dart';
 import 'package:anx_reader/widgets/ai/ai_stream.dart';
+import 'package:anx_reader/widgets/reading_page/combined_style_settings.dart';
 import 'package:anx_reader/widgets/reading_page/notes_widget.dart';
 import 'package:anx_reader/models/reading_time.dart';
 import 'package:anx_reader/widgets/reading_page/panel_position.dart';
@@ -35,7 +36,6 @@ import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
 import 'package:anx_reader/widgets/reading_page/reading_toolbar.dart';
 import 'package:anx_reader/widgets/reading_page/tts_fab.dart';
 import 'package:anx_reader/widgets/reading_page/tts_widget.dart';
-import 'package:anx_reader/widgets/reading_page/style_widget.dart';
 import 'package:anx_reader/widgets/reading_page/toc_widget.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -934,7 +934,8 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
                 styleThemesLoader:
                     widget.styleThemesLoader ?? themeDao.selectThemes,
-                styleBuilder: (context, themes, setCurrentPage) => StyleWidget(
+                styleBuilder: (context, themes, setCurrentPage) =>
+                    CombinedStyleSettings(
                   themes: themes,
                   epubPlayerKey: epubPlayerKey,
                   setCurrentPage: setCurrentPage,

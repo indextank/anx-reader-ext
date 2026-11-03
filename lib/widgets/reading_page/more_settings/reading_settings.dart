@@ -636,6 +636,16 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
             (value) => Prefs().stylePanelPosition = value,
           ),
           const Divider(height: 15),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: AppReadingTokens.settingsRowGap,
+              child: Text(
+                L10n.of(context).readingPageReadingInfo,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ),
           readingInfo(),
           // const Divider(height: 8),
           // bionicReading(),

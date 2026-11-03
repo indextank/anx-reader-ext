@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/enums/ai_chat_display_mode.dart';
@@ -13,7 +14,9 @@ import 'package:anx_reader/providers/ai_chat.dart';
 import 'package:anx_reader/service/ai/ai_history.dart';
 import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/theme/app_theme.dart';
+import 'package:anx_reader/utils/get_path/get_base_path.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
+import 'package:anx_reader/widgets/reading_page/combined_style_settings.dart';
 import 'package:anx_reader/widgets/reading_page/reading_panel_coordinator.dart';
 import 'package:anx_reader/widgets/reading_page/reading_side_panel_host.dart';
 import 'package:audio_service/audio_service.dart';
@@ -197,6 +200,28 @@ Future<void> _openProductionAi(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('production ReadingPage uses the combined style settings',
+      (tester) async {
+    final previousDocumentPath = documentPath;
+    final tempDir = Directory.systemTemp.createTempSync('anx-combined-page-');
+    documentPath = tempDir.path;
+    getFontDir().createSync();
+    addTearDown(() {
+      documentPath = previousDocumentPath;
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final harness = await _pumpReadingPage(tester);
+    final l10n = L10n.of(tester.element(find.byType(ReadingPage)));
+
+    await _openProductionTool(tester, harness, l10n.readingPageStyle);
+    await tester.pump();
+
+    expect(find.byType(CombinedStyleSettings), findsOneWidget);
+    expect(find.byType(TabBar), findsNothing);
+    expect(find.byTooltip(l10n.navBarSettings), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('production ReadingPage applies an async position success',
       (tester) async {

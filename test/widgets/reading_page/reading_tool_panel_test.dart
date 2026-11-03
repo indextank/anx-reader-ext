@@ -110,6 +110,112 @@ void main() {
     expect(find.byType(BottomSheet), findsNothing);
   });
 
+  testWidgets('side style retries and enters a secondary page without a sheet',
+      (tester) async {
+    final kind = ValueNotifier(ReadingToolPanelKind.style);
+    addTearDown(kind.dispose);
+    var attempts = 0;
+
+    await pumpDesignSystem(
+      tester,
+      SizedBox(
+        width: 300,
+        height: 800,
+        child: _host(
+          kind: kind,
+          sideContent: true,
+          styleThemesLoader: () async {
+            attempts++;
+            if (attempts == 1) throw StateError('private theme failure');
+            return const <ReadTheme>[];
+          },
+          styleBuilder: (context, themes, setCurrentPage) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(themes.isEmpty ? 'side-empty-themes' : 'side-themes'),
+              AppButton(
+                label: 'Background',
+                onPressed: () => setCurrentPage(const Text('side-background')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(AppErrorState), findsOneWidget);
+    expect(find.textContaining('private theme failure'), findsNothing);
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(attempts, 2);
+    expect(find.text('side-empty-themes'), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    await tester.tap(find.text('Background'));
+    await tester.pump();
+    expect(find.text('side-background'), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+
+    final backTooltip = MaterialLocalizations.of(
+      tester.element(find.byType(ReadingToolPanel)),
+    ).backButtonTooltip;
+    await tester.tap(find.byTooltip(backTooltip));
+    await tester.pump();
+    expect(find.text('side-empty-themes'), findsOneWidget);
+    expect(find.text('side-background'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('side style ignores stale requests after changing presentation',
+      (tester) async {
+    final kind = ValueNotifier(ReadingToolPanelKind.style);
+    addTearDown(kind.dispose);
+    final requestA = Completer<List<ReadTheme>>();
+    final requestB = Completer<List<ReadTheme>>();
+    final requests = <Completer<List<ReadTheme>>>[requestA, requestB];
+    var attempts = 0;
+
+    await pumpDesignSystem(
+      tester,
+      _host(
+        kind: kind,
+        sideContent: true,
+        styleThemesLoader: () => requests[attempts++].future,
+        styleBuilder: (context, themes, setCurrentPage) =>
+            Text(themes.isEmpty ? 'side-B' : 'side-A'),
+      ),
+    );
+    await tester.pump();
+
+    await pumpDesignSystem(
+      tester,
+      _host(
+        kind: kind,
+        styleThemesLoader: () => requests[attempts++].future,
+        styleBuilder: (context, themes, setCurrentPage) =>
+            Text(themes.isEmpty ? 'popup-B' : 'popup-A'),
+      ),
+    );
+    await tester.pump();
+    requestB.complete(const <ReadTheme>[]);
+    await tester.pump();
+    expect(find.text('popup-B'), findsOneWidget);
+
+    requestA.complete(<ReadTheme>[
+      ReadTheme(
+        backgroundColor: 'FF000000',
+        textColor: 'FFFFFFFF',
+        backgroundImagePath: '',
+      ),
+    ]);
+    await tester.pump();
+    expect(find.text('popup-B'), findsOneWidget);
+    expect(find.text('side-A'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('host replaces notes with tts and clears on none',
       (tester) async {
     final kind = ValueNotifier(ReadingToolPanelKind.notes);
