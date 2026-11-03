@@ -58,6 +58,13 @@ const Set<String> _prefsImportSkipKeys = {
   'iapLastCheckTime',
 };
 
+class _PanelPositionState {
+  AiPanelPositionEnum? runtimeValue;
+  int generation = 0;
+  bool writePending = false;
+  Future<void> writeQueue = Future<void>.value();
+}
+
 class Prefs extends ChangeNotifier {
   late SharedPreferences prefs;
   static final Prefs _instance = Prefs._internal();
@@ -79,6 +86,7 @@ class Prefs extends ChangeNotifier {
 
   Future<void> initPrefs() async {
     prefs = await SharedPreferences.getInstance();
+    _panelPositionStates.clear();
     saveBeginDate();
     notifyListeners();
   }
@@ -1690,8 +1698,12 @@ class Prefs extends ChangeNotifier {
   }
 
   AiPanelPositionEnum get aiPanelPosition {
-    return AiPanelPositionEnum.fromCode(
-        prefs.getString('aiPanelPosition') ?? 'right');
+    final position = AiPanelPositionEnum.fromCode(
+      prefs.getString('aiPanelPosition'),
+    );
+    return position == AiPanelPositionEnum.bottom
+        ? AiPanelPositionEnum.bottom
+        : AiPanelPositionEnum.right;
   }
 
   set aiPanelPosition(AiPanelPositionEnum position) {
@@ -1700,6 +1712,8 @@ class Prefs extends ChangeNotifier {
   }
 
   Future<bool> Function(String key, String value)? _panelPositionWriter;
+  final Map<String, _PanelPositionState> _panelPositionStates =
+      <String, _PanelPositionState>{};
 
   @visibleForTesting
   set panelPositionWriterForTesting(
@@ -1709,7 +1723,7 @@ class Prefs extends ChangeNotifier {
   }
 
   AiPanelPositionEnum get notesPanelPosition {
-    return readPanelPosition(() => prefs.getString('notesPanelPosition'));
+    return _readStoredPanelPosition('notesPanelPosition');
   }
 
   set notesPanelPosition(AiPanelPositionEnum position) {
@@ -1717,24 +1731,49 @@ class Prefs extends ChangeNotifier {
   }
 
   AiPanelPositionEnum get stylePanelPosition {
-    return readPanelPosition(() => prefs.getString('stylePanelPosition'));
+    return _readStoredPanelPosition('stylePanelPosition');
   }
 
   set stylePanelPosition(AiPanelPositionEnum position) {
     unawaited(_savePanelPosition('stylePanelPosition', position));
   }
 
+  AiPanelPositionEnum _readStoredPanelPosition(String key) {
+    final state = _panelPositionStates[key];
+    if (state != null && state.writePending) {
+      return state.runtimeValue ?? AiPanelPositionEnum.popup;
+    }
+    return state?.runtimeValue ?? readPanelPosition(() => prefs.getString(key));
+  }
+
   Future<void> _savePanelPosition(
     String key,
     AiPanelPositionEnum position,
-  ) async {
-    final writer = _panelPositionWriter;
-    await writePanelPosition(
-      () => writer == null
-          ? prefs.setString(key, position.code)
-          : writer(key, position.code),
+  ) {
+    final state = _panelPositionStates.putIfAbsent(
+      key,
+      _PanelPositionState.new,
     );
-    notifyListeners();
+    state.runtimeValue ??= readPanelPosition(() => prefs.getString(key));
+    final generation = ++state.generation;
+    state.writePending = true;
+
+    final previousWrite = state.writeQueue;
+    final currentWrite = previousWrite.then((_) async {
+      final writer = _panelPositionWriter;
+      final succeeded = await writePanelPosition(
+        () => writer == null
+            ? prefs.setString(key, position.code)
+            : writer(key, position.code),
+      );
+      if (generation != state.generation) return;
+
+      state.runtimeValue = succeeded ? position : AiPanelPositionEnum.popup;
+      state.writePending = false;
+      notifyListeners();
+    });
+    state.writeQueue = currentWrite;
+    return currentWrite;
   }
 
   CodeHighlightThemeEnum get codeHighlightTheme {

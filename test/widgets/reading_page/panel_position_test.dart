@@ -147,6 +147,13 @@ void main() {
       );
     });
 
+    test('read rejects bottom for reading tools', () {
+      expect(
+        readPanelPosition(() => 'bottom'),
+        AiPanelPositionEnum.popup,
+      );
+    });
+
     test('write returns false when persistence returns false', () async {
       expect(await writePanelPosition(() async => false), isFalse);
     });

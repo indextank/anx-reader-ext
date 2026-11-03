@@ -6,10 +6,15 @@ enum ReadingPanelTool { ai, notes, style, tts }
 enum ReadingPanelPresentation { side, popup }
 
 class ReadingPanelActivity {
-  const ReadingPanelActivity({
-    this.activeTool,
-    this.sidePanelTool,
-    this.popupTool,
+  const ReadingPanelActivity()
+      : activeTool = null,
+        sidePanelTool = null,
+        popupTool = null;
+
+  const ReadingPanelActivity._({
+    required this.activeTool,
+    required this.sidePanelTool,
+    required this.popupTool,
   });
 
   final ReadingPanelTool? activeTool;
@@ -20,7 +25,7 @@ class ReadingPanelActivity {
     ReadingPanelTool tool, {
     required ReadingPanelPresentation presentation,
   }) {
-    return ReadingPanelActivity(
+    return ReadingPanelActivity._(
       activeTool: tool,
       sidePanelTool:
           presentation == ReadingPanelPresentation.side ? tool : null,
@@ -29,7 +34,7 @@ class ReadingPanelActivity {
   }
 
   ReadingPanelActivity close(ReadingPanelTool tool) {
-    return ReadingPanelActivity(
+    return ReadingPanelActivity._(
       activeTool: activeTool == tool ? null : activeTool,
       sidePanelTool: sidePanelTool == tool ? null : sidePanelTool,
       popupTool: popupTool == tool ? null : popupTool,
@@ -56,10 +61,14 @@ AiPanelPositionEnum readingToolPosition(
 
 AiPanelPositionEnum readPanelPosition(String? Function() read) {
   try {
-    return AiPanelPositionEnum.fromCode(
+    final position = AiPanelPositionEnum.fromCode(
       read(),
       fallback: AiPanelPositionEnum.popup,
     );
+    return position == AiPanelPositionEnum.right ||
+            position == AiPanelPositionEnum.popup
+        ? position
+        : AiPanelPositionEnum.popup;
   } catch (_) {
     return AiPanelPositionEnum.popup;
   }

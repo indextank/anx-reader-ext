@@ -51,6 +51,25 @@ void main() {
     expect(prefs.stylePanelPosition, AiPanelPositionEnum.popup);
   });
 
+  test('notes and style reject stored bottom positions', () async {
+    final prefs = await _initPrefs({
+      'notesPanelPosition': 'bottom',
+      'stylePanelPosition': 'bottom',
+    });
+
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    expect(prefs.stylePanelPosition, AiPanelPositionEnum.popup);
+  });
+
+  test('AI stored popup falls back to right while bottom remains supported',
+      () async {
+    var prefs = await _initPrefs({'aiPanelPosition': 'popup'});
+    expect(prefs.aiPanelPosition, AiPanelPositionEnum.right);
+
+    prefs = await _initPrefs({'aiPanelPosition': 'bottom'});
+    expect(prefs.aiPanelPosition, AiPanelPositionEnum.bottom);
+  });
+
   test('successful fake writes notify only after each value is persisted',
       () async {
     final prefs = await _initPrefs({});
@@ -113,6 +132,7 @@ void main() {
     addTearDown(() => prefs.removeListener(listener));
 
     prefs.notesPanelPosition = AiPanelPositionEnum.right;
+    await Future<void>.delayed(Duration.zero);
 
     expect(writtenKey, 'notesPanelPosition');
     expect(writtenValue, 'right');
@@ -147,6 +167,7 @@ void main() {
     addTearDown(() => prefs.removeListener(listener));
 
     prefs.stylePanelPosition = AiPanelPositionEnum.right;
+    await Future<void>.delayed(Duration.zero);
 
     expect(writtenKey, 'stylePanelPosition');
     expect(writtenValue, 'right');
@@ -160,5 +181,162 @@ void main() {
     expect(notifications, 1);
     expect(prefs.prefs.getString('stylePanelPosition'), isNull);
     expect(prefs.stylePanelPosition, AiPanelPositionEnum.popup);
+  });
+
+  test('rapid same-key writes serialize storage and only latest commits',
+      () async {
+    final prefs = await _initPrefs({});
+    final attempts = <String>[];
+    final persisted = <String>[];
+    final writes = <Completer<void>>[];
+    prefs.panelPositionWriterForTesting = (key, value) {
+      attempts.add(value);
+      final write = Completer<void>();
+      writes.add(write);
+      return write.future.then((_) async {
+        await prefs.prefs.setString(key, value);
+        persisted.add(value);
+        return true;
+      });
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    var notifications = 0;
+    void listener() => notifications++;
+    prefs.addListener(listener);
+    addTearDown(() => prefs.removeListener(listener));
+
+    prefs.notesPanelPosition = AiPanelPositionEnum.right;
+    prefs.notesPanelPosition = AiPanelPositionEnum.popup;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(attempts, ['right']);
+    expect(persisted, isEmpty);
+    expect(notifications, 0);
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+
+    writes[0].complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(attempts, ['right', 'popup']);
+    expect(persisted, ['right']);
+    expect(prefs.prefs.getString('notesPanelPosition'), 'right');
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    expect(notifications, 0);
+
+    writes[1].complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(persisted, ['right', 'popup']);
+    expect(prefs.prefs.getString('notesPanelPosition'), 'popup');
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    expect(notifications, 1);
+  });
+
+  test('stale failure does not commit or notify before newer success',
+      () async {
+    final prefs = await _initPrefs({'notesPanelPosition': 'right'});
+    final attempts = <String>[];
+    final persisted = <String>[];
+    final writes = <Completer<void>>[];
+    final results = [false, true];
+    prefs.panelPositionWriterForTesting = (key, value) {
+      final index = attempts.length;
+      attempts.add(value);
+      final write = Completer<void>();
+      writes.add(write);
+      return write.future.then((_) async {
+        await prefs.prefs.setString(key, value);
+        persisted.add(value);
+        return results[index];
+      });
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    var notifications = 0;
+    void listener() => notifications++;
+    prefs.addListener(listener);
+    addTearDown(() => prefs.removeListener(listener));
+
+    prefs.notesPanelPosition = AiPanelPositionEnum.popup;
+    prefs.notesPanelPosition = AiPanelPositionEnum.right;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(attempts, ['popup']);
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.right);
+    expect(notifications, 0);
+
+    writes[0].complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(attempts, ['popup', 'right']);
+    expect(persisted, ['popup']);
+    expect(prefs.prefs.getString('notesPanelPosition'), 'popup');
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.right);
+    expect(notifications, 0);
+
+    writes[1].complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(persisted, ['popup', 'right']);
+    expect(prefs.prefs.getString('notesPanelPosition'), 'right');
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.right);
+    expect(notifications, 1);
+  });
+
+  test('notes pending write ignores cache then failure resets right to popup',
+      () async {
+    final prefs = await _initPrefs({'notesPanelPosition': 'right'});
+    final write = Completer<void>();
+    prefs.panelPositionWriterForTesting = (key, value) async {
+      await prefs.prefs.setString(key, value);
+      await write.future;
+      return false;
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    var notifications = 0;
+    void listener() => notifications++;
+    prefs.addListener(listener);
+    addTearDown(() => prefs.removeListener(listener));
+
+    prefs.notesPanelPosition = AiPanelPositionEnum.popup;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(prefs.prefs.getString('notesPanelPosition'), 'popup');
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.right);
+    expect(notifications, 0);
+
+    write.complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    expect(notifications, 1);
+  });
+
+  test('style throw resets existing right to popup after cache write',
+      () async {
+    final prefs = await _initPrefs({'stylePanelPosition': 'right'});
+    final write = Completer<void>();
+    prefs.panelPositionWriterForTesting = (key, value) async {
+      await prefs.prefs.setString(key, value);
+      await write.future;
+      throw StateError('write failed');
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    var notifications = 0;
+    void listener() => notifications++;
+    prefs.addListener(listener);
+    addTearDown(() => prefs.removeListener(listener));
+
+    prefs.stylePanelPosition = AiPanelPositionEnum.right;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(prefs.prefs.getString('stylePanelPosition'), 'right');
+    expect(prefs.stylePanelPosition, AiPanelPositionEnum.right);
+    expect(notifications, 0);
+
+    write.complete();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(prefs.stylePanelPosition, AiPanelPositionEnum.popup);
+    expect(notifications, 1);
   });
 }
