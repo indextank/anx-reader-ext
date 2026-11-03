@@ -73,6 +73,9 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
   ReadingPanelActivity _activity = const ReadingPanelActivity();
   var _session = 0;
   var _transition = 0;
+  var _pendingTool = ReadingPanelTool.notes;
+  var _pendingPresentation = ReadingPanelPresentation.popup;
+  var _hideForTransition = false;
 
   ReadingPanelTool? get activeTool => _activity.activeTool;
 
@@ -107,13 +110,11 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
       return;
     }
 
-    final position = kind == ReadingToolPanelKind.none
-        ? AiPanelPositionEnum.popup
-        : readingToolPosition(
-            kind,
-            notesPosition: widget.notesPanelPosition,
-            stylePosition: widget.stylePanelPosition,
-          );
+    final position = readingToolPosition(
+      kind,
+      notesPosition: widget.notesPanelPosition,
+      stylePosition: widget.stylePanelPosition,
+    );
     _open(
       tool,
       position == AiPanelPositionEnum.right
@@ -130,9 +131,24 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
     setState(() => _activity = _activity.close(tool));
   }
 
+  void closeAuxiliaryPanels() {
+    _transition++;
+    _session++;
+    final chrome = widget.chromeKey.currentState;
+    chrome?.closeToolPanel();
+    if (chrome != null && !chrome.bottomBarOffstage) {
+      chrome.hideBottomBar();
+    }
+    if (_activity.activeTool != null) {
+      setState(() => _activity = const ReadingPanelActivity());
+    }
+  }
+
   void _open(ReadingPanelTool tool, ReadingPanelPresentation presentation) {
     _transition++;
     _session++;
+    _pendingTool = tool;
+    _pendingPresentation = presentation;
     setState(() {
       _activity = _activity.open(tool, presentation: presentation);
     });
@@ -141,7 +157,9 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
     if (presentation == ReadingPanelPresentation.side) {
       chrome?.closeToolPanel();
       if (chrome != null && !chrome.bottomBarOffstage) {
+        _hideForTransition = true;
         chrome.hideBottomBar();
+        _hideForTransition = false;
       }
       return;
     }
@@ -155,22 +173,36 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
   void _moveActiveToolAfterFrame(ReadingPanelTool tool) {
     final transition = ++_transition;
     _session++;
+    _pendingTool = tool;
+    _pendingPresentation = readingToolPosition(
+              _chromeKind(tool),
+              notesPosition: widget.notesPanelPosition,
+              stylePosition: widget.stylePanelPosition,
+            ) ==
+            AiPanelPositionEnum.right
+        ? ReadingPanelPresentation.side
+        : ReadingPanelPresentation.popup;
     _activity = _activity.close(tool);
     widget.chromeKey.currentState?.closeToolPanel();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || transition != _transition) return;
       final kind = _chromeKind(tool);
       final position = readingToolPosition(
         kind,
         notesPosition: widget.notesPanelPosition,
         stylePosition: widget.stylePanelPosition,
       );
-      _open(
-        tool,
-        position == AiPanelPositionEnum.right
-            ? ReadingPanelPresentation.side
-            : ReadingPanelPresentation.popup,
-      );
+      final presentation = position == AiPanelPositionEnum.right
+          ? ReadingPanelPresentation.side
+          : ReadingPanelPresentation.popup;
+      if (!mounted ||
+          transition != _transition ||
+          _pendingTool != tool ||
+          _pendingPresentation != presentation) {
+        return;
+      }
+      final chrome = widget.chromeKey.currentState;
+      if (chrome == null) return;
+      _open(tool, presentation);
     });
   }
 
@@ -215,9 +247,13 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
   }
 
   void _handleChromeHide() {
+    if (_hideForTransition) {
+      widget.onHide();
+      return;
+    }
+    _transition++;
     final popupTool = _activity.popupTool;
     if (popupTool != null) {
-      _transition++;
       setState(() => _activity = _activity.close(popupTool));
     }
     widget.onHide();

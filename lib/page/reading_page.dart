@@ -38,6 +38,7 @@ import 'package:anx_reader/widgets/reading_page/style_widget.dart';
 import 'package:anx_reader/widgets/reading_page/toc_widget.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 // import 'package:flutter/foundation.dart'
 // show debugPrint, defaultTargetPlatform, TargetPlatform;
@@ -54,12 +55,23 @@ class ReadingPage extends ConsumerStatefulWidget {
     this.cfi,
     required this.initialThemes,
     this.heroTag,
+    this.readerBuilder,
+    this.ttsBuilder,
+    this.notesBuilder,
+    this.styleThemesLoader,
+    this.readingTimeSaver,
   });
 
   final Book book;
   final String? cfi;
   final List<ReadTheme> initialThemes;
   final String? heroTag;
+  final WidgetBuilder? readerBuilder;
+  final WidgetBuilder? ttsBuilder;
+  final WidgetBuilder? notesBuilder;
+  final Future<List<ReadTheme>> Function()? styleThemesLoader;
+  final Future<void> Function(ReadingTime readingTime, DateTime? startedAt)?
+      readingTimeSaver;
 
   @override
   ConsumerState<ReadingPage> createState() => ReadingPageState();
@@ -123,6 +135,9 @@ class ReadingPageState extends ConsumerState<ReadingPage>
       GlobalKey<ReadingChromeState>();
   final GlobalKey<ReadingPanelCoordinatorState> _panelCoordinatorKey =
       GlobalKey<ReadingPanelCoordinatorState>();
+  @visibleForTesting
+  GlobalKey<ReadingPanelCoordinatorState> get panelCoordinatorKeyForTesting =>
+      _panelCoordinatorKey;
   late Book _book;
   final Stopwatch _readTimeWatch = Stopwatch();
   DateTime? _sessionStart;
@@ -132,6 +147,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
   late String heroTag;
   String? _aiChatInitialMessage;
   var _aiChatSendImmediate = false;
+  String? _aiChatDraft;
   final aiChatKey = GlobalKey<AiChatStreamState>();
   static const double _aiChatMinWidth = 240;
   late double _aiChatWidth;
@@ -148,6 +164,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
   void initState() {
     _readerFocusNode = FocusNode(debugLabel: 'reading_page_focus');
     HardwareKeyboard.instance.addHandler(_globalReaderKeyHandler);
+    Prefs().addListener(_handlePrefsChanged);
 
     // Initialize AI panel sizes from persistent storage
     _aiChatWidth = Prefs().aiPanelWidth;
@@ -194,19 +211,23 @@ class ReadingPageState extends ConsumerState<ReadingPage>
 
   @override
   void dispose() {
+    Prefs().removeListener(_handlePrefsChanged);
     Sync().syncData(SyncDirection.upload, ref, trigger: SyncTrigger.auto);
     _readTimeWatch.stop();
     _awakeTimer?.cancel();
     WakelockPlus.disable();
     showStatusBar();
     WidgetsBinding.instance.removeObserver(this);
-    readingTimeDao.insertReadingTime(
-      ReadingTime(
-        bookId: _book.id,
-        readingTime: _readTimeWatch.elapsed.inSeconds,
-      ),
-      startedAt: _sessionStart,
+    final readingTime = ReadingTime(
+      bookId: _book.id,
+      readingTime: _readTimeWatch.elapsed.inSeconds,
     );
+    final saver = widget.readingTimeSaver;
+    if (saver != null) {
+      saver(readingTime, _sessionStart);
+    } else {
+      readingTimeDao.insertReadingTime(readingTime, startedAt: _sessionStart);
+    }
     _sessionStart = null;
     audioHandler.stop();
     // if (_volumeKeyListenerAttached) {
@@ -221,6 +242,18 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     if (!bottomBarOffstage) return;
     // Always re-claim focus after overlays (selection menu / note field).
     _readerFocusNode.requestFocus();
+  }
+
+  void _handlePrefsChanged() {
+    if (!mounted) return;
+    final scheduler = WidgetsBinding.instance;
+    if (scheduler.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      scheduler.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
   }
 
   /// Public entry for overlays (note field, search) that need the keyboard.
@@ -622,10 +655,11 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     bool sendImmediate = false,
   }) async {
     List<AiQuickPromptChip> quickPrompts = _getAiQuickPromptChips();
+    final navigatorContext = navigatorKey.currentContext ?? context;
 
     // Determine display mode
     final displayMode = Prefs().aiChatDisplayMode;
-    final screenWidth = MediaQuery.of(navigatorKey.currentContext!).size.width;
+    final screenWidth = MediaQuery.of(navigatorContext).size.width;
 
     bool shouldShowAsPopup = false;
 
@@ -645,8 +679,11 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     }
 
     if (shouldShowAsPopup) {
-      showModalBottomSheet(
-          context: navigatorKey.currentContext!,
+      _aiChatDraft = aiChatKey.currentState?.inputController.text;
+      _panelCoordinatorKey.currentState?.closeAuxiliaryPanels();
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+          context: navigatorContext,
           isScrollControlled: true,
           showDragHandle: false,
           clipBehavior: Clip.hardEdge,
@@ -660,7 +697,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     minimum: AppReadingTokens.aiPopupPadding,
                     child: AiChatStream(
                       key: aiChatKey,
-                      initialMessage: content,
+                      initialMessage: content ?? _aiChatDraft,
                       sendImmediate: sendImmediate,
                       quickPromptChips: quickPrompts,
                     ),
@@ -851,16 +888,19 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     onKeyEvent: _handleReaderKeyEvent,
                     child: Stack(
                       children: [
-                        EpubPlayer(
-                          key: epubPlayerKey,
-                          book: _book,
-                          cfi: widget.cfi,
-                          showOrHideAppBarAndBottomBar:
-                              showOrHideAppBarAndBottomBar,
-                          onLoadEnd: onLoadEnd,
-                          initialThemes: widget.initialThemes,
-                          updateParent: updateState,
-                        ),
+                        if (widget.readerBuilder case final readerBuilder?)
+                          readerBuilder(context)
+                        else
+                          EpubPlayer(
+                            key: epubPlayerKey,
+                            book: _book,
+                            cfi: widget.cfi,
+                            showOrHideAppBarAndBottomBar:
+                                showOrHideAppBarAndBottomBar,
+                            onLoadEnd: onLoadEnd,
+                            initialThemes: widget.initialThemes,
+                            updateParent: updateState,
+                          ),
                         if (_isResizingAiChat)
                           SizedBox.expand(
                             child: Container(
@@ -885,9 +925,12 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   requestReaderFocus();
                 },
                 aiBuilder: _buildAiChat,
-                notesBuilder: (_) => ReadingNotes(book: _book),
-                ttsBuilder: (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
-                styleThemesLoader: themeDao.selectThemes,
+                notesBuilder:
+                    widget.notesBuilder ?? (_) => ReadingNotes(book: _book),
+                ttsBuilder: widget.ttsBuilder ??
+                    (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
+                styleThemesLoader:
+                    widget.styleThemesLoader ?? themeDao.selectThemes,
                 styleBuilder: (context, themes, setCurrentPage) => StyleWidget(
                   themes: themes,
                   epubPlayerKey: epubPlayerKey,

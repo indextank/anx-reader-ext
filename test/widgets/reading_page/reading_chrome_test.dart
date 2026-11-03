@@ -167,6 +167,7 @@ class _CoordinatorHarnessState extends State<_CoordinatorHarness> {
   var notesPosition = AiPanelPositionEnum.popup;
   var stylePosition = AiPanelPositionEnum.popup;
   var notesContentCalls = 0;
+  var tocCalls = 0;
 
   @override
   void dispose() {
@@ -219,7 +220,10 @@ class _CoordinatorHarnessState extends State<_CoordinatorHarness> {
       toolbar: ReadingToolbar(
         title: 'Book',
         onBack: () {},
-        onToc: () {},
+        onToc: () {
+          tocCalls++;
+          chromeKey.currentState!.hideBottomBar();
+        },
         actions: [
           AppIconButton(
             tooltip: 'Notes',
@@ -639,6 +643,46 @@ void main() {
       expect(find.byType(BottomSheet), findsOneWidget);
       expect(find.text('Background'), findsOneWidget);
       expect(find.byKey(_themeSubpageKey), findsNothing);
+    });
+
+    testWidgets('immediate scrim hide cancels a pending side transition',
+        (tester) async {
+      final harness = await _pumpCoordinator(tester);
+      await _openCoordinatorTool(tester, harness, 'Notes');
+      expect(find.byType(BottomSheet), findsOneWidget);
+
+      harness.setNotesPosition(AiPanelPositionEnum.right);
+      harness.chromeKey.currentState!.hideBottomBar();
+      await tester.pump();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+
+      await tester.pump();
+
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(harness.coordinatorKey.currentState!.activeTool, isNull);
+      expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
+      expect(find.byKey(_ttsFabKey), findsOneWidget);
+      expect(harness.readerFocusNode.hasFocus, isTrue);
+    });
+
+    testWidgets('immediate TOC hide cancels a pending side transition',
+        (tester) async {
+      final harness = await _pumpCoordinator(tester);
+      await _openCoordinatorTool(tester, harness, 'Notes');
+      harness.setNotesPosition(AiPanelPositionEnum.right);
+      harness.chromeKey.currentState!.hideBottomBar();
+      harness.tocCalls++;
+      await tester.pump();
+
+      expect(harness.tocCalls, 1);
+      expect(find.byType(ReadingSidePanelHost), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(harness.coordinatorKey.currentState!.activeTool, isNull);
+      expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
+      expect(find.byKey(_ttsFabKey), findsOneWidget);
+      expect(harness.readerFocusNode.hasFocus, isTrue);
     });
 
     testWidgets('position change clears the previous style subpage',
