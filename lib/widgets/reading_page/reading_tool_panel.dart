@@ -15,6 +15,7 @@ class ReadingToolPanel extends StatefulWidget {
     required this.ttsBuilder,
     required this.styleThemesLoader,
     required this.styleBuilder,
+    this.sideContent = false,
   });
 
   final ReadingToolPanelKind kind;
@@ -26,6 +27,7 @@ class ReadingToolPanel extends StatefulWidget {
     List<ReadTheme> themes,
     ValueChanged<Widget> setCurrentPage,
   ) styleBuilder;
+  final bool sideContent;
 
   @override
   State<ReadingToolPanel> createState() => _ReadingToolPanelState();
@@ -49,6 +51,14 @@ class _ReadingToolPanelState extends State<ReadingToolPanel> {
   @override
   void didUpdateWidget(covariant ReadingToolPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.sideContent != widget.sideContent) {
+      _latestRequestId++;
+      _currentPage = null;
+      if (widget.kind == ReadingToolPanelKind.style) {
+        _loadThemes();
+      }
+      return;
+    }
     if (widget.kind != ReadingToolPanelKind.style) {
       _latestRequestId++;
       return;
@@ -122,6 +132,17 @@ class _ReadingToolPanelState extends State<ReadingToolPanel> {
       return const SizedBox.shrink();
     }
 
+    final content = switch (widget.kind) {
+      ReadingToolPanelKind.notes => widget.notesBuilder(context),
+      ReadingToolPanelKind.tts => widget.ttsBuilder(context),
+      ReadingToolPanelKind.style => _buildStyle(context),
+      _ => const SizedBox.shrink(),
+    };
+
+    if (widget.sideContent) {
+      return AppSafeArea(top: false, child: content);
+    }
+
     final maxHeight = (MediaQuery.sizeOf(context).height * _panelHeightFactor)
         .clamp(0.0, _panelMaxHeight);
 
@@ -134,12 +155,7 @@ class _ReadingToolPanelState extends State<ReadingToolPanel> {
             key: const ValueKey('reading-tool-panel'),
             enableDrag: false,
             onClosing: () {},
-            builder: (context) => switch (widget.kind) {
-              ReadingToolPanelKind.notes => widget.notesBuilder(context),
-              ReadingToolPanelKind.tts => widget.ttsBuilder(context),
-              ReadingToolPanelKind.style => _buildStyle(context),
-              _ => const SizedBox.shrink(),
-            },
+            builder: (context) => content,
           ),
         ),
       ),

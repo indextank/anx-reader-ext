@@ -69,10 +69,16 @@ class ReadingChromeState extends State<ReadingChrome> {
     setState(() => _toolPanelKind = kind);
   }
 
+  void closeToolPanel() {
+    if (_toolPanelKind == ReadingToolPanelKind.none) return;
+    setState(() => _toolPanelKind = ReadingToolPanelKind.none);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomBarOffstage = _bottomBarOffstage;
     return Stack(
+      fit: StackFit.expand,
       children: [
         Offstage(
           offstage: bottomBarOffstage,

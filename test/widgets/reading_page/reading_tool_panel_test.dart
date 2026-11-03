@@ -39,6 +39,7 @@ Widget _host({
     List<ReadTheme> themes,
     ValueChanged<Widget> setCurrentPage,
   ) styleBuilder = _unusedStyleBuilder,
+  bool sideContent = false,
 }) {
   return ValueListenableBuilder<ReadingToolPanelKind>(
     valueListenable: kind,
@@ -48,6 +49,7 @@ Widget _host({
       ttsBuilder: ttsBuilder,
       styleThemesLoader: styleThemesLoader,
       styleBuilder: styleBuilder,
+      sideContent: sideContent,
     ),
   );
 }
@@ -63,6 +65,49 @@ void main() {
 
     expect(find.byType(BottomSheet), findsNothing);
     expect(find.byKey(const ValueKey('reading-tool-panel')), findsNothing);
+  });
+
+  testWidgets('side content reuses style loading without a bottom sheet shell',
+      (tester) async {
+    final kind = ValueNotifier(ReadingToolPanelKind.style);
+    addTearDown(kind.dispose);
+
+    await pumpDesignSystem(
+      tester,
+      SizedBox(
+        width: 300,
+        height: 800,
+        child: _host(
+          kind: kind,
+          sideContent: true,
+          styleBuilder: (context, themes, setCurrentPage) =>
+              const Text('side-style-panel'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('side-style-panel'), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(const ValueKey('reading-tool-panel')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('side notes content has no bottom sheet shell', (tester) async {
+    final kind = ValueNotifier(ReadingToolPanelKind.notes);
+    addTearDown(kind.dispose);
+
+    await pumpDesignSystem(
+      tester,
+      _host(
+        kind: kind,
+        sideContent: true,
+        notesBuilder: (_) => const Text('side-notes-panel'),
+      ),
+    );
+
+    expect(find.text('side-notes-panel'), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
   });
 
   testWidgets('host replaces notes with tts and clears on none',
