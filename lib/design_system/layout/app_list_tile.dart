@@ -14,6 +14,8 @@ class AppListTile extends StatelessWidget {
     this.onLongPress,
     this.contentPadding = AppSpacing.horizontal16,
     this.semanticLabel,
+    this.titleMaxLines,
+    this.subtitleMaxLines,
   });
 
   final String title;
@@ -27,6 +29,12 @@ class AppListTile extends StatelessWidget {
   final EdgeInsetsGeometry contentPadding;
   final String? semanticLabel;
 
+  /// 标题最大行数；设置后超长省略（默认不限制，保持既有行为）。
+  final int? titleMaxLines;
+
+  /// 副标题最大行数；设置后超长省略。
+  final int? subtitleMaxLines;
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
@@ -34,13 +42,22 @@ class AppListTile extends StatelessWidget {
       title: Semantics(
         label: semanticLabel,
         excludeSemantics: semanticLabel != null,
-        child: Text(title),
+        child: Text(
+          title,
+          maxLines: titleMaxLines,
+          overflow: titleMaxLines == null ? null : TextOverflow.ellipsis,
+        ),
       ),
       subtitle: subtitle == null
           ? null
           : Semantics(
               excludeSemantics: semanticLabel != null,
-              child: Text(subtitle!),
+              child: Text(
+                subtitle!,
+                maxLines: subtitleMaxLines,
+                overflow:
+                    subtitleMaxLines == null ? null : TextOverflow.ellipsis,
+              ),
             ),
       trailing: trailing,
       enabled: enabled,
