@@ -1,7 +1,9 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/enums/ai_panel_position.dart';
 import 'package:anx_reader/enums/convert_chinese_mode.dart';
 import 'package:anx_reader/enums/reading_info.dart';
 import 'package:anx_reader/enums/translation_mode.dart';
@@ -558,6 +560,51 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
       );
     }
 
+    Widget panelPositionTile(
+      String title,
+      AiPanelPositionEnum value,
+      ValueChanged<AiPanelPositionEnum> onChanged,
+    ) {
+      var currentValue = value;
+      return StatefulBuilder(
+        builder: (context, setState) {
+          final l10n = L10n.of(context);
+          return SingleRowSettingTile(
+            title: title,
+            trailing: AnxSegmentedButton<AiPanelPositionEnum>(
+              segments: [
+                SegmentButtonItem(
+                  value: AiPanelPositionEnum.popup,
+                  label: l10n.readingPanelPositionPopup,
+                  icon: const Icon(
+                    Icons.picture_in_picture_alt_outlined,
+                    size: AppSettingsAiTokens.segmentedIconSize,
+                  ),
+                ),
+                SegmentButtonItem(
+                  value: AiPanelPositionEnum.right,
+                  label: l10n.readingPanelPositionRight,
+                  icon: const Icon(
+                    Icons.border_right,
+                    size: AppSettingsAiTokens.segmentedIconSize,
+                  ),
+                ),
+              ],
+              selected: {currentValue},
+              onSelectionChanged: (selected) {
+                if (selected.isNotEmpty) {
+                  setState(() {
+                    currentValue = selected.first;
+                    onChanged(currentValue);
+                  });
+                }
+              },
+            ),
+          );
+        },
+      );
+    }
+
     return Container(
       padding: AppReadingTokens.settingsPadding,
       child: Column(
@@ -571,6 +618,16 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           convertChinese(),
           const Divider(height: 15),
           codeHighlightTheme(),
+          panelPositionTile(
+            L10n.of(context).readingNotesPanelPosition,
+            Prefs().notesPanelPosition,
+            (value) => Prefs().notesPanelPosition = value,
+          ),
+          panelPositionTile(
+            L10n.of(context).readingStylePanelPosition,
+            Prefs().stylePanelPosition,
+            (value) => Prefs().stylePanelPosition = value,
+          ),
           const Divider(height: 15),
           readingInfo(),
           // const Divider(height: 8),

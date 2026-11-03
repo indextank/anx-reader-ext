@@ -949,5 +949,10 @@
   "readingTocLocateCurrent": "定位目前章節",
   "readingTocClearSearch": "清除搜尋",
   "readingTocExpand": "展開子章節",
-  "readingTocCollapse": "摺疊子章節"
+  "readingTocCollapse": "摺疊子章節",
+  "readingNotesPanelPosition": "筆記面板展現位置",
+  "readingStylePanelPosition": "樣式面板展現位置",
+  "readingPanelPositionPopup": "彈框顯示",
+  "readingPanelPositionRight": "右側顯示",
+  "readingThemesEmpty": "暫無閱讀主題"
 }
