@@ -322,6 +322,7 @@ void main() {
         ),
       );
 
+      await tester.pump();
       await tester.tap(find.text('Background'));
       await tester.pump();
 
