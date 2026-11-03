@@ -27,7 +27,8 @@ import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/ai/ai_stream.dart';
 import 'package:anx_reader/widgets/reading_page/notes_widget.dart';
 import 'package:anx_reader/models/reading_time.dart';
-import 'package:anx_reader/widgets/reading_page/progress_widget.dart';
+import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
+import 'package:anx_reader/widgets/reading_page/reading_toolbar.dart';
 import 'package:anx_reader/widgets/reading_page/tts_fab.dart';
 import 'package:anx_reader/widgets/reading_page/tts_widget.dart';
 import 'package:anx_reader/widgets/reading_page/style_widget.dart';
@@ -115,10 +116,9 @@ class ReadingChapterCopyButton extends StatelessWidget {
 
 class ReadingPageState extends ConsumerState<ReadingPage>
     with WidgetsBindingObserver, TickerProviderStateMixin {
-  static const empty = SizedBox.shrink();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late Book _book;
-  late Widget _currentPage = empty;
+  ReadingToolPanelKind _toolPanelKind = ReadingToolPanelKind.none;
   final Stopwatch _readTimeWatch = Stopwatch();
   DateTime? _sessionStart;
   Timer? _awakeTimer;
@@ -416,7 +416,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
 
   void hideBottomBar() {
     setState(() {
-      _currentPage = empty;
+      _toolPanelKind = ReadingToolPanelKind.none;
       bottomBarOffstage = true;
       if (Prefs().hideStatusBar) {
         hideStatusBar();
@@ -438,44 +438,15 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     _scaffoldKey.currentState?.openDrawer();
   }
 
-  void noteHandler() {
-    setState(() {
-      _currentPage = ReadingNotes(book: _book);
-    });
+  void _showToolPanel({required ReadingToolPanelKind kind}) {
+    setState(() => _toolPanelKind = kind);
   }
 
-  void progressHandler() {
-    setState(() {
-      _currentPage = ProgressWidget(
-        epubPlayerKey: epubPlayerKey,
-        showOrHideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
-      );
-    });
-  }
+  void noteHandler() => _showToolPanel(kind: ReadingToolPanelKind.notes);
 
-  Future<void> styleHandler(StateSetter modalSetState) async {
-    List<ReadTheme> themes = await themeDao.selectThemes();
-    setState(() {
-      _currentPage = StyleWidget(
-        themes: themes,
-        epubPlayerKey: epubPlayerKey,
-        setCurrentPage: (Widget page) {
-          modalSetState(() {
-            _currentPage = page;
-          });
-        },
-        hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
-      );
-    });
-  }
+  void ttsHandler() => _showToolPanel(kind: ReadingToolPanelKind.tts);
 
-  Future<void> ttsHandler() async {
-    setState(() {
-      _currentPage = TtsWidget(
-        epubPlayerKey: epubPlayerKey,
-      );
-    });
-  }
+  void styleHandler() => _showToolPanel(kind: ReadingToolPanelKind.style);
 
   double _aiChatMaxWidth(BuildContext context) {
     final totalWidth = MediaQuery.of(context).size.width;
@@ -810,16 +781,29 @@ class ReadingPageState extends ConsumerState<ReadingPage>
             ),
             Column(
               children: [
-                AppBar(
-                  title: Text(_book.title, overflow: TextOverflow.ellipsis),
-                  leading: AppIconButton(
-                    child: const Icon(Icons.arrow_back),
-                    onPressed: () {
-                      // close reading page
-                      Navigator.pop(context);
-                    },
-                  ),
+                ReadingToolbar(
+                  title: _book.title,
+                  onBack: () {
+                    // close reading page
+                    Navigator.pop(context);
+                  },
+                  onToc: tocHandler,
                   actions: [
+                    AppIconButton(
+                      tooltip: L10n.of(context).navBarNotes,
+                      onPressed: noteHandler,
+                      child: const Icon(EvaIcons.edit),
+                    ),
+                    AppIconButton(
+                      tooltip: L10n.of(context).readingPageStyle,
+                      onPressed: styleHandler,
+                      child: const Icon(Icons.color_lens),
+                    ),
+                    AppIconButton(
+                      tooltip: L10n.of(context).ttsNarrator,
+                      onPressed: ttsHandler,
+                      child: const Icon(EvaIcons.headphones),
+                    ),
                     if (EnvVar.enableAIFeature) aiButton,
                     ReadingChapterCopyButton(
                       contentLoader: () async =>
@@ -854,58 +838,17 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   ],
                 ),
                 const Spacer(),
-                BottomSheet(
-                  onClosing: () {},
-                  enableDrag: false,
-                  builder: (context) => AppSafeArea(
-                    top: false,
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 600),
-                      child: StatefulBuilder(
-                        builder: (BuildContext context, StateSetter setState) {
-                          final hasContent = !identical(_currentPage, empty);
-                          return IntrinsicHeight(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (hasContent)
-                                  Expanded(
-                                    child: _currentPage,
-                                  ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceAround,
-                                  children: [
-                                    AppIconButton(
-                                      onPressed: tocHandler,
-                                      child: const Icon(Icons.toc),
-                                    ),
-                                    AppIconButton(
-                                      onPressed: noteHandler,
-                                      child: const Icon(EvaIcons.edit),
-                                    ),
-                                    AppIconButton(
-                                      onPressed: progressHandler,
-                                      child: const Icon(Icons.data_usage),
-                                    ),
-                                    AppIconButton(
-                                      onPressed: () {
-                                        styleHandler(setState);
-                                      },
-                                      child: const Icon(Icons.color_lens),
-                                    ),
-                                    AppIconButton(
-                                      onPressed: ttsHandler,
-                                      child: const Icon(EvaIcons.headphones),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                ReadingToolPanel(
+                  kind: _toolPanelKind,
+                  notesBuilder: (_) => ReadingNotes(book: _book),
+                  ttsBuilder: (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
+                  styleThemesLoader: themeDao.selectThemes,
+                  styleBuilder: (context, themes, setCurrentPage) =>
+                      StyleWidget(
+                    themes: themes,
+                    epubPlayerKey: epubPlayerKey,
+                    setCurrentPage: setCurrentPage,
+                    hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
                   ),
                 ),
               ],
@@ -1087,14 +1030,14 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   // is hidden; TtsFab handles its own show/hide internally so
                   // its State (expanded flag) is never destroyed mid-session.
                   if (bottomBarOffstage)
-                    const Positioned(
+                    Positioned(
                       right: 0,
                       bottom: 0,
                       child: AppSafeArea(
                         top: false,
                         avoidViewInsets: false,
                         minimum: AppReadingTokens.ttsFabSafePadding,
-                        child: TtsFab(),
+                        child: const TtsFab(),
                       ),
                     ),
                 ],
