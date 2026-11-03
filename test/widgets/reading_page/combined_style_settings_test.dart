@@ -235,6 +235,77 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  testWidgets('writing direction then font size preserves other style fields',
+      (tester) async {
+    await _pumpCombined(tester, size: const Size(800, 1200));
+    await _tapWritingDirection(tester, 'Horizontal');
+    final before = Prefs().bookStyle;
+
+    await _changeSlider(
+      tester,
+      _slider(min: 0.5, max: 3, divisions: 25),
+      1.7,
+    );
+
+    _expectStyleAfter(
+      Prefs().bookStyle,
+      before,
+      fontSize: 1.7,
+    );
+  });
+
+  testWidgets('writing direction then indent preserves other style fields',
+      (tester) async {
+    await _pumpCombined(tester, size: const Size(800, 1200));
+    await _tapWritingDirection(tester, 'Vertical');
+    final before = Prefs().bookStyle;
+
+    await _changeSlider(
+      tester,
+      _slider(min: -0.5, max: 8, divisions: 17),
+      2,
+    );
+
+    _expectStyleAfter(
+      Prefs().bookStyle,
+      before,
+      indent: 2,
+    );
+  });
+
+  testWidgets('default and advanced sliders preserve edits in both directions',
+      (tester) async {
+    await _pumpCombined(tester, size: const Size(800, 1200));
+    await _changeSlider(
+      tester,
+      _slider(min: 0.5, max: 3, divisions: 25),
+      1.8,
+    );
+    final afterFontSize = Prefs().bookStyle;
+    await _changeSlider(
+      tester,
+      _slider(min: 100, max: 900, divisions: 8),
+      500,
+    );
+    _expectStyleAfter(
+      Prefs().bookStyle,
+      afterFontSize,
+      fontWeight: 500,
+    );
+
+    final afterFontWeight = Prefs().bookStyle;
+    await _changeSlider(
+      tester,
+      _slider(min: 0.5, max: 3, divisions: 25),
+      1.5,
+    );
+    _expectStyleAfter(
+      Prefs().bookStyle,
+      afterFontWeight,
+      fontSize: 1.5,
+    );
+  });
+
   testWidgets('theme load failure retries to the combined empty state',
       (tester) async {
     var attempts = 0;
@@ -450,6 +521,80 @@ void main() {
     }
   }
 
+  testWidgets('240px host keeps scrolling close and theme retry accessible',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var attempts = 0;
+    var closes = 0;
+    await _pumpWithNavigator(
+      tester,
+      Row(
+        children: [
+          const Expanded(child: SizedBox.shrink()),
+          ReadingSidePanelHost(
+            width: 240,
+            minWidth: 0,
+            maxWidth: 600,
+            onResize: (_) {},
+            onResizeEnd: () {},
+            onSwitchPosition: () {},
+            onClose: () => closes++,
+            child: ReadingToolPanel(
+              kind: ReadingToolPanelKind.style,
+              notesBuilder: (_) => const SizedBox.shrink(),
+              ttsBuilder: (_) => const SizedBox.shrink(),
+              styleThemesLoader: () async {
+                attempts++;
+                if (attempts == 1) throw StateError('private theme failure');
+                return const <ReadTheme>[];
+              },
+              styleBuilder: (context, themes, setCurrentPage) =>
+                  CombinedStyleSettings(
+                themes: themes,
+                epubPlayerKey: epubPlayerKey,
+                setCurrentPage: setCurrentPage,
+                hideAppBarAndBottomBar: (_) {},
+              ),
+              sideContent: true,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.getSize(find.byType(ReadingSidePanelHost)).width, 240);
+    expect(find.byType(AppErrorState), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    await tester.pump();
+    expect(attempts, 2);
+    expect(find.byType(CombinedStyleSettings), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final outerScrollable = find
+        .descendant(
+          of: find.byKey(_outerScrollKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.dragUntilVisible(
+      find.text('Screen Timeout'),
+      outerScrollable,
+      const Offset(0, -200),
+      maxIteration: 100,
+    );
+    expect(find.text('Screen Timeout'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pump();
+    expect(closes, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('side notes fill their parent and retain an internal scroll list',
       (tester) async {
     tester.view.physicalSize = const Size(1000, 800);
@@ -568,6 +713,63 @@ Future<void> _pumpCombined(
       ],
     ),
   );
+}
+
+Finder _slider({
+  required double min,
+  required double max,
+  required int divisions,
+}) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is Slider &&
+        widget.min == min &&
+        widget.max == max &&
+        widget.divisions == divisions,
+  );
+}
+
+Future<void> _changeSlider(
+  WidgetTester tester,
+  Finder slider,
+  double value,
+) async {
+  expect(slider, findsOneWidget);
+  await tester.ensureVisible(slider);
+  tester.widget<Slider>(slider).onChanged!(value);
+  await tester.pump();
+  expect(tester.widget<Slider>(slider).value, value);
+}
+
+Future<void> _tapWritingDirection(WidgetTester tester, String label) async {
+  final writingTile = find.ancestor(
+    of: find.text('Writing Direction'),
+    matching: find.byType(AppListTile),
+  );
+  final option = find.descendant(
+    of: writingTile,
+    matching: find.text(label),
+  );
+  await tester.ensureVisible(option);
+  await tester.tap(option);
+  await tester.pump();
+}
+
+void _expectStyleAfter(
+  BookStyle actual,
+  BookStyle before, {
+  double? fontSize,
+  double? lineHeight,
+  double? fontWeight,
+  double? indent,
+}) {
+  final expected = before.copyWith(
+    fontSize: fontSize,
+    lineHeight: lineHeight,
+    fontWeight: fontWeight,
+    indent: indent,
+  );
+  expect(actual.toMap(), expected.toMap());
 }
 
 Future<void> _tapSwitch(WidgetTester tester, String title) async {

@@ -483,6 +483,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           ) {
             return SingleRowSettingTile(
               title: label,
+              contentPadding: AppSpacing.zero,
               // Wrap 需要按剩余宽度换行，因此钉合（不包横向滚动），
               // 并放宽右侧占比让芯片尽量单排放下。
               pinnedTrailing: true,

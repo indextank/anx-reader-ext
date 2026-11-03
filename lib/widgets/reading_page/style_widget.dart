@@ -64,7 +64,6 @@ class StyleWidget extends StatefulWidget {
 }
 
 class StyleWidgetState extends State<StyleWidget> {
-  BookStyle bookStyle = Prefs().bookStyle;
   int? currentThemeId = Prefs().readTheme.id;
   bool _addingTheme = false;
   bool _themeActionFailed = false;
@@ -228,6 +227,14 @@ class StyleWidgetState extends State<StyleWidget> {
     );
   }
 
+  void _updateBookStyle(BookStyle Function(BookStyle current) update) {
+    setState(() {
+      final bookStyle = update(Prefs().bookStyle);
+      Prefs().saveBookStyleToPrefs(bookStyle);
+      widget.epubPlayerKey.currentState!.changeStyle(bookStyle);
+    });
+  }
+
   Widget sliders() {
     return Column(
       children: [
@@ -239,6 +246,7 @@ class StyleWidgetState extends State<StyleWidget> {
 
   Widget lineHeightAndParagraphSpacingSlider() {
     final enabled = !Prefs().useBookStyles;
+    final bookStyle = Prefs().bookStyle;
     return Column(
       children: [
         Row(
@@ -253,12 +261,9 @@ class StyleWidgetState extends State<StyleWidget> {
                 value: bookStyle.lineHeight,
                 onChanged: enabled
                     ? (value) {
-                        setState(() {
-                          bookStyle.lineHeight = value;
-                          widget.epubPlayerKey.currentState!
-                              .changeStyle(bookStyle);
-                          Prefs().saveBookStyleToPrefs(bookStyle);
-                        });
+                        _updateBookStyle(
+                          (current) => current.copyWith(lineHeight: value),
+                        );
                       }
                     : null,
                 min: 0,
@@ -281,12 +286,10 @@ class StyleWidgetState extends State<StyleWidget> {
                 value: bookStyle.paragraphSpacing,
                 onChanged: enabled
                     ? (value) {
-                        setState(() {
-                          bookStyle.paragraphSpacing = value;
-                          widget.epubPlayerKey.currentState!
-                              .changeStyle(bookStyle);
-                          Prefs().saveBookStyleToPrefs(bookStyle);
-                        });
+                        _updateBookStyle(
+                          (current) =>
+                              current.copyWith(paragraphSpacing: value),
+                        );
                       }
                     : null,
                 min: 0,
@@ -303,6 +306,7 @@ class StyleWidgetState extends State<StyleWidget> {
 
   Widget fontSizeSlider() {
     final enabled = !Prefs().useBookStyles;
+    final bookStyle = Prefs().bookStyle;
     return Row(
       children: [
         IconAndText(
@@ -314,11 +318,9 @@ class StyleWidgetState extends State<StyleWidget> {
             value: bookStyle.fontSize,
             onChanged: enabled
                 ? (value) {
-                    setState(() {
-                      bookStyle.fontSize = value;
-                      widget.epubPlayerKey.currentState!.changeStyle(bookStyle);
-                      Prefs().saveBookStyleToPrefs(bookStyle);
-                    });
+                    _updateBookStyle(
+                      (current) => current.copyWith(fontSize: value),
+                    );
                   }
                 : null,
             min: 0.5,
