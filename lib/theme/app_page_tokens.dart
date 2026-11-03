@@ -118,7 +118,6 @@ class AppSettingsBatchTokens {
   static const narrateHighlightDuration = Duration(milliseconds: 1500);
   static const narrateScrollDuration = Duration(milliseconds: 500);
   static const voiceAvatarRadius = 24.0;
-  static const storageDataIndent = 20.0;
   static const storageDetailsHeightOffset = 140.0;
   static const syncHelpPadding = EdgeInsets.only(
     left: 40,

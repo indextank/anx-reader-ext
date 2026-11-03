@@ -194,6 +194,27 @@ void main() {
     expect(find.byType(AppDialog), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('data file detail rows align with the rows above',
+      (tester) async {
+    final notifier = _FakeStorageInfo(Future.value);
+    await pumpDesignSystem(
+      tester,
+      ProviderScope(
+        overrides: [storageInfoProvider.overrideWith(() => notifier)],
+        child: const StorageSettings(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dataFile = tester.getRect(find.text('Data File'));
+    for (final label in ['Book File', 'Cover File', 'Font File']) {
+      final row = tester.getRect(find.text(label));
+      expect(row.left, closeTo(dataFile.left, 0.5),
+          reason: '$label 应与上方行统一左缘（不做层级缩进）');
+    }
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _FakeFonts extends Fonts {

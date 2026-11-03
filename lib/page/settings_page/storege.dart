@@ -249,26 +249,18 @@ class _StorageSettingsState extends ConsumerState<StorageSettings>
                         title: l10n.storageDataFile,
                         trailing: Text(info.dataFilesSizeStr),
                       ),
-                      Padding(
-                        padding: AppSpacing.only(
-                          left: AppSettingsBatchTokens.storageDataIndent,
-                        ),
-                        child: Column(
-                          children: [
-                            AppListTile(
-                              title: l10n.storageBookFile,
-                              trailing: Text(info.booksSizeStr),
-                            ),
-                            AppListTile(
-                              title: l10n.storageCoverFile,
-                              trailing: Text(info.coverSizeStr),
-                            ),
-                            AppListTile(
-                              title: l10n.storageFontFile,
-                              trailing: Text(info.fontSizeStr),
-                            ),
-                          ],
-                        ),
+                      // 数据文件明细与上方行统一左缘对齐（不做层级缩进）。
+                      AppListTile(
+                        title: l10n.storageBookFile,
+                        trailing: Text(info.booksSizeStr),
+                      ),
+                      AppListTile(
+                        title: l10n.storageCoverFile,
+                        trailing: Text(info.coverSizeStr),
+                      ),
+                      AppListTile(
+                        title: l10n.storageFontFile,
+                        trailing: Text(info.fontSizeStr),
                       ),
                     ],
                   ),
