@@ -263,58 +263,68 @@ class _AISettingsState extends ConsumerState<AISettings> {
     return Text(provider.title);
   }
 
+  // 「AI 对话显示」分组的两个 tile 都是固有宽度内容：若不撑满行宽，
+  // 分组卡片会收缩为最宽子项并把较窄的行在卡内居中（与页面其余
+  // 全宽分组、统一左对齐的基准不一致），故用无限宽占位撑满。
+  Widget _fullWidthTile(Widget child) => SizedBox(
+        width: double.infinity,
+        child: child,
+      );
+
   AbstractSettingsTile aiChatDisplayModeTile() {
     final l10n = L10n.of(context);
     return CustomSettingsTile(
-      child: Padding(
-        padding: AppSettingsAiTokens.sectionPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.settingsAiChatDisplayMode,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            SizedBox(height: AppSpacing.tokens.s12),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: AnxSegmentedButton<AiChatDisplayMode>(
-                segments: [
-                  SegmentButtonItem(
-                    value: AiChatDisplayMode.adaptive,
-                    label: l10n.settingsAiChatDisplayModeAdaptive,
-                    icon: const Icon(
-                      Icons.auto_awesome,
-                      size: AppSettingsAiTokens.segmentedIconSize,
-                    ),
-                  ),
-                  SegmentButtonItem(
-                    value: AiChatDisplayMode.split,
-                    label: l10n.settingsAiChatDisplayModeSplit,
-                    icon: const Icon(
-                      Icons.splitscreen,
-                      size: AppSettingsAiTokens.segmentedIconSize,
-                    ),
-                  ),
-                  SegmentButtonItem(
-                    value: AiChatDisplayMode.popup,
-                    label: l10n.settingsAiChatDisplayModePopup,
-                    icon: const Icon(
-                      Icons.open_in_new,
-                      size: AppSettingsAiTokens.segmentedIconSize,
-                    ),
-                  ),
-                ],
-                selected: {Prefs().aiChatDisplayMode},
-                onSelectionChanged: (selected) {
-                  if (selected.isNotEmpty) {
-                    Prefs().aiChatDisplayMode = selected.first;
-                    setState(() {});
-                  }
-                },
+      child: _fullWidthTile(
+        Padding(
+          padding: AppSettingsAiTokens.sectionPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.settingsAiChatDisplayMode,
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
-          ],
+              SizedBox(height: AppSpacing.tokens.s12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: AnxSegmentedButton<AiChatDisplayMode>(
+                  segments: [
+                    SegmentButtonItem(
+                      value: AiChatDisplayMode.adaptive,
+                      label: l10n.settingsAiChatDisplayModeAdaptive,
+                      icon: const Icon(
+                        Icons.auto_awesome,
+                        size: AppSettingsAiTokens.segmentedIconSize,
+                      ),
+                    ),
+                    SegmentButtonItem(
+                      value: AiChatDisplayMode.split,
+                      label: l10n.settingsAiChatDisplayModeSplit,
+                      icon: const Icon(
+                        Icons.splitscreen,
+                        size: AppSettingsAiTokens.segmentedIconSize,
+                      ),
+                    ),
+                    SegmentButtonItem(
+                      value: AiChatDisplayMode.popup,
+                      label: l10n.settingsAiChatDisplayModePopup,
+                      icon: const Icon(
+                        Icons.open_in_new,
+                        size: AppSettingsAiTokens.segmentedIconSize,
+                      ),
+                    ),
+                  ],
+                  selected: {Prefs().aiChatDisplayMode},
+                  onSelectionChanged: (selected) {
+                    if (selected.isNotEmpty) {
+                      Prefs().aiChatDisplayMode = selected.first;
+                      setState(() {});
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -323,44 +333,46 @@ class _AISettingsState extends ConsumerState<AISettings> {
   AbstractSettingsTile aiPanelPositionTile() {
     final l10n = L10n.of(context);
     return CustomSettingsTile(
-      child: Padding(
-        padding: AppSettingsAiTokens.sectionPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.settingsAiPanelPosition,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            SizedBox(height: AppSpacing.tokens.s12),
-            AnxSegmentedButton<AiPanelPositionEnum>(
-              segments: [
-                SegmentButtonItem(
-                  value: AiPanelPositionEnum.bottom,
-                  label: l10n.settingsAiPanelPositionBottom,
-                  icon: const Icon(
-                    Icons.vertical_align_bottom,
-                    size: AppSettingsAiTokens.segmentedIconSize,
+      child: _fullWidthTile(
+        Padding(
+          padding: AppSettingsAiTokens.sectionPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.settingsAiPanelPosition,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              SizedBox(height: AppSpacing.tokens.s12),
+              AnxSegmentedButton<AiPanelPositionEnum>(
+                segments: [
+                  SegmentButtonItem(
+                    value: AiPanelPositionEnum.bottom,
+                    label: l10n.settingsAiPanelPositionBottom,
+                    icon: const Icon(
+                      Icons.vertical_align_bottom,
+                      size: AppSettingsAiTokens.segmentedIconSize,
+                    ),
                   ),
-                ),
-                SegmentButtonItem(
-                  value: AiPanelPositionEnum.right,
-                  label: l10n.settingsAiPanelPositionRight,
-                  icon: const Icon(
-                    Icons.border_right,
-                    size: AppSettingsAiTokens.segmentedIconSize,
+                  SegmentButtonItem(
+                    value: AiPanelPositionEnum.right,
+                    label: l10n.settingsAiPanelPositionRight,
+                    icon: const Icon(
+                      Icons.border_right,
+                      size: AppSettingsAiTokens.segmentedIconSize,
+                    ),
                   ),
-                ),
-              ],
-              selected: {Prefs().aiPanelPosition},
-              onSelectionChanged: (selected) {
-                if (selected.isNotEmpty) {
-                  Prefs().aiPanelPosition = selected.first;
-                  setState(() {});
-                }
-              },
-            ),
-          ],
+                ],
+                selected: {Prefs().aiPanelPosition},
+                onSelectionChanged: (selected) {
+                  if (selected.isNotEmpty) {
+                    Prefs().aiPanelPosition = selected.first;
+                    setState(() {});
+                  }
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

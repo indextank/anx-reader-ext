@@ -89,7 +89,8 @@ class _ConfigCard extends StatelessWidget {
     final semanticColors = context.appTheme.colors;
     final color = isWarning ? semanticColors.warning : semanticColors.info;
     return AppCard(
-      margin: AppSpacing.all4,
+      // 与下方 TranslateSettingItem 卡片的 all8 统一嵌套卡片节奏。
+      margin: AppSpacing.all8,
       padding: AppSpacing.all12,
       child: Column(
         children: [
@@ -198,31 +199,53 @@ class _TranslationConfigBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
+      // 与页面其余行一致的起始对齐（默认 center 会把服务名推到面板中线）。
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppButton(
-          label: serviceLabel,
-          variant: AppButtonVariant.text,
-          onPressed: onServicePressed,
-        ),
-        Text(L10n.of(context).settingsTranslateCurrentService),
-        const Divider(),
-        Row(
-          children: [
-            Expanded(
-              child: AppButton(
-                label: fromLabel,
-                variant: AppButtonVariant.text,
-                onPressed: onFromPressed,
+        // 与开关/导航行的"标签左、控件右"结构一致；Wrap 在窄屏
+        // 放不下时换行而非溢出（Wrap 主轴按内容收缩，需先撑满行宽
+        // spaceBetween 才能生效）。
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                L10n.of(context).settingsTranslateCurrentService,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w400,
+                ),
               ),
+              AppButton(
+                label: serviceLabel,
+                variant: AppButtonVariant.text,
+                onPressed: onServicePressed,
+              ),
+            ],
+          ),
+        ),
+        const Divider(),
+        // 紧凑起始排列：不再用两个 Expanded 平分行宽（那会让语言名
+        // 各自悬浮在半区中央，与整页左对齐基准不一致）；窄屏放不下
+        // 时自动换行。
+        Wrap(
+          spacing: AppSpacing.tokens.s8,
+          runSpacing: AppSpacing.tokens.s8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            AppButton(
+              label: fromLabel,
+              variant: AppButtonVariant.text,
+              onPressed: onFromPressed,
             ),
             const Icon(Icons.arrow_forward_ios),
-            Expanded(
-              child: AppButton(
-                label: toLabel,
-                variant: AppButtonVariant.text,
-                onPressed: onToPressed,
-              ),
+            AppButton(
+              label: toLabel,
+              variant: AppButtonVariant.text,
+              onPressed: onToPressed,
             ),
           ],
         ),
