@@ -96,7 +96,7 @@ void main() {
 
     expect(
       icons,
-      containsAllInOrder([
+      orderedEquals([
         Icons.toc,
         Icons.arrow_back,
         EvaIcons.edit,
@@ -174,11 +174,15 @@ void main() {
     expect(icons, isNot(contains(Icons.auto_awesome)));
     expect(
       icons,
-      containsAllInOrder([
+      orderedEquals([
+        Icons.toc,
+        Icons.arrow_back,
         EvaIcons.edit,
         Icons.color_lens,
         EvaIcons.headphones,
         Icons.copy,
+        Icons.bookmark_border,
+        EvaIcons.more_vertical,
       ]),
     );
   });
@@ -209,9 +213,20 @@ void main() {
       Axis.horizontal,
     );
 
+    final scrollableFinder = find.descendant(
+      of: scrollFinder,
+      matching: find.byType(Scrollable),
+    );
+    final initialOffset =
+        tester.state<ScrollableState>(scrollableFinder).position.pixels;
+
     await tester.drag(scrollFinder, const Offset(-240, 0));
     await tester.pumpAndSettle();
 
+    final scrolledOffset =
+        tester.state<ScrollableState>(scrollableFinder).position.pixels;
+    expect(scrolledOffset, greaterThan(initialOffset));
+    expect(scrolledOffset, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
 }
