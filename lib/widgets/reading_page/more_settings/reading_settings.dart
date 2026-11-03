@@ -30,6 +30,22 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
       epubPlayerKey.currentState != null && epubPlayerKey.currentState!.mounted;
 
   @override
+  void initState() {
+    super.initState();
+    Prefs().addListener(_onPrefsChanged);
+  }
+
+  @override
+  void dispose() {
+    Prefs().removeListener(_onPrefsChanged);
+    super.dispose();
+  }
+
+  void _onPrefsChanged() {
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     Widget convertChinese() {
       const iconStyle = TextStyle(fontWeight: FontWeight.bold);
@@ -565,43 +581,34 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
       AiPanelPositionEnum value,
       ValueChanged<AiPanelPositionEnum> onChanged,
     ) {
-      var currentValue = value;
-      return StatefulBuilder(
-        builder: (context, setState) {
-          final l10n = L10n.of(context);
-          return SingleRowSettingTile(
-            title: title,
-            trailing: AnxSegmentedButton<AiPanelPositionEnum>(
-              segments: [
-                SegmentButtonItem(
-                  value: AiPanelPositionEnum.popup,
-                  label: l10n.readingPanelPositionPopup,
-                  icon: const Icon(
-                    Icons.picture_in_picture_alt_outlined,
-                    size: AppSettingsAiTokens.segmentedIconSize,
-                  ),
-                ),
-                SegmentButtonItem(
-                  value: AiPanelPositionEnum.right,
-                  label: l10n.readingPanelPositionRight,
-                  icon: const Icon(
-                    Icons.border_right,
-                    size: AppSettingsAiTokens.segmentedIconSize,
-                  ),
-                ),
-              ],
-              selected: {currentValue},
-              onSelectionChanged: (selected) {
-                if (selected.isNotEmpty) {
-                  setState(() {
-                    currentValue = selected.first;
-                    onChanged(currentValue);
-                  });
-                }
-              },
+      return SingleRowSettingTile(
+        title: title,
+        trailing: AnxSegmentedButton<AiPanelPositionEnum>(
+          segments: [
+            SegmentButtonItem(
+              value: AiPanelPositionEnum.popup,
+              label: L10n.of(context).readingPanelPositionPopup,
+              icon: const Icon(
+                Icons.picture_in_picture_alt_outlined,
+                size: AppSettingsAiTokens.segmentedIconSize,
+              ),
             ),
-          );
-        },
+            SegmentButtonItem(
+              value: AiPanelPositionEnum.right,
+              label: L10n.of(context).readingPanelPositionRight,
+              icon: const Icon(
+                Icons.border_right,
+                size: AppSettingsAiTokens.segmentedIconSize,
+              ),
+            ),
+          ],
+          selected: {value},
+          onSelectionChanged: (selected) {
+            if (selected.isNotEmpty) {
+              onChanged(selected.first);
+            }
+          },
+        ),
       );
     }
 

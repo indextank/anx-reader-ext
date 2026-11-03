@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
 import 'package:anx_reader/enums/code_highlight_theme.dart';
@@ -56,6 +58,20 @@ Future<void> _pumpReadingMoreSettings(WidgetTester tester) async {
     tester,
     const SingleChildScrollView(child: ReadingMoreSettings()),
   );
+}
+
+Future<void> _tapPanelOption(
+  WidgetTester tester,
+  String title,
+  String label,
+) async {
+  final option = find.descendant(
+    of: _panelTile(title),
+    matching: find.text(label),
+  );
+  await tester.ensureVisible(option);
+  await tester.tap(option, warnIfMissed: false);
+  await tester.pump();
 }
 
 void main() {
@@ -139,6 +155,102 @@ void main() {
     final storedPrefs = await SharedPreferences.getInstance();
     expect(storedPrefs.getString('notesPanelPosition'), 'right');
     expect(storedPrefs.getString('stylePanelPosition'), isNull);
+  });
+
+  testWidgets('pending write keeps segmented selection aligned with prefs',
+      (tester) async {
+    final prefs = Prefs();
+    final write = Completer<void>();
+    prefs.panelPositionWriterForTesting = (key, value) async {
+      await write.future;
+      return prefs.prefs.setString(key, value);
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    await _pumpReadingMoreSettings(tester);
+
+    await _tapPanelOption(tester, _notesTitle, 'Right');
+
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.popup);
+    expect(prefs.stylePanelPosition, AiPanelPositionEnum.popup);
+    _expectSelected(tester, _styleTitle, AiPanelPositionEnum.popup);
+
+    write.complete();
+    await tester.pump();
+
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.right);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.right);
+    _expectSelected(tester, _styleTitle, AiPanelPositionEnum.popup);
+  });
+
+  testWidgets('failed write falls back to popup in segmented selection',
+      (tester) async {
+    final prefs = Prefs();
+    final write = Completer<void>();
+    prefs.panelPositionWriterForTesting = (key, value) async {
+      await write.future;
+      return false;
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    await _pumpReadingMoreSettings(tester);
+
+    await _tapPanelOption(tester, _notesTitle, 'Right');
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.popup);
+
+    write.complete();
+    await tester.pump();
+
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.popup);
+  });
+
+  testWidgets('rapid clicks keep segmented selection aligned with latest prefs',
+      (tester) async {
+    final prefs = Prefs();
+    final writes = <Completer<void>>[];
+    final attemptedValues = <String>[];
+    prefs.panelPositionWriterForTesting = (key, value) async {
+      attemptedValues.add(value);
+      final write = Completer<void>();
+      writes.add(write);
+      await write.future;
+      return prefs.prefs.setString(key, value);
+    };
+    addTearDown(() => prefs.panelPositionWriterForTesting = null);
+    await _pumpReadingMoreSettings(tester);
+
+    await _tapPanelOption(tester, _notesTitle, 'Right');
+    await _tapPanelOption(tester, _notesTitle, 'Popup');
+    await _tapPanelOption(tester, _notesTitle, 'Right');
+
+    expect(attemptedValues, ['right']);
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.popup);
+
+    writes[0].complete();
+    await tester.pump();
+    expect(attemptedValues, ['right', 'right']);
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.popup);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.popup);
+
+    writes[1].complete();
+    await tester.pump();
+    expect(prefs.notesPanelPosition, AiPanelPositionEnum.right);
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.right);
+  });
+
+  testWidgets('selection survives page rebuild after a successful click',
+      (tester) async {
+    await _pumpReadingMoreSettings(tester);
+    await _tapPanelOption(tester, _notesTitle, 'Right');
+    await tester.pump();
+    expect(Prefs().prefs.getString('notesPanelPosition'), 'right');
+
+    await _pumpReadingMoreSettings(tester);
+
+    _expectSelected(tester, _notesTitle, AiPanelPositionEnum.right);
+    _expectSelected(tester, _styleTitle, AiPanelPositionEnum.popup);
   });
 
   testWidgets('stored right positions are restored for both panels',
