@@ -133,6 +133,11 @@ dependencies:
   webview_cef: ^0.5.1
 
 dependency_overrides:
+  # 本地补丁：修复 MediaEngine 回调在 MF 工作线程直接发送 events 通道
+  # 消息触发的 "non-platform thread" 引擎错误（上游未修，
+  # 见 third_party/audioplayers_windows/windows/platform_dispatch.h）。
+  audioplayers_windows:
+    path: third_party/audioplayers_windows
   # Play Billing Library 8 (required by Google Play). in_app_purchase 3.2.x
   # still pins ^0.4.0, and 3.3+ would pull storekit 0.4 (StoreKit 2 default).
   in_app_purchase_android: ^0.5.3
