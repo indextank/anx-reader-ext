@@ -7,7 +7,10 @@ import 'package:anx_reader/widgets/reading_page/panel_position.dart';
 import 'package:anx_reader/widgets/reading_page/reading_chrome.dart';
 import 'package:anx_reader/widgets/reading_page/reading_side_panel_host.dart';
 import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
+import 'package:anx_reader/widgets/reading_page/panel_width.dart';
 import 'package:anx_reader/widgets/reading_page/reading_toolbar.dart';
+import 'package:anx_reader/widgets/reading_page/style_panel_content_width.dart';
 import 'package:flutter/material.dart';
 
 class ReadingPanelCoordinator extends StatefulWidget {
@@ -70,6 +73,10 @@ class ReadingPanelCoordinator extends StatefulWidget {
 }
 
 class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
+  /// 样式面板保活键：弹层/侧栏共用同一实例，切换展现位置时
+  /// Flutter 通过 GlobalKey 迁移 Element，已选设置与子页面不丢失。
+  final GlobalKey _stylePanelKey = GlobalKey();
+
   ReadingPanelActivity _activity = const ReadingPanelActivity();
   var _session = 0;
   var _transition = 0;
@@ -89,7 +96,7 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
       _moveActiveToolAfterFrame(ReadingPanelTool.notes);
     } else if (oldWidget.stylePanelPosition != widget.stylePanelPosition &&
         _activity.activeTool == ReadingPanelTool.style) {
-      _moveActiveToolAfterFrame(ReadingPanelTool.style);
+      _moveActiveToolInFrame(ReadingPanelTool.style);
     }
   }
 
@@ -170,6 +177,39 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
     chrome?.showToolPanel(_chromeKind(tool));
   }
 
+  /// 同一帧内完成弹层/侧栏迁移：样式面板带 GlobalKey，Element 直接
+  /// 换挂载点，状态完整保留（不经过 close→延时 open 的重建路径）。
+  void _moveActiveToolInFrame(ReadingPanelTool tool) {
+    _transition++;
+    final kind = _chromeKind(tool);
+    final position = readingToolPosition(
+      kind,
+      notesPosition: widget.notesPanelPosition,
+      stylePosition: widget.stylePanelPosition,
+    );
+    final presentation = position == AiPanelPositionEnum.right
+        ? ReadingPanelPresentation.side
+        : ReadingPanelPresentation.popup;
+
+    final chrome = widget.chromeKey.currentState;
+    if (presentation == ReadingPanelPresentation.side) {
+      chrome?.closeToolPanel();
+      if (chrome != null && !chrome.bottomBarOffstage) {
+        _hideForTransition = true;
+        chrome.hideBottomBar();
+        _hideForTransition = false;
+      }
+    } else {
+      if (chrome != null && chrome.bottomBarOffstage) {
+        chrome.showBottomBar();
+      }
+      chrome?.showToolPanel(kind);
+    }
+    setState(() {
+      _activity = _activity.close(tool).open(tool, presentation: presentation);
+    });
+  }
+
   void _moveActiveToolAfterFrame(ReadingPanelTool tool) {
     final transition = ++_transition;
     _session++;
@@ -226,6 +266,20 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
     };
   }
 
+  /// 构建共享的样式面板实例；弹层与侧栏使用同一 GlobalKey，
+  /// 迁移时 Flutter 保留其 Element 与 State。
+  Widget _stylePanel({required bool sideContent}) {
+    return ReadingToolPanel(
+      key: _stylePanelKey,
+      kind: ReadingToolPanelKind.style,
+      notesBuilder: widget.notesBuilder,
+      ttsBuilder: widget.ttsBuilder,
+      styleThemesLoader: widget.styleThemesLoader,
+      styleBuilder: widget.styleBuilder,
+      sideContent: sideContent,
+    );
+  }
+
   Widget _buildSideContent(BuildContext context, ReadingPanelTool tool) {
     return switch (tool) {
       ReadingPanelTool.ai => widget.aiBuilder(context),
@@ -233,15 +287,7 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
           key: ValueKey('notes-side-$_session'),
           child: widget.notesBuilder(context),
         ),
-      ReadingPanelTool.style => ReadingToolPanel(
-          key: ValueKey('style-side-$_session'),
-          kind: ReadingToolPanelKind.style,
-          notesBuilder: widget.notesBuilder,
-          ttsBuilder: widget.ttsBuilder,
-          styleThemesLoader: widget.styleThemesLoader,
-          styleBuilder: widget.styleBuilder,
-          sideContent: true,
-        ),
+      ReadingPanelTool.style => _stylePanel(sideContent: true),
       ReadingPanelTool.tts => const SizedBox.shrink(),
     };
   }
@@ -301,9 +347,19 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
                   ReadingSidePanelHost(
                     key: sideTool == ReadingPanelTool.ai
                         ? const ValueKey('ai-chat-panel')
-                        : ValueKey('reading-${sideTool.name}-side-panel'),
+                        : sideTool == ReadingPanelTool.style
+                            ? const ValueKey('reading-style-side-panel')
+                            : ValueKey('reading-${sideTool.name}-side-panel'),
                     width: widget.panelWidth,
                     minWidth: widget.panelMinWidth,
+                    adaptiveWidth: sideTool == ReadingPanelTool.style,
+                    adaptiveResolvedWidth: resolvePanelWidth(
+                      intrinsicWidth: stylePanelContentWidth(context),
+                      minWidth: StylePanelTokens.minPanelWidth,
+                      maxWidth: panelMaxWidthFor(
+                        availableWidth: constraints.maxWidth,
+                      ),
+                    ),
                     maxWidth: math.min(
                       widget.panelMaxWidth,
                       constraints.maxWidth,
@@ -325,6 +381,7 @@ class ReadingPanelCoordinatorState extends State<ReadingPanelCoordinator> {
               ttsBuilder: widget.ttsBuilder,
               styleThemesLoader: widget.styleThemesLoader,
               styleBuilder: widget.styleBuilder,
+              stylePanelHost: _stylePanel(sideContent: false),
               ttsFab: widget.ttsFab,
             ),
           ],

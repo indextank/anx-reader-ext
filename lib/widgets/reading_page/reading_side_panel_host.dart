@@ -15,6 +15,8 @@ class ReadingSidePanelHost extends StatelessWidget {
     required this.onSwitchPosition,
     required this.onClose,
     required this.child,
+    this.adaptiveWidth = false,
+    this.adaptiveResolvedWidth = 0,
   });
 
   final double width;
@@ -25,6 +27,14 @@ class ReadingSidePanelHost extends StatelessWidget {
   final VoidCallback onSwitchPosition;
   final VoidCallback onClose;
   final Widget child;
+
+  /// true 时宽度按 [adaptiveResolvedWidth]（由内容宽度解析而来，见
+  /// style_panel_content_width.dart + resolvePanelWidth）取值，忽略
+  /// [width] 并隐藏手动拖拽条；供样式面板按内容自适应。
+  final bool adaptiveWidth;
+
+  /// 解析后的自适应宽度（已夹在上下限内）。
+  final double adaptiveResolvedWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +47,43 @@ class ReadingSidePanelHost extends StatelessWidget {
           0.0,
           math.min(maxWidth, availableWidth),
         );
+
+        final body = Column(
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIconButton(
+                    onPressed: onSwitchPosition,
+                    tooltip: L10n.of(context).aiShowAtBottom,
+                    child: const Icon(Icons.arrow_downward),
+                  ),
+                  AppIconButton(
+                    onPressed: onClose,
+                    tooltip: L10n.of(context).close,
+                    child: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: child),
+          ],
+        );
+
+        if (adaptiveWidth) {
+          // 内容自适应：宽度已由协调器按内容解析，这里再夹到
+          // 当前可用宽度内（窄屏保护）。
+          final effectiveAdaptive =
+              adaptiveResolvedWidth.clamp(0.0, effectiveMaxWidth).toDouble();
+          return SizedBox(
+            key: const ValueKey('reading-side-panel-adaptive'),
+            width: effectiveAdaptive,
+            child: body,
+          );
+        }
+
         final effectiveMinWidth = math.min(minWidth, effectiveMaxWidth);
         final effectiveWidth =
             width.clamp(effectiveMinWidth, effectiveMaxWidth).toDouble();
@@ -55,31 +102,7 @@ class ReadingSidePanelHost extends StatelessWidget {
                   child: VerticalDivider(width: 2, thickness: 1),
                 ),
               ),
-              Expanded(
-                child: Column(
-                  children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AppIconButton(
-                            onPressed: onSwitchPosition,
-                            tooltip: L10n.of(context).aiShowAtBottom,
-                            child: const Icon(Icons.arrow_downward),
-                          ),
-                          AppIconButton(
-                            onPressed: onClose,
-                            tooltip: L10n.of(context).close,
-                            child: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(child: child),
-                  ],
-                ),
-              ),
+              Expanded(child: body),
             ],
           ),
         );

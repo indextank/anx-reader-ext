@@ -1,6 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/enums/text_alignment.dart';
 import 'package:anx_reader/enums/writing_mode.dart';
@@ -45,6 +46,8 @@ class StyleSlider extends StatelessWidget {
         IconAndText(
           icon: Icon(icon),
           text: label,
+          heightOverride: StylePanelTokens.sliderLabelHeight,
+          style: StylePanelTokens.optionLabel(context),
         ),
         Expanded(
           child: Slider(
@@ -163,10 +166,14 @@ class _StyleSettingsState extends State<StyleSettings> {
             ? IconAndText(
                 icon: const Icon(Bootstrap.chevron_bar_right),
                 text: L10n.of(context).readingPageRightMargin,
+                heightOverride: StylePanelTokens.sliderLabelHeight,
+                style: StylePanelTokens.optionLabel(context),
               )
             : IconAndText(
                 icon: const Icon(Bootstrap.chevron_bar_up),
                 text: L10n.of(context).readingPageTopMargin,
+                heightOverride: StylePanelTokens.sliderLabelHeight,
+                style: StylePanelTokens.optionLabel(context),
               ),
         Expanded(
           child: Slider(
@@ -185,10 +192,14 @@ class _StyleSettingsState extends State<StyleSettings> {
             ? IconAndText(
                 icon: const Icon(Bootstrap.chevron_bar_left),
                 text: L10n.of(context).readingPageLeftMargin,
+                heightOverride: StylePanelTokens.sliderLabelHeight,
+                style: StylePanelTokens.optionLabel(context),
               )
             : IconAndText(
                 icon: const Icon(Bootstrap.chevron_bar_down),
                 text: L10n.of(context).readingPageBottomMargin,
+                heightOverride: StylePanelTokens.sliderLabelHeight,
+                style: StylePanelTokens.optionLabel(context),
               ),
         Expanded(
           child: Slider(
@@ -279,7 +290,7 @@ class _StyleSettingsState extends State<StyleSettings> {
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           trailing: DropdownMenu<TextAlignmentEnum>(
-            width: 140,
+            width: StylePanelTokens.dropdownWidth,
             initialSelection: Prefs().textAlignment,
             inputDecorationTheme: InputDecorationTheme(
               isDense: false,
@@ -318,15 +329,12 @@ class _StyleSettingsState extends State<StyleSettings> {
       );
     }
 
-    return Container(
-      padding: AppReadingTokens.settingsCompactPadding,
+    return Padding(
+      padding: StylePanelTokens.groupPadding,
       child: Column(
         children: [
           useBookStylesSwitch(),
-          const Divider(),
           sliders(),
-          const SizedBox(height: 16),
-          const Divider(),
           textAlignment(),
           CustomCSSEditor(),
         ],

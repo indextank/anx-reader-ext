@@ -17,6 +17,7 @@ class ReadingChrome extends StatefulWidget {
     required this.styleThemesLoader,
     required this.styleBuilder,
     required this.ttsFab,
+    this.stylePanelHost,
   });
 
   final ReadingToolbar toolbar;
@@ -31,6 +32,10 @@ class ReadingChrome extends StatefulWidget {
     ValueChanged<Widget> setCurrentPage,
   ) styleBuilder;
   final Widget ttsFab;
+
+  /// 由协调器持有的样式面板实例（GlobalKey 保活）。提供时弹层直接
+  /// 承载该实例，使弹层/侧栏间迁移不丢失面板状态。
+  final Widget? stylePanelHost;
 
   @override
   State<ReadingChrome> createState() => ReadingChromeState();
@@ -101,13 +106,17 @@ class ReadingChromeState extends State<ReadingChrome> {
                   children: [
                     widget.toolbar,
                     const Spacer(),
-                    ReadingToolPanel(
-                      kind: _toolPanelKind,
-                      notesBuilder: widget.notesBuilder,
-                      ttsBuilder: widget.ttsBuilder,
-                      styleThemesLoader: widget.styleThemesLoader,
-                      styleBuilder: widget.styleBuilder,
-                    ),
+                    if (_toolPanelKind == ReadingToolPanelKind.style &&
+                        widget.stylePanelHost != null)
+                      Expanded(child: widget.stylePanelHost!)
+                    else
+                      ReadingToolPanel(
+                        kind: _toolPanelKind,
+                        notesBuilder: widget.notesBuilder,
+                        ttsBuilder: widget.ttsBuilder,
+                        styleThemesLoader: widget.styleThemesLoader,
+                        styleBuilder: widget.styleBuilder,
+                      ),
                   ],
                 ),
               ],

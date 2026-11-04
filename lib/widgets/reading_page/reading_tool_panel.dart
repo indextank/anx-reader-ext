@@ -51,19 +51,14 @@ class _ReadingToolPanelState extends State<ReadingToolPanel> {
   @override
   void didUpdateWidget(covariant ReadingToolPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.sideContent != widget.sideContent) {
-      _latestRequestId++;
-      _currentPage = null;
-      if (widget.kind == ReadingToolPanelKind.style) {
-        _loadThemes();
-      }
-      return;
-    }
     if (widget.kind != ReadingToolPanelKind.style) {
       _latestRequestId++;
       return;
     }
-    if (oldWidget.kind != ReadingToolPanelKind.style) {
+    // sideContent 变化 = 同一面板在弹层/侧栏间迁移（GlobalKey 保活），
+    // 不重置已加载主题与子页面状态。
+    if (oldWidget.kind != ReadingToolPanelKind.style ||
+        (_themes.isEmpty && !_loading && !_failed)) {
       _loadThemes();
     }
   }

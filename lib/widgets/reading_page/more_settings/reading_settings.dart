@@ -1,6 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/theme/app_page_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
@@ -613,8 +614,8 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
       );
     }
 
-    return Container(
-      padding: AppReadingTokens.settingsPadding,
+    return Padding(
+      padding: StylePanelTokens.groupPadding,
       child: Column(
         children: [
           downloadFonts(),

@@ -199,9 +199,8 @@ void main() {
       ),
     );
     await tester.pump();
-    requestB.complete(const <ReadTheme>[]);
-    await tester.pump();
-    expect(find.text('popup-B'), findsOneWidget);
+    // 迁移到弹层不再重新请求：同一面板实例保留进行中的请求 A。
+    expect(attempts, 1);
 
     requestA.complete(<ReadTheme>[
       ReadTheme(
@@ -211,7 +210,8 @@ void main() {
       ),
     ]);
     await tester.pump();
-    expect(find.text('popup-B'), findsOneWidget);
+    expect(find.text('popup-A'), findsOneWidget);
+    expect(find.text('popup-B'), findsNothing);
     expect(find.text('side-A'), findsNothing);
     expect(tester.takeException(), isNull);
   });

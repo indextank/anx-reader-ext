@@ -7,6 +7,7 @@ import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/dao/reading_time.dart';
 import 'package:anx_reader/dao/theme.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
+import 'package:anx_reader/providers/reading_panel_position.dart';
 import 'package:anx_reader/enums/ai_chat_display_mode.dart';
 import 'package:anx_reader/enums/sync_direction.dart';
 import 'package:anx_reader/enums/sync_trigger.dart';
@@ -734,10 +735,12 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                   : AiPanelPositionEnum.right;
           break;
         case ReadingPanelTool.style:
-          Prefs().stylePanelPosition =
-              Prefs().stylePanelPosition == AiPanelPositionEnum.right
-                  ? AiPanelPositionEnum.popup
-                  : AiPanelPositionEnum.right;
+          ref.read(stylePanelPositionProvider.notifier).set(
+                ref.read(stylePanelPositionProvider) ==
+                        AiPanelPositionEnum.right
+                    ? AiPanelPositionEnum.popup
+                    : AiPanelPositionEnum.right,
+              );
           break;
         case ReadingPanelTool.tts:
           break;
@@ -944,7 +947,7 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                 ttsFab: const TtsFab(),
                 aiPanelPosition: Prefs().aiPanelPosition,
                 notesPanelPosition: Prefs().notesPanelPosition,
-                stylePanelPosition: Prefs().stylePanelPosition,
+                stylePanelPosition: ref.watch(stylePanelPositionProvider),
                 panelWidth: _aiChatWidth,
                 panelMinWidth: _aiChatMinWidth,
                 panelMaxWidth: _aiChatMaxWidth(context),

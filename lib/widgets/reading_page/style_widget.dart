@@ -14,6 +14,7 @@ import 'package:anx_reader/page/settings_page/subpage/fonts.dart';
 import 'package:anx_reader/service/book_player/book_player_server.dart';
 import 'package:anx_reader/service/font.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/font_parser.dart';
 import 'package:anx_reader/utils/get_path/get_base_path.dart';
@@ -82,7 +83,10 @@ class StyleWidgetState extends State<StyleWidget> {
             alignment: Alignment.centerLeft,
             child: Padding(
               padding: AppReadingTokens.settingsRowGap,
-              child: Text(L10n.of(context).readingThemesEmpty),
+              child: Text(
+                L10n.of(context).readingThemesEmpty,
+                style: StylePanelTokens.helper(context),
+              ),
             ),
           ),
         themeSelector(),
@@ -165,7 +169,8 @@ class StyleWidgetState extends State<StyleWidget> {
     }
 
     final inputDecorationTheme = InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: AppReadingTokens.pillRadius),
+      isDense: true,
+      border: OutlineInputBorder(borderRadius: AppReadingTokens.dropdownRadius),
     );
     return Column(
       children: [
@@ -251,7 +256,8 @@ class StyleWidgetState extends State<StyleWidget> {
       children: [
         Row(
           children: [
-            IconAndText(
+            _panelSliderLabel(
+              context,
               icon: const Icon(Icons.line_weight),
               text: L10n.of(context).readingPageLineSpacing,
             ),
@@ -276,7 +282,8 @@ class StyleWidgetState extends State<StyleWidget> {
         ),
         Row(
           children: [
-            IconAndText(
+            _panelSliderLabel(
+              context,
               icon: const Icon(Icons.height),
               text: L10n.of(context).readingPageParagraphSpacing,
             ),
@@ -309,7 +316,8 @@ class StyleWidgetState extends State<StyleWidget> {
     final bookStyle = Prefs().bookStyle;
     return Row(
       children: [
-        IconAndText(
+        _panelSliderLabel(
+          context,
           icon: const Icon(Icons.format_size),
           text: L10n.of(context).readingPageFontSize,
         ),
@@ -368,7 +376,7 @@ class StyleWidgetState extends State<StyleWidget> {
   Widget themeSelector() {
     const size = 40.0;
     return SizedBox(
-      height: 56,
+      height: StylePanelTokens.themeRowHeight,
       child: ListView.builder(
         itemCount: widget.themes.length + 1,
         scrollDirection: Axis.horizontal,
@@ -553,4 +561,18 @@ class _ThemeChangeWidgetState extends State<ThemeChangeWidget> {
     );
     return pickedColor.toARGB32().toRadixString(16);
   }
+}
+
+/// 面板滑杆行的统一图标+标签（高度与文字样式取自 StylePanelTokens）。
+Widget _panelSliderLabel(
+  BuildContext context, {
+  required Widget icon,
+  required String text,
+}) {
+  return IconAndText(
+    icon: icon,
+    text: text,
+    heightOverride: StylePanelTokens.sliderLabelHeight,
+    style: StylePanelTokens.optionLabel(context),
+  );
 }

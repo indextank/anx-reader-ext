@@ -4,6 +4,7 @@ import 'package:anx_reader/enums/page_turn_mode.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/platform_utils.dart';
 import 'package:anx_reader/utils/ui/status_bar.dart';
@@ -231,8 +232,8 @@ class _OtherSettingsState extends State<OtherSettings> {
       );
     }
 
-    return Container(
-      padding: AppReadingTokens.settingsCompactPadding,
+    return Padding(
+      padding: StylePanelTokens.groupPadding,
       child: Column(
         children: [
           switchTile(
