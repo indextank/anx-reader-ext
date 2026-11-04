@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -228,9 +229,34 @@ def _lock_key(lock_path):
     return os.path.normcase(str(Path(os.path.abspath(lock_path))))
 
 
-def _acquire_file_lock(lock_path):
+def _validate_lock_paths(root, lock_path):
+    root = Path(root).resolve()
+    build_root = root / "build"
+    if _is_directory_link(build_root):
+        raise PackagingError(f"Build directory must not be a link: {build_root}")
+    if lock_path.is_symlink():
+        raise PackagingError(f"Build lock must not be a symbolic link: {lock_path}")
+    _relative_to(build_root.resolve(), root)
+    resolved_lock = lock_path.resolve(strict=False)
+    _relative_to(resolved_lock, build_root)
+    if resolved_lock != lock_path:
+        raise PackagingError(f"Build lock must resolve directly inside build: {lock_path}")
+
+
+def _acquire_file_lock(root, lock_path):
+    stream = None
+    descriptor = None
     try:
-        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o666)
+        _validate_lock_paths(root, lock_path)
+        flags = os.O_RDWR | os.O_CREAT
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(lock_path, flags, 0o666)
+        file_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+            raise PackagingError(
+                f"Build lock must be a regular file with one link: {lock_path}"
+            )
         stream = os.fdopen(descriptor, "r+b")
         stream.seek(0)
         if os.name == "nt":
@@ -241,15 +267,19 @@ def _acquire_file_lock(lock_path):
             import fcntl
 
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _validate_lock_paths(root, lock_path)
         return stream
-    except OSError as error:
-        try:
-            stream.close()
-        except (UnboundLocalError, OSError):
+    except (OSError, PackagingError) as error:
+        if stream is not None:
             try:
-                os.close(descriptor)
-            except (UnboundLocalError, OSError):
+                _unlock_file(stream)
+            except OSError:
                 pass
+            stream.close()
+        elif descriptor is not None:
+            os.close(descriptor)
+        if isinstance(error, PackagingError):
+            raise
         raise PackagingError(
             f"Build lock is active or unavailable: {lock_path}"
         ) from error
@@ -279,12 +309,13 @@ def ensure_no_active_build(root, current_pid=None):
     key = _lock_key(lock_path)
     held = _HELD_LOCKS.get(key)
     if held is not None:
-        held_pid, token, _ = held
+        held_pid, token, _, depth = held
         if held_pid == pid:
+            _HELD_LOCKS[key] = (pid, token, held[2], depth + 1)
             return token
         raise PackagingError(f"Another active build owner holds the lock: {lock_path}")
 
-    stream = _acquire_file_lock(lock_path)
+    stream = _acquire_file_lock(root, lock_path)
     token = secrets.token_hex(16)
     try:
         metadata = json.dumps({"pid": pid, "token": token}, sort_keys=True).encode("ascii")
@@ -300,7 +331,7 @@ def ensure_no_active_build(root, current_pid=None):
             stream.close()
         raise PackagingError(f"Unable to initialize build lock: {lock_path}") from error
 
-    _HELD_LOCKS[key] = (pid, token, stream)
+    _HELD_LOCKS[key] = (pid, token, stream, 1)
     return token
 
 
@@ -319,8 +350,15 @@ def release_build_lock(root, current_pid=None, owner_token=None):
     ):
         raise PackagingError("Build lock owner token does not match this process")
 
-    _, _, stream = held
+    _, _, stream, depth = held
+    if depth > 1:
+        _HELD_LOCKS[key] = (pid, owner_token, stream, depth - 1)
+        return
     try:
+        _validate_lock_paths(root, lock_path)
+        file_stat = os.fstat(stream.fileno())
+        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+            raise PackagingError(f"Build lock file is no longer safe: {lock_path}")
         stream.seek(0)
         try:
             metadata = json.loads(stream.read().decode("ascii"))

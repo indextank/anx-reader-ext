@@ -62,6 +62,22 @@ print(token, flush=True)
 os._exit(0)
 """
 
+LOCK_PROBE_CODE = r"""
+import sys
+from pathlib import Path
+
+code_root = Path(sys.argv[1])
+project_root = Path(sys.argv[2])
+sys.path.insert(0, str(code_root))
+from scripts import packaging
+
+try:
+    token = packaging.ensure_no_active_build(project_root)
+except packaging.PackagingError:
+    sys.exit(23)
+packaging.release_build_lock(project_root, owner_token=token)
+"""
+
 
 class PackagingTestCase(unittest.TestCase):
     def setUp(self):
@@ -425,17 +441,50 @@ class BuildLockTests(PackagingTestCase):
         self.assertIsInstance(token, str)
         self.assertGreaterEqual(len(token), 16)
 
-    def test_ensure_no_active_build_is_reentrant_for_current_pid(self):
-        first = packaging.ensure_no_active_build(self.root, current_pid=os.getpid())
-        self.addCleanup(
-            packaging.release_build_lock, self.root, owner_token=first
+    def probe_lock(self):
+        return subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-B",
+                "-c",
+                LOCK_PROBE_CODE,
+                str(ROOT),
+                str(self.root),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
 
-        second = packaging.ensure_no_active_build(
-            self.root, current_pid=os.getpid()
-        )
+    def assert_lock_rejected_without_changing(self, protected):
+        token = None
+        try:
+            with self.assertRaises(packaging.PackagingError):
+                token = packaging.ensure_no_active_build(self.root)
+        finally:
+            if token is not None:
+                packaging.release_build_lock(self.root, owner_token=token)
+        self.assertEqual(protected.read_text(encoding="utf-8"), "outside-content")
 
-        self.assertEqual(second, first)
+    def test_nested_build_lock_keeps_outer_lock_until_final_release(self):
+        outer = packaging.ensure_no_active_build(self.root, current_pid=os.getpid())
+        inner = packaging.ensure_no_active_build(self.root, current_pid=os.getpid())
+        self.assertEqual(inner, outer)
+
+        packaging.release_build_lock(self.root, owner_token=inner)
+        while_outer_held = self.probe_lock()
+        outer_release_error = None
+        try:
+            packaging.release_build_lock(self.root, owner_token=outer)
+        except packaging.PackagingError as error:
+            outer_release_error = error
+
+        self.assertEqual(while_outer_held.returncode, 23, while_outer_held.stderr)
+        self.assertIsNone(outer_release_error)
+        after_outer_release = self.probe_lock()
+        self.assertEqual(after_outer_release.returncode, 0, after_outer_release.stderr)
 
     def test_ensure_no_active_build_replaces_stale_metadata(self):
         (self.root / "build").mkdir()
@@ -560,6 +609,45 @@ class BuildLockTests(PackagingTestCase):
 
         self.assertIsInstance(token, str)
         self.assertNotEqual(token, stdout.strip())
+
+    def test_build_lock_rejects_hard_linked_lock_file(self):
+        target_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(target_directory.cleanup)
+        protected = Path(target_directory.name) / "outside.txt"
+        protected.write_text("outside-content", encoding="utf-8")
+        (self.root / "build").mkdir()
+        os.link(protected, self.lock_path)
+
+        self.assert_lock_rejected_without_changing(protected)
+
+    def test_build_lock_rejects_symbolic_linked_lock_file(self):
+        target_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(target_directory.cleanup)
+        protected = Path(target_directory.name) / "outside.txt"
+        protected.write_text("outside-content", encoding="utf-8")
+        (self.root / "build").mkdir()
+        try:
+            self.lock_path.symlink_to(protected)
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"file links unavailable: {error}")
+
+        self.assert_lock_rejected_without_changing(protected)
+
+    def test_build_lock_rejects_linked_build_directory(self):
+        target_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(target_directory.cleanup)
+        target = Path(target_directory.name)
+        self.make_directory_link(self.root / "build", target)
+        token = None
+
+        try:
+            with self.assertRaises(packaging.PackagingError):
+                token = packaging.ensure_no_active_build(self.root)
+        finally:
+            if token is not None:
+                packaging.release_build_lock(self.root, owner_token=token)
+
+        self.assertFalse((target / ".packaging.lock").exists())
 
     def test_run_with_build_lock_holds_lock_for_entire_subprocess(self):
         probe_code = r"""
