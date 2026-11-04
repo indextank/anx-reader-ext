@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:core';
 
@@ -44,6 +45,7 @@ import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/utils/get_current_language_code.dart';
 import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/widgets/reading_page/style_widget.dart';
+import 'package:anx_reader/widgets/reading_page/panel_position.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String prefsBackupVersionKey = '__prefsBackupVersion';
@@ -55,6 +57,13 @@ const Set<String> _prefsImportSkipKeys = {
   'iapPurchaseStatus',
   'iapLastCheckTime',
 };
+
+class _PanelPositionState {
+  AiPanelPositionEnum? runtimeValue;
+  int generation = 0;
+  bool writePending = false;
+  Future<void> writeQueue = Future<void>.value();
+}
 
 class Prefs extends ChangeNotifier {
   late SharedPreferences prefs;
@@ -77,6 +86,7 @@ class Prefs extends ChangeNotifier {
 
   Future<void> initPrefs() async {
     prefs = await SharedPreferences.getInstance();
+    _panelPositionStates.clear();
     saveBeginDate();
     notifyListeners();
   }
@@ -1688,13 +1698,82 @@ class Prefs extends ChangeNotifier {
   }
 
   AiPanelPositionEnum get aiPanelPosition {
-    return AiPanelPositionEnum.fromCode(
-        prefs.getString('aiPanelPosition') ?? 'right');
+    final position = AiPanelPositionEnum.fromCode(
+      prefs.getString('aiPanelPosition'),
+    );
+    return position == AiPanelPositionEnum.bottom
+        ? AiPanelPositionEnum.bottom
+        : AiPanelPositionEnum.right;
   }
 
   set aiPanelPosition(AiPanelPositionEnum position) {
     prefs.setString('aiPanelPosition', position.code);
     notifyListeners();
+  }
+
+  Future<bool> Function(String key, String value)? _panelPositionWriter;
+  final Map<String, _PanelPositionState> _panelPositionStates =
+      <String, _PanelPositionState>{};
+
+  @visibleForTesting
+  set panelPositionWriterForTesting(
+    Future<bool> Function(String key, String value)? writer,
+  ) {
+    _panelPositionWriter = writer;
+  }
+
+  AiPanelPositionEnum get notesPanelPosition {
+    return _readStoredPanelPosition('notesPanelPosition');
+  }
+
+  set notesPanelPosition(AiPanelPositionEnum position) {
+    unawaited(_savePanelPosition('notesPanelPosition', position));
+  }
+
+  AiPanelPositionEnum get stylePanelPosition {
+    return _readStoredPanelPosition('stylePanelPosition');
+  }
+
+  set stylePanelPosition(AiPanelPositionEnum position) {
+    unawaited(_savePanelPosition('stylePanelPosition', position));
+  }
+
+  AiPanelPositionEnum _readStoredPanelPosition(String key) {
+    final state = _panelPositionStates[key];
+    if (state != null && state.writePending) {
+      return state.runtimeValue ?? AiPanelPositionEnum.popup;
+    }
+    return state?.runtimeValue ?? readPanelPosition(() => prefs.getString(key));
+  }
+
+  Future<void> _savePanelPosition(
+    String key,
+    AiPanelPositionEnum position,
+  ) {
+    final state = _panelPositionStates.putIfAbsent(
+      key,
+      _PanelPositionState.new,
+    );
+    state.runtimeValue ??= readPanelPosition(() => prefs.getString(key));
+    final generation = ++state.generation;
+    state.writePending = true;
+
+    final previousWrite = state.writeQueue;
+    final currentWrite = previousWrite.then((_) async {
+      final writer = _panelPositionWriter;
+      final succeeded = await writePanelPosition(
+        () => writer == null
+            ? prefs.setString(key, position.code)
+            : writer(key, position.code),
+      );
+      if (generation != state.generation) return;
+
+      state.runtimeValue = succeeded ? position : AiPanelPositionEnum.popup;
+      state.writePending = false;
+      notifyListeners();
+    });
+    state.writeQueue = currentWrite;
+    return currentWrite;
   }
 
   CodeHighlightThemeEnum get codeHighlightTheme {

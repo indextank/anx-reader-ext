@@ -1011,5 +1011,10 @@
   "readingTocLocateCurrent": "Locate current chapter",
   "readingTocClearSearch": "Clear search",
   "readingTocExpand": "Expand subchapters",
-  "readingTocCollapse": "Collapse subchapters"
+  "readingTocCollapse": "Collapse subchapters",
+  "readingNotesPanelPosition": "Notes panel position",
+  "readingStylePanelPosition": "Style panel position",
+  "readingPanelPositionPopup": "Popup",
+  "readingPanelPositionRight": "Right",
+  "readingThemesEmpty": "No reading themes yet"
 }

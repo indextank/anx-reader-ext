@@ -24,6 +24,7 @@ import 'package:anx_reader/widgets/ai/tool_tiles/apply_book_tags_step_tile.dart'
 import 'package:anx_reader/widgets/ai/tool_tiles/mindmap_step_tile.dart';
 import 'package:anx_reader/widgets/ai/tool_tiles/organize_bookshelf_step_tile.dart';
 import 'package:anx_reader/widgets/ai/ai_markdown.dart';
+import 'package:anx_reader/widgets/ai/ai_chat_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,29 +37,47 @@ class AiChatStream extends ConsumerStatefulWidget {
     this.sendImmediate = false,
     this.quickPromptChips = const [],
     this.trailing,
+    this.session,
   });
 
   final String? initialMessage;
   final bool sendImmediate;
   final List<AiQuickPromptChip> quickPromptChips;
   final List<Widget>? trailing;
+  final AiChatSession? session;
 
   @override
   ConsumerState<AiChatStream> createState() => AiChatStreamState();
 }
 
 class AiChatStreamState extends ConsumerState<AiChatStream> {
-  final TextEditingController inputController = TextEditingController();
+  late final AiChatSession _session;
+  TextEditingController get inputController => _session.inputController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  Stream<List<ChatMessage>>? _messageStream;
-  StreamController<List<ChatMessage>>? _messageController;
-  StreamSubscription<List<ChatMessage>>? _messageSubscription;
+  Stream<List<ChatMessage>>? get _messageStream => _session.messageStream;
+  set _messageStream(Stream<List<ChatMessage>>? value) =>
+      _session.messageStream = value;
+  StreamController<List<ChatMessage>>? get _messageController =>
+      _session.messageController;
+  set _messageController(StreamController<List<ChatMessage>>? value) =>
+      _session.messageController = value;
+  StreamSubscription<List<ChatMessage>>? get _messageSubscription =>
+      _session.messageSubscription;
+  set _messageSubscription(StreamSubscription<List<ChatMessage>>? value) =>
+      _session.messageSubscription = value;
+  bool get _isStreaming => _session.isStreaming;
+  set _isStreaming(bool value) => _session.isStreaming = value;
+  String? get _lastSentMessage => _session.lastSentMessage;
+  set _lastSentMessage(String? value) => _session.lastSentMessage = value;
+  bool get _lastSendWasRegenerate => _session.lastSendWasRegenerate;
+  set _lastSendWasRegenerate(bool value) =>
+      _session.lastSendWasRegenerate = value;
+  List<ChatMessage> get _preSendMessages => _session.preSendMessages;
+  set _preSendMessages(List<ChatMessage> value) =>
+      _session.preSendMessages = value;
+  String? get _preSendSessionId => _session.preSendSessionId;
+  set _preSendSessionId(String? value) => _session.preSendSessionId = value;
   final ScrollController _scrollController = ScrollController();
-  bool _isStreaming = false;
-  String? _lastSentMessage;
-  bool _lastSendWasRegenerate = false;
-  List<ChatMessage> _preSendMessages = const [];
-  String? _preSendSessionId;
   List<String> _suggestedPrompts = const [];
   List<String> _starterPrompts = const [];
   Locale? _promptsLocale;
@@ -92,8 +111,12 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
   @override
   void initState() {
     super.initState();
+    _session = widget.session ?? AiChatSession();
+    _session.addListener(_handleSessionChanged);
     _fontSize = Prefs().aiChatFontSize;
-    inputController.text = widget.initialMessage ?? '';
+    if (widget.initialMessage != null) {
+      inputController.text = widget.initialMessage!;
+    }
     if (widget.sendImmediate) {
       _sendMessage();
     }
@@ -126,11 +149,14 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
 
   @override
   void dispose() {
-    inputController.dispose();
-    _messageSubscription?.cancel();
-    _messageController?.close();
+    _session.removeListener(_handleSessionChanged);
+    if (widget.session == null) _session.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleSessionChanged() {
+    if (mounted) setState(() {});
   }
 
   AiProvider? _currentProvider(List<AiProvider> enabledProviders) {
@@ -428,49 +454,21 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
       inputController.clear();
     }
 
-    _messageSubscription?.cancel();
-    _messageController?.close();
-
-    final controller = StreamController<List<ChatMessage>>();
+    final controller = StreamController<List<ChatMessage>>.broadcast();
     final stream = ref.read(aiChatProvider.notifier).sendMessageStream(
           message,
           ref,
           isRegenerate,
         );
 
-    setState(() {
-      _messageController = controller;
-      _messageStream = controller.stream;
-      _isStreaming = true;
-    });
-
-    _messageSubscription = stream.listen(
-      (event) {
-        controller.add(event);
-        _scrollToBottom();
-      },
-      onError: (error, stack) {
-        controller.addError(error, stack);
-        if (!controller.isClosed) {
-          controller.close();
-        }
-        if (mounted) {
-          setState(() {
-            _isStreaming = false;
-          });
-        }
-      },
-      onDone: () {
-        if (!controller.isClosed) {
-          controller.close();
-        }
-        if (mounted) {
-          setState(() {
-            _isStreaming = false;
-          });
-        }
-      },
-      cancelOnError: false,
+    _session.beginStreaming(
+      controller,
+      stream,
+      message: message,
+      isRegenerate: isRegenerate,
+      previousMessages: retryMessage == null ? _preSendMessages : const [],
+      sessionId: retryMessage == null ? _preSendSessionId : null,
+      onEvent: _scrollToBottom,
     );
   }
 
@@ -927,15 +925,18 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
                   child: _messageStream != null
                       ? StreamBuilder<List<ChatMessage>>(
                           stream: _messageStream,
+                          initialData: _session.latestMessages,
                           builder: (context, snapshot) {
-                            if (snapshot.hasError) {
+                            if (_session.latestError != null) {
                               return Center(
                                 child: AppInlineFeedback(
                                   onRetry: _retryLastMessage,
                                 ),
                               );
                             }
-                            if (!snapshot.hasData) {
+                            final messages =
+                                _session.latestMessages ?? snapshot.data;
+                            if (messages == null) {
                               return AppSkeleton(
                                 child: Center(
                                   child: Text(L10n.of(context).commonLoading),
@@ -943,7 +944,6 @@ class AiChatStreamState extends ConsumerState<AiChatStream> {
                               );
                             }
 
-                            final messages = snapshot.data!;
                             if (messages.isEmpty) {
                               return buildEmptyState();
                             }

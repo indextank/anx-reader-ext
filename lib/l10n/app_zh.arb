@@ -1003,5 +1003,10 @@
   "readingTocLocateCurrent": "定位当前章节",
   "readingTocClearSearch": "清除搜索",
   "readingTocExpand": "展开子章节",
-  "readingTocCollapse": "折叠子章节"
+  "readingTocCollapse": "折叠子章节",
+  "readingNotesPanelPosition": "笔记面板展现位置",
+  "readingStylePanelPosition": "样式面板展现位置",
+  "readingPanelPositionPopup": "弹框显示",
+  "readingPanelPositionRight": "右侧显示",
+  "readingThemesEmpty": "暂无阅读主题"
 }

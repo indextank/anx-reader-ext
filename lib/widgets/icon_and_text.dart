@@ -59,6 +59,8 @@ class IconAndText extends StatelessWidget {
                 text,
                 style: TextStyle(fontSize: fontSize),
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                softWrap: false,
               ),
             ),
           ),

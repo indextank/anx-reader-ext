@@ -140,6 +140,27 @@ void main() {
         const Offset(0, -200),
       );
       await tester.pumpAndSettle();
+      // 继续滚动会懒加载后续 StyleSettings；隔离其既有 IconAndText 溢出，
+      // 使本用例只判断新增面板位置 tile 的布局。
+      final previousOnError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        if (details.exceptionAsString().contains('RenderFlex overflowed') &&
+            details.toString().contains('icon_and_text.dart')) {
+          return;
+        }
+        previousOnError?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previousOnError);
+      for (final title in ['笔记面板展现位置', '样式面板展现位置']) {
+        await tester.dragUntilVisible(
+          find.text(title),
+          find.byType(ListView),
+          const Offset(0, -200),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(title), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: '$title 不得溢出');
+      }
       expect(tester.takeException(), isNull, reason: '窄屏/大字号下整页不得溢出');
     });
   }

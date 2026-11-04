@@ -1,7 +1,9 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_page_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/enums/ai_panel_position.dart';
 import 'package:anx_reader/enums/convert_chinese_mode.dart';
 import 'package:anx_reader/enums/reading_info.dart';
 import 'package:anx_reader/enums/translation_mode.dart';
@@ -26,6 +28,22 @@ class ReadingMoreSettings extends StatefulWidget {
 class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
   final isReading =
       epubPlayerKey.currentState != null && epubPlayerKey.currentState!.mounted;
+
+  @override
+  void initState() {
+    super.initState();
+    Prefs().addListener(_onPrefsChanged);
+  }
+
+  @override
+  void dispose() {
+    Prefs().removeListener(_onPrefsChanged);
+    super.dispose();
+  }
+
+  void _onPrefsChanged() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -465,6 +483,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           ) {
             return SingleRowSettingTile(
               title: label,
+              contentPadding: AppSpacing.zero,
               // Wrap 需要按剩余宽度换行，因此钉合（不包横向滚动），
               // 并放宽右侧占比让芯片尽量单排放下。
               pinnedTrailing: true,
@@ -558,6 +577,42 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
       );
     }
 
+    Widget panelPositionTile(
+      String title,
+      AiPanelPositionEnum value,
+      ValueChanged<AiPanelPositionEnum> onChanged,
+    ) {
+      return SingleRowSettingTile(
+        title: title,
+        trailing: AnxSegmentedButton<AiPanelPositionEnum>(
+          segments: [
+            SegmentButtonItem(
+              value: AiPanelPositionEnum.popup,
+              label: L10n.of(context).readingPanelPositionPopup,
+              icon: const Icon(
+                Icons.picture_in_picture_alt_outlined,
+                size: AppSettingsAiTokens.segmentedIconSize,
+              ),
+            ),
+            SegmentButtonItem(
+              value: AiPanelPositionEnum.right,
+              label: L10n.of(context).readingPanelPositionRight,
+              icon: const Icon(
+                Icons.border_right,
+                size: AppSettingsAiTokens.segmentedIconSize,
+              ),
+            ),
+          ],
+          selected: {value},
+          onSelectionChanged: (selected) {
+            if (selected.isNotEmpty) {
+              onChanged(selected.first);
+            }
+          },
+        ),
+      );
+    }
+
     return Container(
       padding: AppReadingTokens.settingsPadding,
       child: Column(
@@ -571,7 +626,27 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           convertChinese(),
           const Divider(height: 15),
           codeHighlightTheme(),
+          panelPositionTile(
+            L10n.of(context).readingNotesPanelPosition,
+            Prefs().notesPanelPosition,
+            (value) => Prefs().notesPanelPosition = value,
+          ),
+          panelPositionTile(
+            L10n.of(context).readingStylePanelPosition,
+            Prefs().stylePanelPosition,
+            (value) => Prefs().stylePanelPosition = value,
+          ),
           const Divider(height: 15),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: AppReadingTokens.settingsRowGap,
+              child: Text(
+                L10n.of(context).readingPageReadingInfo,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ),
           readingInfo(),
           // const Divider(height: 8),
           // bionicReading(),
