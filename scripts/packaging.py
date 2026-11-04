@@ -1,9 +1,18 @@
-"""Shared helpers for safe distribution packaging."""
+"""Shared helpers for safe distribution packaging.
 
-import errno
+BAT, PowerShell, and Bash callers can hold the build lock for a complete build
+from the project root with:
+    python -I scripts/packaging.py . <build-command> [argument ...]
+The child exit code is propagated and the lock is released in all cases.
+"""
+
+import json
 import os
 import re
+import secrets
 import shutil
+import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path, PureWindowsPath
@@ -14,10 +23,15 @@ class PackagingError(RuntimeError):
 
 
 _SUPPORTED_PLATFORMS = frozenset({"android", "windows", "linux", "macos"})
+_PACKAGING_TEMP_DIRECTORY = "packaging-tmp"
+_PROTECTED_BUILD_DIRECTORIES = frozenset(
+    {".gradle", "cmakefiles", "x64", "runner", "bundle"}
+)
 _VERSION_PATTERN = re.compile(
     r"^[ \t]*version:[ \t]*(\d+\.\d+\.\d+)(?:\+\d+)?[ \t]*(?:#.*)?$",
     re.MULTILINE,
 )
+_HELD_LOCKS = {}
 
 
 def read_version(root: Path) -> str:
@@ -40,6 +54,18 @@ def platform_dist(root, platform) -> Path:
     return Path(root) / "dist" / platform
 
 
+def _relative_to(path, parent):
+    try:
+        return path.relative_to(parent)
+    except ValueError as error:
+        raise PackagingError(f"Path is outside its allowed parent: {path}") from error
+
+
+def _is_directory_link(path):
+    junction_check = getattr(path, "is_junction", None)
+    return path.is_symlink() or (junction_check is not None and junction_check())
+
+
 def _validate_artifact_name(name):
     if not isinstance(name, str) or not name or name in {".", ".."}:
         raise PackagingError("Artifact name must be an ordinary file name")
@@ -53,8 +79,32 @@ def _validate_artifact_name(name):
         raise PackagingError("Artifact name must not contain a path")
 
 
+def _validated_destination(root, platform, name):
+    root_path = Path(root)
+    destination = platform_dist(root_path, platform) / name
+    resolved_root = root_path.resolve()
+    dist_root = root_path / "dist"
+    platform_root = dist_root / platform
+
+    try:
+        for directory in (dist_root, platform_root):
+            if _is_directory_link(directory):
+                raise PackagingError(f"Distribution directory must not be a link: {directory}")
+        resolved_dist = dist_root.resolve(strict=False)
+        _relative_to(resolved_dist, resolved_root)
+        resolved_destination = destination.resolve(strict=False)
+        relative = _relative_to(resolved_destination, resolved_dist)
+        if relative.parts != (platform, name):
+            raise PackagingError(f"Artifact destination escapes its platform directory: {destination}")
+    except PackagingError:
+        raise
+    except (OSError, RuntimeError) as error:
+        raise PackagingError(f"Unable to validate artifact destination: {destination}") from error
+    return destination
+
+
 def copy_artifact(source, root, platform, name) -> Path:
-    """Copy a non-empty artifact to its platform directory atomically."""
+    """Copy a non-empty artifact atomically, retaining its permission mode."""
     _validate_artifact_name(name)
     source = Path(source)
     try:
@@ -65,7 +115,7 @@ def copy_artifact(source, root, platform, name) -> Path:
     except OSError as error:
         raise PackagingError(f"Unable to inspect artifact source: {source}") from error
 
-    destination = platform_dist(root, platform) / name
+    destination = _validated_destination(root, platform, name)
     temporary = None
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -76,26 +126,32 @@ def copy_artifact(source, root, platform, name) -> Path:
         with os.fdopen(descriptor, "wb"):
             pass
         shutil.copyfile(source, temporary)
+        shutil.copystat(source, temporary)
         os.replace(temporary, destination)
     except OSError as error:
+        raise PackagingError(f"Unable to copy artifact to {destination}") from error
+    finally:
         if temporary is not None:
             try:
                 temporary.unlink()
             except OSError:
                 pass
-        raise PackagingError(f"Unable to copy artifact to {destination}") from error
     return destination
 
 
 def validate_zip(path, required_entries: list[str]):
-    """Check every ZIP member's CRC and require the specified entries."""
+    """Check CRCs and exact archive paths; Windows separators are normalized."""
     try:
         with zipfile.ZipFile(Path(path), "r") as archive:
             damaged_entry = archive.testzip()
             if damaged_entry is not None:
                 raise PackagingError(f"ZIP entry failed its CRC check: {damaged_entry}")
             entries = set(archive.namelist())
-            missing = [entry for entry in required_entries if entry not in entries]
+            missing = [
+                entry
+                for entry in required_entries
+                if entry.replace("\\", "/") not in entries
+            ]
             if missing:
                 raise PackagingError(
                     "ZIP archive is missing required entries: " + ", ".join(missing)
@@ -104,18 +160,6 @@ def validate_zip(path, required_entries: list[str]):
         raise
     except (OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile) as error:
         raise PackagingError(f"Unable to validate ZIP archive: {path}") from error
-
-
-def _relative_to(path, parent):
-    try:
-        return path.relative_to(parent)
-    except ValueError as error:
-        raise PackagingError(f"Path is outside the allowed build directory: {path}") from error
-
-
-def _is_directory_link(path):
-    junction_check = getattr(path, "is_junction", None)
-    return path.is_symlink() or (junction_check is not None and junction_check())
 
 
 def _validate_cleanup_path(root, path):
@@ -128,8 +172,19 @@ def _validate_cleanup_path(root, path):
 
     try:
         relative = _relative_to(candidate, build_root)
-        if len(relative.parts) < 2 or relative.parts[0] not in _SUPPORTED_PLATFORMS:
-            raise PackagingError(f"Path is not a registered platform temporary path: {path}")
+        if (
+            len(relative.parts) < 2
+            or relative.parts[0] not in _SUPPORTED_PLATFORMS
+            or relative.parts[1] != _PACKAGING_TEMP_DIRECTORY
+        ):
+            raise PackagingError(
+                f"Path is outside the platform packaging staging directory: {path}"
+            )
+        if any(
+            part.casefold() in _PROTECTED_BUILD_DIRECTORIES
+            for part in relative.parts[1:]
+        ):
+            raise PackagingError(f"Refusing to remove build cache or output: {path}")
 
         resolved_build = build_root.resolve(strict=False)
         _relative_to(candidate.resolve(strict=False), resolved_build)
@@ -148,9 +203,9 @@ def _validate_cleanup_path(root, path):
 
 
 def cleanup_paths(root, paths):
-    """Delete only explicitly registered paths below build/<platform>/."""
-    for path in paths:
-        candidate = _validate_cleanup_path(root, path)
+    """Delete registered paths below build/<platform>/packaging-tmp/ only."""
+    candidates = [_validate_cleanup_path(root, path) for path in paths]
+    for candidate in candidates:
         try:
             if not candidate.exists():
                 continue
@@ -162,48 +217,6 @@ def cleanup_paths(root, paths):
             raise PackagingError(f"Unable to remove packaging path: {candidate}") from error
 
 
-def _pid_is_alive(pid):
-    if os.name == "nt":
-        import ctypes
-        from ctypes import wintypes
-
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        open_process = kernel32.OpenProcess
-        open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-        open_process.restype = wintypes.HANDLE
-        get_exit_code = kernel32.GetExitCodeProcess
-        get_exit_code.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
-        get_exit_code.restype = wintypes.BOOL
-        close_handle = kernel32.CloseHandle
-        close_handle.argtypes = [wintypes.HANDLE]
-        close_handle.restype = wintypes.BOOL
-
-        handle = open_process(0x1000, False, pid)
-        if not handle:
-            return ctypes.get_last_error() == 5
-        try:
-            exit_code = wintypes.DWORD()
-            if not get_exit_code(handle, ctypes.byref(exit_code)):
-                return True
-            return exit_code.value == 259
-        finally:
-            close_handle(handle)
-
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError as error:
-        if error.errno == errno.ESRCH:
-            return False
-        if error.errno == errno.EPERM:
-            return True
-        raise PackagingError(f"Unable to inspect build process {pid}") from error
-    return True
-
-
 def _validated_pid(current_pid):
     pid = os.getpid() if current_pid is None else current_pid
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
@@ -211,24 +224,51 @@ def _validated_pid(current_pid):
     return pid
 
 
-def _read_lock_pid(lock_path):
+def _lock_key(lock_path):
+    return os.path.normcase(str(Path(os.path.abspath(lock_path))))
+
+
+def _acquire_file_lock(lock_path):
     try:
-        contents = lock_path.read_text(encoding="ascii").strip()
-    except FileNotFoundError:
-        return None
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o666)
+        stream = os.fdopen(descriptor, "r+b")
+        stream.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return stream
     except OSError as error:
-        raise PackagingError(f"Unable to read build lock: {lock_path}") from error
-    try:
-        pid = int(contents)
-    except ValueError as error:
-        raise PackagingError(f"Build lock contains an invalid PID: {lock_path}") from error
-    if pid <= 0:
-        raise PackagingError(f"Build lock contains an invalid PID: {lock_path}")
-    return pid
+        try:
+            stream.close()
+        except (UnboundLocalError, OSError):
+            try:
+                os.close(descriptor)
+            except (UnboundLocalError, OSError):
+                pass
+        raise PackagingError(
+            f"Build lock is active or unavailable: {lock_path}"
+        ) from error
+
+
+def _unlock_file(stream):
+    stream.seek(0)
+    if os.name == "nt":
+        import msvcrt
+
+        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def ensure_no_active_build(root, current_pid=None):
-    """Create build/.packaging.lock unless another live process owns it."""
+    """Acquire an OS build lock and return its unique owner token."""
     pid = _validated_pid(current_pid)
     lock_path = Path(root) / "build" / ".packaging.lock"
     try:
@@ -236,25 +276,98 @@ def ensure_no_active_build(root, current_pid=None):
     except OSError as error:
         raise PackagingError(f"Unable to create build directory: {lock_path.parent}") from error
 
-    locked_pid = _read_lock_pid(lock_path)
-    if locked_pid is not None and locked_pid != pid and _pid_is_alive(locked_pid):
-        raise PackagingError(f"Another active build holds the lock with PID {locked_pid}")
+    key = _lock_key(lock_path)
+    held = _HELD_LOCKS.get(key)
+    if held is not None:
+        held_pid, token, _ = held
+        if held_pid == pid:
+            return token
+        raise PackagingError(f"Another active build owner holds the lock: {lock_path}")
+
+    stream = _acquire_file_lock(lock_path)
+    token = secrets.token_hex(16)
     try:
-        lock_path.write_text(str(pid), encoding="ascii")
+        metadata = json.dumps({"pid": pid, "token": token}, sort_keys=True).encode("ascii")
+        stream.seek(0)
+        stream.truncate()
+        stream.write(metadata)
+        stream.flush()
+        os.fsync(stream.fileno())
     except OSError as error:
-        raise PackagingError(f"Unable to write build lock: {lock_path}") from error
+        try:
+            _unlock_file(stream)
+        finally:
+            stream.close()
+        raise PackagingError(f"Unable to initialize build lock: {lock_path}") from error
+
+    _HELD_LOCKS[key] = (pid, token, stream)
+    return token
 
 
-def release_build_lock(root, current_pid=None):
-    """Release the lock only when it belongs to this build process."""
+def release_build_lock(root, current_pid=None, owner_token=None):
+    """Release a held lock only when both its PID and owner token match."""
     pid = _validated_pid(current_pid)
+    if not isinstance(owner_token, str) or not owner_token:
+        raise PackagingError("Releasing the build lock requires its owner token")
     lock_path = Path(root) / "build" / ".packaging.lock"
-    locked_pid = _read_lock_pid(lock_path)
-    if locked_pid is None or locked_pid != pid:
-        return
+    key = _lock_key(lock_path)
+    held = _HELD_LOCKS.get(key)
+    if (
+        held is None
+        or held[0] != pid
+        or not secrets.compare_digest(held[1], owner_token)
+    ):
+        raise PackagingError("Build lock owner token does not match this process")
+
+    _, _, stream = held
     try:
-        lock_path.unlink()
-    except FileNotFoundError:
-        pass
+        stream.seek(0)
+        try:
+            metadata = json.loads(stream.read().decode("ascii"))
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise PackagingError("Build lock metadata is invalid") from error
+        if metadata != {"pid": pid, "token": owner_token}:
+            raise PackagingError("Build lock metadata no longer matches its owner")
+        stream.seek(0)
+        stream.truncate()
+        stream.flush()
+        os.fsync(stream.fileno())
     except OSError as error:
         raise PackagingError(f"Unable to release build lock: {lock_path}") from error
+    finally:
+        try:
+            _unlock_file(stream)
+        finally:
+            stream.close()
+            del _HELD_LOCKS[key]
+
+
+def run_with_build_lock(root, command, current_pid=None):
+    """Hold the build lock until a build subprocess exits, then release it."""
+    if isinstance(command, (str, bytes)) or not command:
+        raise PackagingError("A build command with at least one argument is required")
+    token = ensure_no_active_build(root, current_pid=current_pid)
+    try:
+        return subprocess.run(command, check=False).returncode
+    finally:
+        release_build_lock(root, current_pid=current_pid, owner_token=token)
+
+
+def main(argv=None):
+    """Minimal locked-build wrapper for BAT, PowerShell, and Bash callers."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if len(arguments) < 2:
+        print(
+            "usage: python -I scripts/packaging.py ROOT BUILD_COMMAND [ARG ...]",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        return run_with_build_lock(Path(arguments[0]), arguments[1:])
+    except PackagingError as error:
+        print(f"packaging: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
