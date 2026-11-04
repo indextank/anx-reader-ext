@@ -153,7 +153,10 @@ class StyleWidgetState extends State<StyleWidget> {
   }
 
   Widget fontAndPageTurn() {
-    final font = fonts().firstWhere(
+    // fonts() 含目录列举与字体名缓存查找：每次构建只算一次并复用，
+    // 避免同帧重复同步 IO（弹框卡顿来源之一）。
+    final availableFonts = fonts();
+    final font = availableFonts.firstWhere(
       (element) => element.path == Prefs().font.path,
       orElse: () => FontModel(
         label: L10n.of(context).followBook,
@@ -218,7 +221,7 @@ class StyleWidgetState extends State<StyleWidget> {
             epubPlayerKey.currentState!.changeFont(font);
             Prefs().font = font;
           },
-          dropdownMenuEntries: fonts()
+          dropdownMenuEntries: availableFonts
               .map(
                 (font) => DropdownMenuEntry(
                   value: font,

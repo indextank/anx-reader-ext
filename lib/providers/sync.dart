@@ -277,6 +277,18 @@ class Sync extends _$Sync {
     WidgetRef? ref, {
     SyncTrigger trigger = SyncTrigger.auto,
   }) async {
+    // 在任何 await 之前解析 notifier：同步耗时较长，页面可能在期间
+    // 销毁；在 dispose 期间调用（如阅读页退出触发上传）时 ref 已
+    // 不可用——静默跳过刷新，与原先失败路径的容忍度一致，但不再
+    // 产生 "Cannot use ref after the widget was disposed" 日志。
+    BookList? bookListNotifier;
+    GroupDao? groupDaoNotifier;
+    try {
+      bookListNotifier = ref?.read(bookListProvider.notifier);
+      groupDaoNotifier = ref?.read(groupDaoProvider.notifier);
+    } catch (_) {
+      // ref 已随宿主页面销毁：跳过同步后的列表刷新。
+    }
     final client = _syncClient;
     if (client == null) {
       AnxLog.info('No sync client configured');
@@ -350,8 +362,8 @@ class Sync extends _$Sync {
       imageCache.clearLiveImages();
 
       try {
-        ref?.read(bookListProvider.notifier).refresh();
-        ref?.read(groupDaoProvider.notifier).refresh();
+        bookListNotifier?.refresh();
+        groupDaoNotifier?.refresh();
       } catch (e) {
         AnxLog.info('Failed to refresh book list: $e');
       }

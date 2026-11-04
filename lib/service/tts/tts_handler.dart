@@ -1,11 +1,24 @@
+import 'dart:async';
+
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/utils/log/common.dart';
 import 'package:anx_reader/page/reading_page.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
+import 'package:anx_reader/service/tts/engine/engine_kind_mapping.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_playback_state.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_text.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_text_source.dart';
 import 'package:anx_reader/service/tts/tts_factory.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 
+/// Stateful TTS entry point shared by the reading page, the audio_service
+/// handler and the settings page.
+///
+/// All playback state lives in the active [BaseTts] engine's typed state
+/// machine; this class only forwards user/OS intents and migrates the reading
+/// cursor when the engine changes.
 class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final TtsFactory _ttsFactory = TtsFactory();
 
@@ -21,28 +34,96 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   BaseTts get tts => _ttsFactory.current;
 
-  Function? _getCurrentText;
-  Function? _getNextText;
-  Function? _getPrevText;
+  TtsTextSource? _textSource;
 
-  Future<void> init(Function getCurrentText, Function getNextText,
-      Function getPrevText) async {
-    _getCurrentText = getCurrentText;
-    _getNextText = getNextText;
-    _getPrevText = getPrevText;
-    await tts.init(getCurrentText, getNextText, getPrevText);
+  /// Last text source bound by the reading page / context menu.
+  TtsTextSource? get textSource => _textSource;
+
+  ValueNotifier<TtsPlaybackState> get playbackStateNotifier =>
+      tts.playbackStateNotifier;
+
+  TtsPlaybackState get ttsPlaybackState => tts.playbackState;
+
+  TtsPlaybackLog get playbackLog => tts.playbackLog;
+
+  /// Binds the reader text source and prepares the current engine.
+  Future<void> init({
+    required TtsTextSource textSource,
+    TtsResumeAnchor? anchor,
+  }) async {
+    _textSource = textSource;
+    await tts.init(textSource: textSource, anchor: anchor);
+    // Initialization is not playback: show the controls (or the preserved
+    // cursor) instead of a permanent loading skeleton.
+    tts.markPreparedAsStopped();
   }
 
+  /// Switches the TTS engine while migrating the current reading cursor.
+  ///
+  /// The old engine captures its anchor *before* stopping; the new engine is
+  /// initialized with that anchor and, when playback was active, continues
+  /// from the current sentence instead of restarting at the page top.
   Future<void> switchTtsType(String serviceId) async {
-    await _ttsFactory.switchTtsType(serviceId);
-    if (_getCurrentText != null &&
-        _getNextText != null &&
-        _getPrevText != null) {
-      await tts.init(_getCurrentText!, _getNextText!, _getPrevText!);
+    if (Prefs().ttsService == serviceId) return;
+    final anchor = tts.captureResumeAnchor(
+      reason: TtsResumeReason.engineSwitched,
+    );
+    final previousEngine = tts;
+    final wasActive = tts.isPlaying ||
+        tts.isPaused ||
+        ttsPlaybackState.phase == TtsPlaybackPhase.buffering ||
+        ttsPlaybackState.phase == TtsPlaybackPhase.loadingText ||
+        ttsPlaybackState.phase == TtsPlaybackPhase.initializing;
+
+    // Loading state for the switch: the panel shows a skeleton while the new
+    // engine initializes; the typed state machine rejects stale events.
+    previousEngine.applyPlaybackIntent(TtsEngineSwitchStarted(
+      sessionId: previousEngine.playbackState.sessionId,
+      targetEngine: currentTtsEngineKind(serviceId),
+    ));
+    playbackLog.add(TtsEngineSwitched(serviceId: serviceId));
+    try {
+      await _ttsFactory.switchTtsType(serviceId);
+      final source = _textSource;
+      if (source != null) {
+        // Re-bind the source so the new engine owns it (the old engine was
+        // stopped and released its audio output).
+        await tts.init(textSource: source, anchor: anchor);
+      }
+    } catch (e) {
+      tts.publishEngineSwitchFailure(TtsEngineSwitchError(
+        engine: tts.engineKind,
+        message: 'Failed to switch TTS engine to $serviceId',
+        cause: e,
+        context: {'target': serviceId},
+      ));
+      return;
+    }
+    if (anchor != null) {
+      playbackLog.add(TtsAnchorMigrated(anchor: anchor));
+    }
+    if (wasActive && _textSource != null) {
+      await tts.speak(anchor: anchor);
+    } else {
+      tts.markPreparedAsStopped();
     }
   }
 
+  Future<void> retry() => tts.retry();
+
+  Future<void> changeRate(double rate) => tts.changeRate(rate);
+
   Future<void> _initAudioSession() async {
+    try {
+      await _configureAudioSession();
+    } catch (e) {
+      // 桌面端 audio_session 无平台实现（MissingPluginException 等），
+      // 初始化失败不应成为未捕获异步错误。
+      AnxLog.info('TTS audio session unavailable: $e');
+    }
+  }
+
+  Future<void> _configureAudioSession() async {
     final session = await AudioSession.instance;
 
     final allowMix = Prefs().allowMixWithOtherAudio;
@@ -56,14 +137,13 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     ));
     session.interruptionEventStream.listen((event) {
       if (event.begin) {
-        // if (tts.isPlaying) {
-        //   pause();
-        // }
+        // Keep the previous behavior: system interruptions don't force pause.
       } else {
         switch (event.type) {
           case AudioInterruptionType.pause:
           case AudioInterruptionType.duck:
-            if (!tts.isPlaying) {
+            if (!tts.isPlaying &&
+                ttsPlaybackState.phase == TtsPlaybackPhase.paused) {
               play();
             }
             break;
@@ -99,7 +179,6 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           'file://${epubPlayerKey.currentState!.book.coverFullPath}'),
     );
 
-    // Ensure system receives queue + active index for control center metadata.
     queue.add([item]);
     mediaItem.add(item);
     playbackState.add(playbackState.value.copyWith(
@@ -115,12 +194,30 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       updatePosition: Duration.zero,
       bufferedPosition: Duration.zero,
     ));
-    if (tts.ttsStateNotifier.value == TtsStateEnum.paused) {
-      tts.updateTtsState(TtsStateEnum.playing);
-      await tts.resume();
-    } else {
-      tts.updateTtsState(TtsStateEnum.playing);
-      await tts.speak();
+
+    final phase = ttsPlaybackState.phase;
+    switch (phase) {
+      case TtsPlaybackPhase.paused:
+        await tts.resume();
+        break;
+      case TtsPlaybackPhase.error:
+      case TtsPlaybackPhase.empty:
+        await tts.retry();
+        break;
+      case TtsPlaybackPhase.playing:
+      case TtsPlaybackPhase.buffering:
+      case TtsPlaybackPhase.resuming:
+        // Already playing: nothing to do.
+        break;
+      case TtsPlaybackPhase.idle:
+      case TtsPlaybackPhase.initializing:
+      case TtsPlaybackPhase.loadingText:
+      case TtsPlaybackPhase.pausing:
+      case TtsPlaybackPhase.stopping:
+      case TtsPlaybackPhase.stopped:
+      case TtsPlaybackPhase.switchingEngine:
+        await tts.speak();
+        break;
     }
   }
 
@@ -132,9 +229,7 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       processingState: AudioProcessingState.ready,
       playing: false,
     ));
-
     await tts.pause();
-    tts.updateTtsState(TtsStateEnum.paused);
   }
 
   @override
@@ -145,8 +240,6 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       processingState: AudioProcessingState.idle,
       playing: false,
     ));
-
-    tts.updateTtsState(TtsStateEnum.stopped);
     await tts.stop();
     epubPlayerKey.currentState?.ttsStop();
   }
@@ -169,6 +262,7 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     await tts.next();
   }
 
+  @Deprecated('Use playbackStateNotifier; kept for legacy UI callbacks.')
   ValueNotifier<TtsStateEnum> get ttsStateNotifier => tts.ttsStateNotifier;
 
   bool get isPlaying => tts.isPlaying;
@@ -185,9 +279,10 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   double get pitch => tts.pitch;
 
-  set rate(double rate) {
-    tts.rate = rate;
-  }
-
   double get rate => tts.rate;
+
+  /// Legacy setter: delegates to the unified rate path.
+  set rate(double rate) {
+    unawaited(tts.changeRate(rate));
+  }
 }
