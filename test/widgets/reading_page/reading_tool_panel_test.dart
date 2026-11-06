@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
@@ -63,7 +62,7 @@ void main() {
 
     await pumpDesignSystem(tester, _host(kind: kind));
 
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
     expect(find.byKey(const ValueKey('reading-tool-panel')), findsNothing);
   });
 
@@ -88,7 +87,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('side-style-panel'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
     expect(find.byKey(const ValueKey('reading-tool-panel')), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -107,7 +106,7 @@ void main() {
     );
 
     expect(find.text('side-notes-panel'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
   });
 
   testWidgets('side style retries and enters a secondary page without a sheet',
@@ -152,11 +151,11 @@ void main() {
 
     expect(attempts, 2);
     expect(find.text('side-empty-themes'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
     await tester.tap(find.text('Background'));
     await tester.pump();
     expect(find.text('side-background'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
 
     final backTooltip = MaterialLocalizations.of(
       tester.element(find.byType(ReadingToolPanel)),
@@ -168,7 +167,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('side style ignores stale requests after changing presentation',
+  testWidgets('presentation change invalidates the previous style request',
       (tester) async {
     final kind = ValueNotifier(ReadingToolPanelKind.style);
     addTearDown(kind.dispose);
@@ -199,8 +198,8 @@ void main() {
       ),
     );
     await tester.pump();
-    // 迁移到弹层不再重新请求：同一面板实例保留进行中的请求 A。
-    expect(attempts, 1);
+    // 弹层/侧栏迁移会作废旧请求并用新展现位置重新加载主题列表。
+    expect(attempts, 2);
 
     requestA.complete(<ReadTheme>[
       ReadTheme(
@@ -210,8 +209,13 @@ void main() {
       ),
     ]);
     await tester.pump();
-    expect(find.text('popup-A'), findsOneWidget);
-    expect(find.text('popup-B'), findsNothing);
+    expect(find.text('popup-A'), findsNothing);
+
+    requestB.complete(const <ReadTheme>[]);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('popup-B'), findsOneWidget);
+    expect(find.text('popup-A'), findsNothing);
     expect(find.text('side-A'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -238,13 +242,13 @@ void main() {
 
     expect(find.text('notes-panel'), findsNothing);
     expect(find.text('tts-panel'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
 
     kind.value = ReadingToolPanelKind.none;
     await tester.pump();
 
     expect(find.text('tts-panel'), findsNothing);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
   });
 
   testWidgets('style retries loading and replaces its internal page',
@@ -474,12 +478,13 @@ void main() {
       );
 
       await tester.pump();
+      await tester.ensureVisible(find.text('Background'));
       await tester.tap(find.text('Background'));
       await tester.pump();
 
       expect(find.byType(BgimgSelector), findsOneWidget);
       expect(tester.takeException(), isNull);
-      final panelRect = tester.getRect(find.byType(BottomSheet));
+      final panelRect = tester.getRect(find.byKey(readingToolPanelSurfaceKey));
       final listRect = tester.getRect(
         find.descendant(
           of: find.byType(BgimgSelector),
@@ -488,7 +493,8 @@ void main() {
       );
       expect(
         panelRect.height,
-        lessThanOrEqualTo(math.min(size.height * 0.7, 600.0) + 1),
+        closeTo(size.height * readingToolPanelHeightFactor, 1.0),
+        reason: '样式面板默认高度参数为 0.9，应占可用高度的 90%',
       );
       expect(listRect.bottom, lessThanOrEqualTo(panelRect.bottom + 1));
       expect(listRect.height, lessThanOrEqualTo(panelRect.height));
@@ -541,12 +547,20 @@ void main() {
       );
       await tester.pump();
 
-      final scrollable = find.byType(Scrollable);
+      // 样式面板在极窄屏会同时有纵向内容滚动与横向兜底滚动；
+      // 这里只测量纵向内容滚动视口。
+      final scrollable = find.byWidgetPredicate(
+        (widget) =>
+            widget is Scrollable &&
+            (widget.axisDirection == AxisDirection.down ||
+                widget.axisDirection == AxisDirection.up),
+      );
       expect(scrollable, findsOneWidget);
       final viewportHeight = tester.getSize(scrollable).height;
-      expect(viewportHeight, lessThan(size.height));
+      // 样式面板高度参数为 1.0：视口可等于可用高度，但不得超出。
+      expect(viewportHeight, lessThanOrEqualTo(size.height));
       expect(
-        tester.getSize(find.byType(BottomSheet)).height,
+        tester.getSize(find.byKey(readingToolPanelSurfaceKey)).height,
         lessThanOrEqualTo(size.height),
       );
       expect(

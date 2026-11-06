@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Anx TTS highlight-sync harness</title>
+<!--
+  Browser harness for the TTS highlight-sync evidence
+  (docs/tts-round2/05-reader-highlight-sync.md).
+
+  It redirects to ../../debug.html with the query parameters debug.html expects
+  (each value is JSON encoded, exactly like the mock object inside debug.html),
+  loading the synthetic test book in debug-books/sync-test.epub. Using a
+  harness page keeps the long encoded URL out of shell command lines.
+-->
+<script>
+  const style = {
+    fontSize: 1.4,
+    fontName: 'book',
+    fontPath: '',
+    fontWeight: 400.0,
+    letterSpacing: 0.0,
+    spacing: 1.5,
+    paragraphSpacing: 1.0,
+    textIndent: 2.0,
+    fontColor: '#111111ff',
+    backgroundColor: '#fefefeff',
+    topMargin: 20.0,
+    bottomMargin: 50.0,
+    sideMargin: 15.0,
+    justify: true,
+    hyphenate: true,
+    // No page-turn animation: the highlight pull-back must not wait for one.
+    pageTurnStyle: 'noAnimation',
+    maxColumnCount: 1,
+    writingMode: 'auto',
+    backgroundImage: 'none',
+    allowScript: true,
+    textAlign: 'justify',
+    customCSS: '',
+    customCSSEnabled: false,
+    useBookStyles: false,
+    headingFontSize: 1.5,
+    codeHighlightTheme: 'off',
+  };
+  const readingRules = {
+    convertChineseMode: 'none',
+    bionicReadingMode: false,
+  };
+  const params = new URLSearchParams({
+    importing: 'false',
+    url: JSON.stringify('/debug-books/sync-test.epub'),
+    initialCfi: 'null',
+    style: JSON.stringify(style),
+    readingRules: JSON.stringify(readingRules),
+  });
+  location.replace('../debug.html?' + params.toString());
+</script>

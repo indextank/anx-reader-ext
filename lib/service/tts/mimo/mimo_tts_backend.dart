@@ -29,8 +29,10 @@ class MimoTtsProvider extends TtsServiceProvider {
   @override
   TtsService get service => TtsService.mimo;
 
-  /// MiMo documents no speed parameter; the pipeline applies the rate via
-  /// playback speed instead so the slider works in real time.
+  /// MiMo documents no speed/pitch parameters in the request body. The
+  /// pipeline applies the UI rate through the audio player output instead
+  /// (`TtsAudioOutput` playback rate), so the slider works without
+  /// re-synthesizing and MiMo requests must never invent a speed field.
   @override
   bool get supportsRateParameter => false;
 

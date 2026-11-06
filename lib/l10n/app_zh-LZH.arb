@@ -906,5 +906,7 @@
   "readingTocLocateCurrent": "尋此章",
   "readingTocClearSearch": "清檢索",
   "readingTocExpand": "展子章",
-  "readingTocCollapse": "折子章"
+  "readingTocCollapse": "折子章",
+  "readingTocPin": "固定目錄",
+  "readingTocUnpin": "取消固定目錄"
 }

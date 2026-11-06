@@ -224,18 +224,18 @@ class _ServiceConfigFormState extends State<ServiceConfigForm> {
             item.options!.first['value']?.toString() ??
             '';
 
-        return DropdownButtonFormField<String>(
-          decoration: InputDecoration(
-            labelText: item.label,
-            helperText: item.description,
-          ),
-          initialValue: currentValue,
-          items: item.options!.map((option) {
-            return DropdownMenuItem<String>(
-              value: option['value'].toString(),
-              child: Text(option['label'].toString()),
-            );
-          }).toList(),
+        return AppDropdownField<String>(
+          value: currentValue,
+          expandedInsets: EdgeInsets.zero,
+          label: item.label,
+          helperText: item.description,
+          items: [
+            for (final option in item.options!)
+              AppDropdownItem<String>(
+                value: option['value'].toString(),
+                label: option['label'].toString(),
+              ),
+          ],
           onChanged: (value) {
             if (value != null) {
               _updateConfig(item.key, value);

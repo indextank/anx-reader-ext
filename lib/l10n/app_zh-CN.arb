@@ -895,6 +895,9 @@
   "settingsNarrateMimoInstructionDescription": "可选的音色/风格描述（作为 user 消息发送）",
   "settingsNarrateTimeoutDescription": "请求超时时间（秒）",
   "settingsNarrateEmptyAudioResult": "未返回音频，请检查配置。",
+  "settingsNarrateEngineSwitches": "引擎开关",
+  "settingsNarrateEngineSwitchDescription": "关闭后该引擎不再出现在朗读悬浮条的引擎列表中",
+  "settingsNarrateEngineLoadFailed": "引擎开关加载失败，已使用默认设置。",
   "ttsSegmentsSkipped": "因语音合成失败跳过 {n} 段，继续朗读后续内容。",
   "@ttsSegmentsSkipped": {
     "placeholders": {
@@ -1004,9 +1007,19 @@
   "readingTocClearSearch": "清除搜索",
   "readingTocExpand": "展开子章节",
   "readingTocCollapse": "折叠子章节",
+  "readingTocPin": "固定目录",
+  "readingTocUnpin": "取消固定目录",
   "readingNotesPanelPosition": "笔记面板展现位置",
   "readingStylePanelPosition": "样式面板展现位置",
   "readingPanelPositionPopup": "弹框显示",
   "readingPanelPositionRight": "右侧显示",
-  "readingThemesEmpty": "暂无阅读主题"
+  "readingThemesEmpty": "暂无阅读主题",
+  "ttsPlay": "播放",
+  "ttsStop": "停止",
+  "ttsFabDragHint": "拖动可移动",
+  "ttsFabResetPosition": "回到默认位置",
+  "ttsFabPositionReset": "已回到默认位置",
+  "ttsEngineSwitching": "正在切换引擎…",
+  "ttsEngineSwitchFailed": "朗读引擎切换失败",
+  "ttsEngineSettings": "管理引擎与音色"
 }

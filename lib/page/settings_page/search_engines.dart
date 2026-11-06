@@ -53,15 +53,17 @@ class _SearchEnginesSettingState extends State<SearchEnginesSetting> {
               title: Text(L10n.of(context).searchDefaultEngine),
               tiles: [
                 SettingsTile(
-                  title: DropdownButton<String>(
-                    isExpanded: true,
+                  title: AppDropdownField<String>(
+                    expandedInsets: EdgeInsets.zero,
                     value: Prefs().selectedSearchEngineId,
-                    items: Prefs().allSearchEngines.map((engine) {
-                      return DropdownMenuItem<String>(
-                        value: engine.id,
-                        child: Text(engine.name),
-                      );
-                    }).toList(),
+                    inputDecorationTheme: AppDropdownField.borderlessDecoration,
+                    items: [
+                      for (final engine in Prefs().allSearchEngines)
+                        AppDropdownItem<String>(
+                          value: engine.id,
+                          label: engine.name,
+                        ),
+                    ],
                     onChanged: (value) {
                       if (value != null) {
                         setState(() => Prefs().selectedSearchEngineId = value);

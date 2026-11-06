@@ -5,9 +5,10 @@ import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/dao/reading_time.dart';
-import 'package:anx_reader/dao/theme.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
 import 'package:anx_reader/providers/reading_panel_position.dart';
+import 'package:anx_reader/providers/reading_style_panel_provider.dart';
+import 'package:anx_reader/providers/toc_panel.dart';
 import 'package:anx_reader/enums/ai_chat_display_mode.dart';
 import 'package:anx_reader/enums/sync_direction.dart';
 import 'package:anx_reader/enums/sync_trigger.dart';
@@ -37,6 +38,7 @@ import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
 import 'package:anx_reader/widgets/reading_page/reading_toolbar.dart';
 import 'package:anx_reader/widgets/reading_page/tts_fab.dart';
 import 'package:anx_reader/widgets/reading_page/tts_widget.dart';
+import 'package:anx_reader/widgets/reading_page/toc_sidebar.dart';
 import 'package:anx_reader/widgets/reading_page/toc_widget.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -195,7 +197,12 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         requestReaderFocus();
-        // _attachVolumeKeyListener();
+        // 每次进入书籍时目录都从 loading 开始，避免上一次书籍的目录在
+        // 新书加载完成前短暂可见；JS 回传目录后由 onSetToc 置为 ready。
+        // 注入 readerBuilder 的测试/自定义阅读器没有目录回传，跳过该状态。
+        if (widget.readerBuilder == null) {
+          ref.read(tocLoadStatusProvider.notifier).beginLoading();
+        }
       }
     });
     // delay 1000ms to prevent hero animation
@@ -466,8 +473,58 @@ class ReadingPageState extends ConsumerState<ReadingPage>
   }
 
   Future<void> tocHandler() async {
+    // 固定状态下目录始终可见，不再打开悬浮弹框。
+    if (ref.read(tocPinnedProvider)) return;
     hideBottomBar();
     _scaffoldKey.currentState?.openDrawer();
+  }
+
+  /// 目录内容 widget：悬浮弹框与固定侧栏复用同一实现（含固定开关）。
+  Widget _buildTocWidget({Key? key}) {
+    return TocWidget(
+      key: key,
+      epubPlayerKey: epubPlayerKey,
+      hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
+      closeDrawer: _closeTocOverlayIfFloating,
+      onRetryToc: _retryToc,
+    );
+  }
+
+  /// 目录内跳转后关闭浮层；固定侧栏形态下目录必须保持可见。
+  void _closeTocOverlayIfFloating() {
+    if (ref.read(tocPinnedProvider)) return;
+    _scaffoldKey.currentState?.closeDrawer();
+  }
+
+  /// 目录加载失败后重试：重新向书页请求目录并回到 loading 态。
+  Future<void> _retryToc() async {
+    final player = epubPlayerKey.currentState;
+    if (player == null) {
+      ref.read(tocLoadStatusProvider.notifier).markReady();
+      return;
+    }
+    ref.read(tocLoadStatusProvider.notifier).beginLoading();
+    player.refreshToc();
+  }
+
+  /// 固定状态变化与弹框可见状态同步：
+  /// - 固定：立即关闭悬浮弹框与遮罩，改由正文左侧侧栏承载目录；
+  /// - 取消固定：恢复左侧悬浮弹框形态（下一帧打开 Drawer）。
+  ///
+  /// 帧后回调会重新确认固定状态，因此快速连点不会重复打开弹框，
+  /// 也不会残留在"已固定但仍有遮罩"的中间态。
+  void _handleTocPinnedChanged(bool? previous, bool next) {
+    if (previous == next) return;
+    if (next) {
+      _scaffoldKey.currentState?.closeDrawer();
+      return;
+    }
+    if (previous != true) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ref.read(tocPinnedProvider)) return;
+      hideBottomBar();
+      _scaffoldKey.currentState?.openDrawer();
+    });
   }
 
   void _showToolPanel({required ReadingToolPanelKind kind}) {
@@ -756,8 +813,94 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     }
   }
 
+  /// 阅读正文舞台（正文 + 工具栏 + 面板协调器）。
+  ///
+  /// 固定 / 未固定两种形态下该 widget 始终位于同一个 Expanded 槽位，
+  /// 切换目录固定状态只改左侧兄弟槽位，正文（书页 WebView 与阅读进度）
+  /// 不会被重建。
+  Widget _buildReadingStage(BuildContext context, ReadingToolbar toolbar) {
+    return ReadingPanelCoordinator(
+      key: _panelCoordinatorKey,
+      chromeKey: _readingChromeKey,
+      toolbar: toolbar,
+      reader: MouseRegion(
+        onHover: (PointerHoverEvent detail) {
+          if (!Prefs().showMenuOnHover) return;
+          var y = detail.position.dy;
+          if (y < 30 || y > MediaQuery.of(context).size.height - 30) {
+            showOrHideAppBarAndBottomBar(true);
+          }
+        },
+        child: Focus(
+          focusNode: _readerFocusNode,
+          onKeyEvent: _handleReaderKeyEvent,
+          child: Stack(
+            children: [
+              if (widget.readerBuilder case final readerBuilder?)
+                readerBuilder(context)
+              else
+                EpubPlayer(
+                  key: epubPlayerKey,
+                  book: _book,
+                  cfi: widget.cfi,
+                  showOrHideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
+                  onLoadEnd: onLoadEnd,
+                  initialThemes: widget.initialThemes,
+                  updateParent: updateState,
+                ),
+              if (_isResizingAiChat)
+                SizedBox.expand(
+                  child: Container(
+                    color: Theme.of(context).colorScheme.surface.withAlpha(1),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      onShow: () {
+        showStatusBarWithoutResize();
+        _releaseReaderFocus();
+      },
+      onHide: () {
+        if (Prefs().hideStatusBar) {
+          hideStatusBar();
+        }
+        requestReaderFocus();
+      },
+      aiBuilder: _buildAiChat,
+      notesBuilder: widget.notesBuilder ?? (_) => ReadingNotes(book: _book),
+      ttsBuilder:
+          widget.ttsBuilder ?? (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
+      styleThemesLoader: widget.styleThemesLoader ??
+          ref.read(readingStyleThemesLoaderProvider),
+      styleBuilder: (context, themes, setCurrentPage) => CombinedStyleSettings(
+        themes: themes,
+        epubPlayerKey: epubPlayerKey,
+        setCurrentPage: setCurrentPage,
+        hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
+      ),
+      ttsFab: const TtsFab(),
+      aiPanelPosition: Prefs().aiPanelPosition,
+      notesPanelPosition: Prefs().notesPanelPosition,
+      stylePanelPosition: ref.watch(stylePanelPositionProvider),
+      panelWidth: _aiChatWidth,
+      panelMinWidth: _aiChatMinWidth,
+      panelMaxWidth: _aiChatMaxWidth(context),
+      aiPanelHeight: _aiChatHeight,
+      onPanelResize: (delta) => _applyAiChatResizeDelta(delta, context),
+      onVerticalPanelResize: (delta) =>
+          _applyAiChatResizeDeltaVertical(delta, context),
+      onPanelResizeEnd: _endAiChatResize,
+      onSwitchPosition: _switchReadingPanelPosition,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final tocPinned = ref.watch(tocPinnedProvider);
+    ref.listen<bool>(tocPinnedProvider, _handleTocPinnedChanged);
+
     var aiButton = AppIconButton(
       tooltip: L10n.of(context).aiChat,
       onPressed: () async {
@@ -860,6 +1003,8 @@ class ReadingPageState extends ConsumerState<ReadingPage>
             child: Scaffold(
               key: _scaffoldKey,
               resizeToAvoidBottomInset: false,
+              // 固定状态下禁用边缘拖拽，避免又拉出悬浮弹框（无遮罩）。
+              drawerEnableOpenDragGesture: !tocPinned,
               drawer: PointerInterceptor(
                 child: Drawer(
                   width: math.min(
@@ -867,97 +1012,31 @@ class ReadingPageState extends ConsumerState<ReadingPage>
                     420,
                   ),
                   child: AppSafeArea(
-                    child: TocWidget(
-                      epubPlayerKey: epubPlayerKey,
-                      hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
-                      closeDrawer: () {
-                        _scaffoldKey.currentState?.closeDrawer();
-                      },
-                    ),
+                    child: _buildTocWidget(key: tocFloatingPanelKey),
                   ),
                 ),
               ),
-              body: ReadingPanelCoordinator(
-                key: _panelCoordinatorKey,
-                chromeKey: _readingChromeKey,
-                toolbar: toolbar,
-                reader: MouseRegion(
-                  onHover: (PointerHoverEvent detail) {
-                    if (!Prefs().showMenuOnHover) return;
-                    var y = detail.position.dy;
-                    if (y < 30 || y > MediaQuery.of(context).size.height - 30) {
-                      showOrHideAppBarAndBottomBar(true);
-                    }
-                  },
-                  child: Focus(
-                    focusNode: _readerFocusNode,
-                    onKeyEvent: _handleReaderKeyEvent,
-                    child: Stack(
-                      children: [
-                        if (widget.readerBuilder case final readerBuilder?)
-                          readerBuilder(context)
-                        else
-                          EpubPlayer(
-                            key: epubPlayerKey,
-                            book: _book,
-                            cfi: widget.cfi,
-                            showOrHideAppBarAndBottomBar:
-                                showOrHideAppBarAndBottomBar,
-                            onLoadEnd: onLoadEnd,
-                            initialThemes: widget.initialThemes,
-                            updateParent: updateState,
-                          ),
-                        if (_isResizingAiChat)
-                          SizedBox.expand(
-                            child: Container(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surface
-                                  .withAlpha(1),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                onShow: () {
-                  showStatusBarWithoutResize();
-                  _releaseReaderFocus();
+              body: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 目录固定：左侧侧栏 + 右侧正文；未固定：正文独占。
+                  // 正文舞台始终占据 Row 的同一个 Expanded 槽位，固定状态
+                  // 切换不会重建正文，也不会让目录状态被重置。
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (tocPinned)
+                        TocSidebar(
+                          width: resolveTocSidebarWidth(constraints.maxWidth),
+                          child: _buildTocWidget(key: tocPinnedPanelKey),
+                        )
+                      else
+                        const SizedBox.shrink(),
+                      Expanded(
+                        child: _buildReadingStage(context, toolbar),
+                      ),
+                    ],
+                  );
                 },
-                onHide: () {
-                  if (Prefs().hideStatusBar) {
-                    hideStatusBar();
-                  }
-                  requestReaderFocus();
-                },
-                aiBuilder: _buildAiChat,
-                notesBuilder:
-                    widget.notesBuilder ?? (_) => ReadingNotes(book: _book),
-                ttsBuilder: widget.ttsBuilder ??
-                    (_) => TtsWidget(epubPlayerKey: epubPlayerKey),
-                styleThemesLoader:
-                    widget.styleThemesLoader ?? themeDao.selectThemes,
-                styleBuilder: (context, themes, setCurrentPage) =>
-                    CombinedStyleSettings(
-                  themes: themes,
-                  epubPlayerKey: epubPlayerKey,
-                  setCurrentPage: setCurrentPage,
-                  hideAppBarAndBottomBar: showOrHideAppBarAndBottomBar,
-                ),
-                ttsFab: const TtsFab(),
-                aiPanelPosition: Prefs().aiPanelPosition,
-                notesPanelPosition: Prefs().notesPanelPosition,
-                stylePanelPosition: ref.watch(stylePanelPositionProvider),
-                panelWidth: _aiChatWidth,
-                panelMinWidth: _aiChatMinWidth,
-                panelMaxWidth: _aiChatMaxWidth(context),
-                aiPanelHeight: _aiChatHeight,
-                onPanelResize: (delta) =>
-                    _applyAiChatResizeDelta(delta, context),
-                onVerticalPanelResize: (delta) =>
-                    _applyAiChatResizeDeltaVertical(delta, context),
-                onPanelResizeEnd: _endAiChatResize,
-                onSwitchPosition: _switchReadingPanelPosition,
               ),
             ),
           ),

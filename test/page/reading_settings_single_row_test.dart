@@ -113,7 +113,7 @@ void main() {
         find.descendant(
           of: tile,
           matching: find.byWidgetPredicate(
-            (w) => w.runtimeType.toString().startsWith('DropdownButton'),
+            (w) => w.runtimeType.toString().startsWith('AppDropdownField'),
           ),
         ),
         findsOneWidget,

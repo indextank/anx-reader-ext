@@ -27,7 +27,6 @@ class _OtherSettingsState extends State<OtherSettings> {
   Widget build(BuildContext context) {
     Widget screenTimeout() {
       return AppListTile(
-        contentPadding: AppSpacing.zero,
         title: L10n.of(context).readingPageScreenTimeout,
         subtitle: L10n.of(context).commonMinutes(Prefs().awakeTime),
         trailing: SizedBox(
@@ -57,7 +56,6 @@ class _OtherSettingsState extends State<OtherSettings> {
       return AppListTile(
         title: title,
         subtitle: subtitle,
-        contentPadding: AppSpacing.zero,
         trailing: Switch(
           value: value,
           onChanged: (value) => setState(() => onChanged(value)),
@@ -232,8 +230,10 @@ class _OtherSettingsState extends State<OtherSettings> {
       );
     }
 
+    final metrics = StylePanelDensity.of(context);
     return Padding(
-      padding: StylePanelTokens.groupPadding,
+      // 水平对齐统一由行内边距 / 子缩进决定，分组仅保留垂直留白。
+      padding: metrics.groupVerticalPadding,
       child: Column(
         children: [
           switchTile(
@@ -294,7 +294,10 @@ class _OtherSettingsState extends State<OtherSettings> {
           autoSummaryPreviousContent(),
           screenTimeout(),
           pageTurningControl(),
-          pageTurningContent(),
+          Padding(
+            padding: metrics.childIndent,
+            child: pageTurningContent(),
+          ),
         ],
       ),
     );

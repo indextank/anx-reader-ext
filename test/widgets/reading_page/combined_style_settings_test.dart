@@ -488,7 +488,7 @@ void main() {
         await tester.pump();
         expect(tester.takeException(), isNull);
         expect(
-          find.byType(BottomSheet),
+          find.byKey(readingToolPanelSurfaceKey),
           sideContent ? findsNothing : findsOneWidget,
         );
         final outerScrollable = find
@@ -668,7 +668,7 @@ void main() {
       );
       await _pumpAsyncFrames(tester);
 
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
       expect(tester.getSize(find.byType(ReadingNotes)).height, greaterThan(0));
       expect(tester.takeException(), isNull,
           reason: 'notes overflow at ${size.width}x${size.height}');

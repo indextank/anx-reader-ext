@@ -246,33 +246,34 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
       BuildContext context,
       String label,
       ReadingInfoEnum currentValue,
-      Function(ReadingInfoEnum) onChanged,
+      ValueChanged<ReadingInfoEnum> onChanged,
     ) {
       return SingleRowSettingTile(
         title: label,
         pinnedTrailing: true,
-        contentPadding: AppSpacing.horizontal4,
-        trailing: DropdownButton<ReadingInfoEnum>(
-          isDense: true,
-          isExpanded: true,
-          value: currentValue,
-          onChanged: (value) {
-            if (value != null) {
-              onChanged(value);
-            }
-          },
-          underline: Container(),
-          dropdownColor: Theme.of(context).colorScheme.surfaceContainer,
-          borderRadius: AppReadingTokens.dropdownRadius,
-          items: ReadingInfoEnum.values.map((info) {
-            return DropdownMenuItem<ReadingInfoEnum>(
-              value: info,
-              child: Text(
-                info.getL10n(context),
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          }).toList(),
+        contentPadding: AppSpacing.zero,
+        // 极窄侧栏（如 240px）下 3 列下拉行会被压缩；等比缩小而不是
+        // RenderFlex 溢出/换行，保证单行完整展示。
+        trailing: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: AppDropdownField<ReadingInfoEnum>(
+            width: StylePanelTokens.dropdownWidth,
+            value: currentValue,
+            inputDecorationTheme: AppDropdownField.borderlessDecoration,
+            items: [
+              for (final info in ReadingInfoEnum.values)
+                AppDropdownItem<ReadingInfoEnum>(
+                  value: info,
+                  label: info.getL10n(context),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                onChanged(value);
+              }
+            },
+          ),
         ),
       );
     }
@@ -295,9 +296,16 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           }) {
             return Row(
               children: [
-                SizedBox(
-                  width: 96,
-                  child: Text(label),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: StylePanelTokens.sliderLabelMinWidth,
+                  ),
+                  child: Text(
+                    label,
+                    style: StylePanelTokens.optionLabel(context),
+                    maxLines: 1,
+                    softWrap: false,
+                  ),
                 ),
                 Expanded(
                   child: Slider(
@@ -323,93 +331,101 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
             required ReadingInfoSectionModel section,
             required ValueChanged<ReadingInfoSectionModel> onChanged,
           }) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: buildInfoDropdown(
-                        context,
-                        L10n.of(context).readingPageLeft,
-                        section.left,
-                        (value) {
-                          setState(() {
-                            onChanged(section.copyWith(left: value));
-                          });
-                        },
+            // 子设置统一左缩进，和上方 “样式面板展现位置” 等设置行
+            // （SingleRowSettingTile 默认内边距）保持同一垂直对齐线。
+            final metrics = StylePanelDensity.of(context);
+            return Padding(
+              padding: metrics.subsectionContentPadding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: StylePanelTokens.subsectionTitle(context),
+                    maxLines: 1,
+                    softWrap: false,
+                  ),
+                  SizedBox(height: metrics.rowGap),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: buildInfoDropdown(
+                          context,
+                          L10n.of(context).readingPageLeft,
+                          section.left,
+                          (value) {
+                            setState(() {
+                              onChanged(section.copyWith(left: value));
+                            });
+                          },
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: buildInfoDropdown(
-                        context,
-                        L10n.of(context).readingPageCenter,
-                        section.center,
-                        (value) {
-                          setState(() {
-                            onChanged(section.copyWith(center: value));
-                          });
-                        },
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: buildInfoDropdown(
+                          context,
+                          L10n.of(context).readingPageCenter,
+                          section.center,
+                          (value) {
+                            setState(() {
+                              onChanged(section.copyWith(center: value));
+                            });
+                          },
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: buildInfoDropdown(
-                        context,
-                        L10n.of(context).readingPageRight,
-                        section.right,
-                        (value) {
-                          setState(() {
-                            onChanged(section.copyWith(right: value));
-                          });
-                        },
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: buildInfoDropdown(
+                          context,
+                          L10n.of(context).readingPageRight,
+                          section.right,
+                          (value) {
+                            setState(() {
+                              onChanged(section.copyWith(right: value));
+                            });
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                buildSettingSlider(
-                  label: L10n.of(context).readingSettingsMargin,
-                  value: section.verticalMargin,
-                  min: 0,
-                  max: 80,
-                  divisions: 40,
-                  onChanged: (value) =>
-                      onChanged(section.copyWith(verticalMargin: value)),
-                ),
-                buildSettingSlider(
-                  label: L10n.of(context).readingPageLeftMargin,
-                  value: section.leftMargin,
-                  min: 0,
-                  max: 80,
-                  divisions: 40,
-                  onChanged: (value) =>
-                      onChanged(section.copyWith(leftMargin: value)),
-                ),
-                buildSettingSlider(
-                  label: L10n.of(context).readingPageRightMargin,
-                  value: section.rightMargin,
-                  min: 0,
-                  max: 80,
-                  divisions: 40,
-                  onChanged: (value) =>
-                      onChanged(section.copyWith(rightMargin: value)),
-                ),
-                buildSettingSlider(
-                  label: L10n.of(context).readingPageFontSize,
-                  value: section.fontSize,
-                  min: 8,
-                  max: 24,
-                  divisions: 16,
-                  onChanged: (value) =>
-                      onChanged(section.copyWith(fontSize: value)),
-                ),
-              ],
+                    ],
+                  ),
+                  buildSettingSlider(
+                    label: L10n.of(context).readingSettingsMargin,
+                    value: section.verticalMargin,
+                    min: 0,
+                    max: 80,
+                    divisions: 40,
+                    onChanged: (value) =>
+                        onChanged(section.copyWith(verticalMargin: value)),
+                  ),
+                  buildSettingSlider(
+                    label: L10n.of(context).readingPageLeftMargin,
+                    value: section.leftMargin,
+                    min: 0,
+                    max: 80,
+                    divisions: 40,
+                    onChanged: (value) =>
+                        onChanged(section.copyWith(leftMargin: value)),
+                  ),
+                  buildSettingSlider(
+                    label: L10n.of(context).readingPageRightMargin,
+                    value: section.rightMargin,
+                    min: 0,
+                    max: 80,
+                    divisions: 40,
+                    onChanged: (value) =>
+                        onChanged(section.copyWith(rightMargin: value)),
+                  ),
+                  buildSettingSlider(
+                    label: L10n.of(context).readingPageFontSize,
+                    value: section.fontSize,
+                    min: 8,
+                    max: 24,
+                    divisions: 16,
+                    onChanged: (value) =>
+                        onChanged(section.copyWith(fontSize: value)),
+                  ),
+                ],
+              ),
             );
           }
 
@@ -426,7 +442,9 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
                   updateReadingInfo(readingInfo.copyWith(header: section));
                 },
               ),
+              SizedBox(height: StylePanelDensity.of(context).subsectionGap),
               const Divider(),
+              SizedBox(height: StylePanelDensity.of(context).subsectionGap),
               buildSectionSettings(
                 title: L10n.of(context).readingPageFooterSettings,
                 section: readingInfo.footer,
@@ -442,7 +460,6 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
 
     Widget downloadFonts() {
       return AppListTile(
-        contentPadding: AppSpacing.zero,
         title: L10n.of(context).downloadFonts,
         leading: const Icon(Icons.font_download_outlined),
         trailing: const Icon(Icons.arrow_forward_ios),
@@ -484,29 +501,34 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           ) {
             return SingleRowSettingTile(
               title: label,
-              contentPadding: AppSpacing.zero,
-              // Wrap 需要按剩余宽度换行，因此钉合（不包横向滚动），
-              // 并放宽右侧占比让芯片尽量单排放下。
+              // 与上下的设置行统一使用默认内边距，保证 “浅色主题/深色主题”
+              // 标题与 “代码高亮主题” 及面板展现位置等行左对齐。
+              // 芯片保持单行、超出时横向滚动（不换行、不省略）。
               pinnedTrailing: true,
-              trailingMaxWidthFactor: 0.85,
-              trailing: Wrap(
-                spacing: AppSpacing.tokens.s8,
-                runSpacing: AppSpacing.tokens.s4,
-                children: themes.map((theme) {
-                  final isSelected = Prefs().codeHighlightTheme == theme;
-                  return ChoiceChip(
-                    label: Text(theme.displayName),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          Prefs().codeHighlightTheme = theme;
-                          epubPlayerKey.currentState?.changeStyle(null);
-                        });
-                      }
-                    },
-                  );
-                }).toList(),
+              trailingMaxWidthFactor: 0.6,
+              trailing: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final theme in themes)
+                      Padding(
+                        padding: AppReadingTokens.dropdownGapReverse,
+                        child: ChoiceChip(
+                          label: Text(theme.displayName, maxLines: 1),
+                          selected: Prefs().codeHighlightTheme == theme,
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                Prefs().codeHighlightTheme = theme;
+                                epubPlayerKey.currentState?.changeStyle(null);
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                  ],
+                ),
               ),
             );
           }
@@ -561,6 +583,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
               ),
               // Detailed theme selection (only show if not off)
               if (Prefs().codeHighlightTheme != CodeHighlightThemeEnum.off) ...[
+                const SizedBox(height: StylePanelTokens.rowGap),
                 if (Prefs().codeHighlightTheme.isLight)
                   themeChipRow(
                     L10n.of(context).codeHighlightLightThemes,
@@ -615,7 +638,8 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
     }
 
     return Padding(
-      padding: StylePanelTokens.groupPadding,
+      // 水平对齐统一由各行内边距与 StylePanel 子缩进决定，分组只保留垂直留白。
+      padding: StylePanelDensity.of(context).groupVerticalPadding,
       child: Column(
         children: [
           downloadFonts(),
@@ -626,6 +650,7 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
           columnThreshold(),
           convertChinese(),
           const Divider(height: 15),
+          SizedBox(height: StylePanelDensity.of(context).subsectionGap),
           codeHighlightTheme(),
           panelPositionTile(
             L10n.of(context).readingNotesPanelPosition,
@@ -638,13 +663,18 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
             (value) => Prefs().stylePanelPosition = value,
           ),
           const Divider(height: 15),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: AppReadingTokens.settingsRowGap,
+          SizedBox(height: StylePanelDensity.of(context).subsectionGap),
+          Padding(
+            // “阅读信息” 是子标题：与子设置内容同一缩进线（12+16），
+            // 下方 页眉设置/页脚设置 及其具体设置项沿用同一左对齐线。
+            padding: StylePanelDensity.of(context).subsectionHeaderPadding,
+            child: Align(
+              alignment: Alignment.centerLeft,
               child: Text(
                 L10n.of(context).readingPageReadingInfo,
-                style: Theme.of(context).textTheme.titleMedium,
+                style: StylePanelTokens.subsectionTitle(context),
+                maxLines: 1,
+                softWrap: false,
               ),
             ),
           ),

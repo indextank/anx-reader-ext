@@ -1,4 +1,5 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
+import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/page/onboarding_screen.dart';
 import 'package:anx_reader/providers/ui_settings.dart';
 import 'package:flutter/material.dart';
@@ -39,7 +40,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.byType(DropdownButton<String>), findsOneWidget);
+    expect(find.byType(AppDropdownField<String>), findsOneWidget);
     await Scrollable.ensureVisible(
       tester.element(find.byType(Switch)),
       alignment: 0.5,

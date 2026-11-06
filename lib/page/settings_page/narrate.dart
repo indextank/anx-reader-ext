@@ -1,12 +1,12 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
+import 'package:anx_reader/providers/tts_engine_enablement.dart';
 import 'package:anx_reader/providers/tts_providers.dart';
 import 'package:anx_reader/service/tts/models/tts_voice.dart';
 import 'package:anx_reader/service/tts/online_tts.dart';
 import 'package:anx_reader/service/tts/system_tts.dart';
 import 'package:anx_reader/service/tts/tts_factory.dart';
-import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/service/tts/tts_service.dart' as tts_svc;
 import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/theme/app_page_tokens.dart';
@@ -70,13 +70,13 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
             );
           }
         } else {
-          await tts.speak(content: text);
+          await tts.speakPreview(text);
         }
       } else if (tts is SystemTts) {
         if (voiceShortName != null) {
           await tts.speakWithVoice(text, voiceShortName);
         } else {
-          await tts.speak(content: text);
+          await tts.speakPreview(text);
         }
       }
     } catch (e) {
@@ -320,7 +320,22 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
     final ttsServiceId = ref.watch(ttsServiceProvider);
+    final engineEnablement = ref.watch(ttsEngineEnablementProvider);
+    // Only enabled engines may be picked as the narration engine. The derived
+    // provider is shared with the narration floating player so both surfaces
+    // always list exactly the same set (system TTS is always included).
+    final enabledEngines = ref.watch(enabledTtsEnginesProvider);
+    // While enablement is still loading (or if a persisted engine was disabled
+    // before the fallback runs), the persisted selection may not have an item
+    // in the filtered list. Falling back to system TTS keeps the dropdown valid
+    // and matches the fallback the enablement notifier persists.
+    final effectiveServiceId = enabledEngines.any(
+      (service) => service.name == ttsServiceId,
+    )
+        ? ttsServiceId
+        : tts_svc.TtsService.system.name;
     final currentProvider = tts_svc.getTtsService(ttsServiceId).provider;
     ref.listen(onlineTtsConfigProvider(ttsServiceId), (prev, next) {
       if (prev != next) {
@@ -337,7 +352,7 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
         padding: AppSettingsBatchTokens.narrateScrollPadding,
         children: [
           SettingsSection(
-            title: Text(L10n.of(context).settingsNarrateTtsService),
+            title: Text(l10n.settingsNarrateTtsService),
             tiles: [
               SettingsTile.switchTile(
                 title: Text(L10n.of(context).allowMixing),
@@ -350,16 +365,25 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
               ),
             ],
           ),
+          _buildEngineSwitchesSection(l10n, engineEnablement),
           SettingsSection(
-            title: Text(L10n.of(context).ttsType),
+            key: const ValueKey('tts-engine-type-section'),
+            title: Text(l10n.ttsType),
             tiles: [
-              CustomSettingsTile(child: _buildServiceSelection(ttsServiceId)),
-              if (ttsServiceId != 'system')
-                CustomSettingsTile(child: _buildConfigSection(ttsServiceId)),
+              CustomSettingsTile(
+                child: _buildServiceSelection(
+                  effectiveServiceId,
+                  enabledEngines,
+                ),
+              ),
+              if (effectiveServiceId != 'system')
+                CustomSettingsTile(
+                  child: _buildConfigSection(effectiveServiceId),
+                ),
             ],
           ),
           SettingsSection(
-            title: Text(L10n.of(context).settingsNarrateTtsVoiceModels),
+            title: Text(l10n.settingsNarrateTtsVoiceModels),
             tiles: [
               CustomSettingsTile(
                 child: Padding(
@@ -381,48 +405,86 @@ class _NarrateSettingsState extends ConsumerState<NarrateSettings>
     );
   }
 
-  Widget _buildServiceSelection(String currentServiceId) {
+  /// 引擎开关配置区：仅第三方引擎可开关，系统 TTS 恒开启、不出现开关行。
+  ///
+  /// - 首次加载：渲染同数量的禁用开关，避免布局跳动；
+  /// - 读取失败（已回退默认值）：在开关上方展示非阻断的行内提示与重试入口，
+  ///   开关仍可使用（默认值：第三方全关、系统开）。
+  Widget _buildEngineSwitchesSection(
+    L10n l10n,
+    AsyncValue<TtsEngineEnablementState> enablement,
+  ) {
+    final state = enablement.valueOrNull;
+    final isLoading = enablement.isLoading && !enablement.hasValue;
+    final showFallback = state?.usedFallback == true ||
+        (enablement.hasError && !enablement.hasValue);
+    return SettingsSection(
+      key: const ValueKey('tts-engine-enablement-section'),
+      title: Text(l10n.settingsNarrateEngineSwitches),
+      tiles: [
+        if (showFallback)
+          CustomSettingsTile(
+            child: Padding(
+              padding: AppSpacing.all8,
+              child: AppInlineFeedback(
+                message: l10n.settingsNarrateEngineLoadFailed,
+                onRetry: () async {
+                  await ref
+                      .read(ttsEngineEnablementProvider.notifier)
+                      .refresh();
+                },
+              ),
+            ),
+          ),
+        for (final service in tts_svc.TtsService.thirdPartyServices)
+          SettingsTile.switchTile(
+            key: ValueKey('tts-engine-enablement-${service.name}'),
+            title: Text(service.getLabel(context)),
+            description: Text(l10n.settingsNarrateEngineSwitchDescription),
+            initialValue: state?.isEnabled(service) ?? false,
+            enabled: !isLoading,
+            onToggle: (value) async {
+              await ref
+                  .read(ttsEngineEnablementProvider.notifier)
+                  .setEnabled(service, enabled: value);
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildServiceSelection(
+    String currentServiceId,
+    List<tts_svc.TtsService> enabledEngines,
+  ) {
+    final l10n = L10n.of(context);
     return Padding(
       padding: AppSettingsBatchTokens.narrateConfigPadding,
-      child: DropdownButtonFormField<String>(
-        initialValue: currentServiceId,
-        decoration: InputDecoration(
-          labelText: L10n.of(context).settingsNarrateTtsService,
-        ),
+      child: AppDropdownField<String>(
+        key: const ValueKey('tts-service-dropdown'),
+        value: currentServiceId,
+        // Pre-existing narrow-screen fix: without expansion the dropdown row
+        // exceeds the field width at large text scales.
+        expandedInsets: EdgeInsets.zero,
+        label: l10n.settingsNarrateTtsService,
+        // Only engines whose switch is on are selectable. System TTS is always
+        // enabled (the enablement registry guarantees it is the first item).
         items: [
-          DropdownMenuItem(
-            value: 'system',
-            child: Text(L10n.of(context).settingsNarrateSystemTts),
-          ),
-          DropdownMenuItem(
-            value: 'aliyun',
-            child: Text(L10n.of(context).settingsNarrateAliyunTts),
-          ),
-          DropdownMenuItem(
-            value: 'azure',
-            child: Text(L10n.of(context).settingsNarrateAzureTts),
-          ),
-          DropdownMenuItem(
-            value: 'openai',
-            child: Text(L10n.of(context).settingsNarrateOpenAiTts),
-          ),
-          DropdownMenuItem(
-            value: 'stepaudio',
-            child: Text(L10n.of(context).settingsNarrateStepAudioTts),
-          ),
-          DropdownMenuItem(
-            value: 'mimo',
-            child: Text(L10n.of(context).settingsNarrateMimoTts),
-          ),
+          for (final service in enabledEngines)
+            AppDropdownItem<String>(
+              value: service.name,
+              label: service.getLabel(context),
+            ),
         ],
         onChanged: (value) async {
           if (value == null || value == currentServiceId) return;
-          await TtsHandler().switchTtsType(value);
+          final selectedService = tts_svc.getTtsService(value);
+          // 运行时切换走可注入的 activation seam（生产实现= TtsHandler）。
+          await ref.read(ttsEngineActivationProvider).activate(selectedService);
           if (!mounted) return;
           ref.read(ttsServiceProvider.notifier).setService(value);
           _showVoiceList = false;
-          selectedVoiceModel =
-              tts_svc.getTtsService(value).provider.getSelectedVoice();
+          selectedVoiceModel = selectedService.provider.getSelectedVoice();
           setState(() {});
         },
       ),

@@ -4,7 +4,7 @@ import { Overlayer } from './overlayer.js'
 import { textWalker } from './text-walker.js'
 import { Translator, TranslationMode } from './translator.js'
 import { getTokens } from './anx-tokens.js'
-const { TTS } = await import('./tts.js')
+const { TTS, normalizeSpokenRanges } = await import('./tts.js')
 
 const SEARCH_PREFIX = 'foliate-search:'
 
@@ -582,32 +582,296 @@ export class View extends HTMLElement {
     this.#searchResults.clear()
   }
   oldValue = null
-  initTTS(stop) {
-    if (stop)
-      return this.#getOverlayer(this.#index)?.overlayer.remove(this.oldValue)
-
-    const doc = this.renderer.getContents()[0].doc;
-    if (this.tts && this.tts.doc === doc) return;
-    this.tts = new TTS(
+  // Overlay keys currently painted for the TTS highlight, per section index.
+  // Every repaint clears the previous set so a page-break split (.a -> .b) or a
+  // new sentence never leaves a stale selection behind.
+  #ttsHighlightValues = []
+  // Section index the `tts` iterator lists its sentences in. Captured when the
+  // TTS object is created: the user can navigate to another section while the
+  // playback pipeline keeps advancing the iterator, and CFIs/overlays must keep
+  // referring to the *reading* section, never to the page the user is looking
+  // at. Painting a range into the wrong section is exactly the "fake selection
+  // on the wrong page" defect.
+  ttsSectionIndex = -1
+  #currentSectionIndex() {
+    return this.renderer?.getContents?.()[0]?.index ?? this.#index
+  }
+  // Create a TTS sentence list for [doc] and bind its CFIs/overlays to the
+  // section [index] for the whole lifetime of that list.
+  #createTts(doc, index) {
+    return new TTS(
       doc,
       textWalker,
-      (range) => {
-        const obj = this.#getOverlayer(this.#index);
-        let value = null;
-        if (obj) {
-          const { overlayer } = obj;
-          if (this.oldValue) {
-            overlayer.remove(this.oldValue);
-          }
-          value = this.getCFI(this.#index, range);
-          overlayer.add(value, range, Overlayer.highlight, { color: getTokens().searchHighlightColor });
-          this.oldValue = value;
-        }
-        this.renderer.scrollToAnchor(range);
-        return value;
-      },
-      (range) => this.getCFI(this.#index, range),
+      (range, opts) => this.#paintTtsRange(range, index, opts),
+      (range) => this.getCFI(index, range),
     );
+  }
+  // Paint one TTS range into the overlayer of the section it belongs to and
+  // return the overlay key. A range whose section is not displayed is not
+  // painted: `ttsHighlightSpoken` navigates back before painting.
+  #paintTtsRange(range, index, { scroll = true, keep = false } = {}) {
+    const obj = this.#getOverlayer(index)
+    if (!obj) return null
+    if (!keep) this.#clearTtsHighlight()
+    const { overlayer } = obj
+    const value = this.getCFI(index, range)
+    overlayer.add(value, range, Overlayer.highlight, {
+      color: getTokens().searchHighlightColor,
+    })
+    // The live Range is kept (not its rects): the debug snapshot must measure
+    // it on demand, after the pull-back scroll, when the sentence page is the
+    // visible one.
+    this.#ttsHighlightValues.push({
+      index,
+      value,
+      range,
+      text: range.toString(),
+    })
+    this.oldValue = value
+    if (scroll) this.renderer.scrollToAnchor(range)
+    return value
+  }
+  #describeRects(range) {
+    try {
+      return Array.from(range.getClientRects?.() ?? [])
+        .filter(rect => rect.width > 0 && rect.height > 0)
+        .map(rect => ({
+          left: rect.left, top: rect.top,
+          right: rect.right, bottom: rect.bottom,
+        }))
+    } catch (e) {
+      return []
+    }
+  }
+  #clearTtsHighlight() {
+    for (const { index, value } of this.#ttsHighlightValues) {
+      this.#getOverlayer(index)?.overlayer.remove(value)
+    }
+    this.#ttsHighlightValues = []
+    this.oldValue = null
+  }
+  initTTS(stop) {
+    if (stop) {
+      this.#clearTtsHighlight()
+      return
+    }
+    const content = this.renderer.getContents()[0]
+    if (!content) return
+    const { doc, index } = content
+    if (this.tts && this.tts.doc === doc) {
+      this.ttsSectionIndex = index
+      return
+    }
+    this.#clearTtsHighlight()
+    this.ttsSectionIndex = index
+    this.tts = this.#createTts(doc, index)
+  }
+  // Ensure the pipeline iterator exists without ever throwing it away: after a
+  // manual page turn the bridge calls for text/CFIs must keep reading from the
+  // iterator's own section instead of rebuilding it on the page the user is
+  // looking at (that used to reset the reading position to the visible page).
+  ensureTTS() {
+    if (!this.tts) this.initTTS()
+  }
+  // The TTS sentence being read may continue past the visible page: the reader
+  // paginates in the middle of the sentence even though the sentence is a single
+  // DOM range. `ttsHighlightSpoken` is called by the playback pipeline right
+  // before every engine request becomes audible. It paints exactly the spoken
+  // part of the sentence at [cfi], drops the previous selection, and brings the
+  // reading page back into view when the user manually paged away.
+  //
+  // [ranges] are sentence-relative UTF-16 offsets of the spoken segments (see
+  // TtsSpokenRange in the Dart pipeline; annotations like `[12]` are excluded).
+  // Returns true when the sentence page has been brought into view and painted.
+  async ttsHighlightSpoken(cfi, ranges) {
+    const target = typeof cfi === 'string' ? cfi : ''
+    if (!target || this.isFixedLayout) return false
+    const spoken = normalizeSpokenRanges(ranges)
+    let resolved = null
+    try {
+      resolved = await this.resolveNavigation(target)
+    } catch (e) {
+      console.error('ttsHighlightSpoken: cannot resolve cfi', e)
+      return false
+    }
+    if (!resolved || typeof resolved.index !== 'number'
+      || typeof resolved.anchor !== 'function') return false
+    const targetIndex = resolved.index
+    let content = this.renderer.getContents()[0]
+    let navigated = false
+    if (!content || content.index !== targetIndex) {
+      // The user paged to another section while playback continued: navigate
+      // back to the reading sentence. Never push a history entry: the reading
+      // position is authoritative and the manual page must not become a
+      // navigable "random jump" target.
+      if (!await this.#navigateToTtsSection(targetIndex, resolved.anchor))
+        return false
+      content = this.renderer.getContents()[0]
+      if (!content || content.index !== targetIndex) return false
+      navigated = true
+    }
+    if (!this.tts || this.tts.doc !== content.doc
+      || this.ttsSectionIndex !== targetIndex) {
+      // The renderer replaced the document (navigation away and back): rebuild
+      // the sentence list for the fresh document and pin the iterator at the
+      // sentence being read, so the next advance continues with the next
+      // sentence instead of re-reading/skipping one.
+      const rebuilt = this.#createTts(content.doc, targetIndex)
+      const located = rebuilt.locateCfi(target)
+      if (!located) {
+        console.error('ttsHighlightSpoken: sentence not found after rebuild')
+        return false
+      }
+      this.#clearTtsHighlight()
+      this.tts = rebuilt
+      this.ttsSectionIndex = targetIndex
+    }
+    // A freshly navigated document may not have been laid out yet: range rects
+    // (and therefore the overlay) would be empty. Two frames are enough for the
+    // paginator to columnize the new document.
+    if (navigated) await new Promise(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    this.#clearTtsHighlight()
+    const first = this.tts.paintSpokenRanges(target, spoken)
+    if (!first) return false
+    // Fire and forget: the paginator jumps synchronously for anchor scrolls, so
+    // there is no animation to wait for and audio start is not delayed.
+    try {
+      Promise.resolve(this.renderer.scrollToAnchor(first)).catch(() => {})
+    } catch (e) {
+      console.error('ttsHighlightSpoken: scroll failed', e)
+    }
+    return true
+  }
+  // Navigate the renderer to [index] and position the page at the sentence
+  // anchor. The paginator ignores navigation while a page-turn is in flight
+  // (its #locked window, which lasts a few frames after a user page turn), so
+  // wait for it instead of silently failing. Bounded: the Dart pipeline has its
+  // own timeout around this call.
+  async #navigateToTtsSection(index, anchor) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (this.renderer.getContents()[0]?.index === index) return true
+      if (this.renderer.locked) {
+        await new Promise(resolve => setTimeout(resolve, 80))
+        continue
+      }
+      try {
+        await this.renderer.goTo({ index, anchor })
+      } catch (e) {
+        console.error('ttsHighlightSpoken: navigation failed', e)
+      }
+      if (this.renderer.getContents()[0]?.index === index) return true
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    return this.renderer.getContents()[0]?.index === index
+  }
+  // Debug snapshot of the current TTS highlight (used by the browser evidence
+  // scripts; no UI depends on it).
+  ttsHighlightDebug() {
+    const content = this.renderer.getContents()[0]
+    return {
+      sectionIndex: content?.index ?? -1,
+      page: this.renderer.page ?? null,
+      pages: this.renderer.pages ?? null,
+      locationCfi: this.lastLocation?.cfi ?? '',
+      ttsSectionIndex: this.ttsSectionIndex,
+      painted: this.#ttsHighlightValues.map(entry => ({
+        value: entry.value,
+        text: entry.text,
+        rects: this.#describeRects(entry.range),
+      })),
+    }
+  }
+  // The TTS sentence currently being read may continue past the visible page:
+  // the reader paginates in the middle of the sentence even though the sentence
+  // is a single DOM range. This bridge reports where the visible page ends
+  // inside that sentence so the Dart pipeline can turn the page as soon as the
+  // last visible character has been spoken, instead of waiting for the whole
+  // sentence.
+  //
+  // Returns null when the whole current sentence is on the current page (or
+  // when the reader/TTS/page state cannot be resolved):
+  //   { offset, pageEndCfi, sentenceCfi }
+  // - offset: UTF-16 offset inside the current slice's text where the visible
+  //   page ends (0 < offset < slice length).
+  // - pageEndCfi: point CFI of the page-end boundary in the current section.
+  // - sentenceCfi: CFI of the current TTS sentence (same value as
+  //   ttsCurrentDetail().cfi); lets the Dart adapter detect a stale iterator.
+  ttsPageBreak() {
+    const tts = this.tts;
+    const pageRange = this.lastLocation?.range;
+    if (!tts || !pageRange || pageRange.collapsed) return null;
+    // Only the reflowable paginated layout can split a sentence across pages:
+    // fixed-layout pages are not split, and scrolled mode has no page boundary.
+    if (this.isFixedLayout) return null;
+    if (this.renderer?.getAttribute?.('flow') === 'scrolled') return null;
+    // The page break is only meaningful while the user is looking at the
+    // reading section: after a manual page turn away from it, the visible page
+    // belongs to another document and comparing its range with the reading
+    // sentence would be meaningless.
+    if (this.ttsSectionIndex !== this.#currentSectionIndex()) return null;
+    const sentenceRange = tts.currentEntryRange?.();
+    if (!sentenceRange || sentenceRange.collapsed) return null;
+    const doc = sentenceRange.startContainer?.ownerDocument;
+    if (!doc || pageRange.startContainer?.ownerDocument !== doc) return null;
+    try {
+      const pageEndContainer = pageRange.endContainer;
+      const pageEndOffset = pageRange.endOffset;
+      // -1: the page ends before the sentence starts (sentence is on a later
+      // page), 1: the page ends after the sentence (whole sentence visible),
+      // 0: the page end lies inside the sentence or exactly on a boundary.
+      if (sentenceRange.comparePoint(pageEndContainer, pageEndOffset) !== 0)
+        return null;
+      const atSentenceStart =
+        pageEndContainer === sentenceRange.startContainer &&
+        pageEndOffset === sentenceRange.startOffset;
+      const atSentenceEnd =
+        pageEndContainer === sentenceRange.endContainer &&
+        pageEndOffset === sentenceRange.endOffset;
+      if (atSentenceStart || atSentenceEnd) return null;
+
+      // Prefer the TTS text extraction so `offset` is directly comparable with
+      // the slice text the Dart pipeline synthesizes (local links are skipped
+      // and <br> counts as one space there). Fall back to the plain DOM Range
+      // text when an older TTS object has no extraction helper.
+      let offset = null;
+      if (typeof tts.currentEntryOffsetAt === 'function')
+        offset = tts.currentEntryOffsetAt(pageEndContainer, pageEndOffset);
+      else {
+        const visiblePartOfSentence = doc.createRange();
+        visiblePartOfSentence.setStart(
+          sentenceRange.startContainer, sentenceRange.startOffset);
+        visiblePartOfSentence.setEnd(pageEndContainer, pageEndOffset);
+        offset = visiblePartOfSentence.toString().length;
+      }
+      if (!(offset > 0)) return null;
+
+      const pageEndRange = doc.createRange();
+      pageEndRange.setStart(pageEndContainer, pageEndOffset);
+      pageEndRange.collapse(true);
+      const pageEndCfi = this.getCFI(this.ttsSectionIndex, pageEndRange);
+      const sentenceCfi = this.getCFI(
+        this.ttsSectionIndex, sentenceRange.cloneRange());
+      return { offset, pageEndCfi, sentenceCfi };
+    } catch (e) {
+      // Different documents (stale lastLocation from another section), detached
+      // ranges, etc.: no reliable page break.
+      console.error('ttsPageBreak failed', e);
+      return null;
+    }
+  }
+  // Turn exactly one paginated page using the normal renderer page-turn path
+  // (same animation as a user page turn) WITHOUT moving the TTS sentence
+  // iterator. Resolves to true when the renderer call completed.
+  async ttsTurnPage() {
+    if (!this.tts) return false;
+    try {
+      await this.next();
+      return true;
+    } catch (e) {
+      console.error('ttsTurnPage failed', e);
+      return false;
+    }
   }
   startMediaOverlay() {
     const { index } = this.renderer.getContents()[0]

@@ -263,27 +263,26 @@ class _AiProviderDetailPageState extends ConsumerState<AiProviderDetailPage> {
           ],
         ),
         children: [
-          DropdownButtonFormField<AiReasoningEffort>(
-            initialValue: _reasoningEffort,
-            decoration: InputDecoration(
-              labelText: l10n.settingsAiProviderReasoningEffort,
-            ),
+          AppDropdownField<AiReasoningEffort>(
+            value: _reasoningEffort,
+            expandedInsets: EdgeInsets.zero,
+            label: l10n.settingsAiProviderReasoningEffort,
             items: [
-              DropdownMenuItem(
+              AppDropdownItem<AiReasoningEffort>(
                 value: AiReasoningEffort.auto,
-                child: Text(l10n.settingsAiProviderReasoningEffortAuto),
+                label: l10n.settingsAiProviderReasoningEffortAuto,
               ),
-              DropdownMenuItem(
+              AppDropdownItem<AiReasoningEffort>(
                 value: AiReasoningEffort.low,
-                child: Text(l10n.settingsAiProviderReasoningEffortLow),
+                label: l10n.settingsAiProviderReasoningEffortLow,
               ),
-              DropdownMenuItem(
+              AppDropdownItem<AiReasoningEffort>(
                 value: AiReasoningEffort.medium,
-                child: Text(l10n.settingsAiProviderReasoningEffortMedium),
+                label: l10n.settingsAiProviderReasoningEffortMedium,
               ),
-              DropdownMenuItem(
+              AppDropdownItem<AiReasoningEffort>(
                 value: AiReasoningEffort.high,
-                child: Text(l10n.settingsAiProviderReasoningEffortHigh),
+                label: l10n.settingsAiProviderReasoningEffortHigh,
               ),
             ],
             onChanged: (value) {

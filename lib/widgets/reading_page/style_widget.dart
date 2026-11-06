@@ -18,8 +18,8 @@ import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/font_parser.dart';
 import 'package:anx_reader/utils/get_path/get_base_path.dart';
-import 'package:anx_reader/widgets/icon_and_text.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/more_settings.dart';
+import 'package:anx_reader/widgets/reading_page/style_panel_slider_label.dart';
 import 'package:anx_reader/widgets/reading_page/widget_title.dart';
 import 'package:anx_reader/widgets/reading_page/widgets/bgimg_selector.dart';
 import 'package:flutter/material.dart';
@@ -55,8 +55,8 @@ class StyleWidget extends StatefulWidget {
 
   final List<ReadTheme> themes;
   final GlobalKey<EpubPlayerState> epubPlayerKey;
-  final Function setCurrentPage;
-  final Function hideAppBarAndBottomBar;
+  final ValueChanged<Widget> setCurrentPage;
+  final void Function(bool hide) hideAppBarAndBottomBar;
   final bool embedded;
   final Future<int> Function(ReadTheme)? themeInserter;
 
@@ -71,44 +71,63 @@ class StyleWidgetState extends State<StyleWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = StylePanelDensity.of(context);
     final content = Column(
       children: [
         if (!widget.embedded)
           widgetTitle(L10n.of(context).readingPageStyle, ReadingSettings.theme),
-        sliders(),
-        fontAndPageTurn(),
+        // 主分组标题下的所有设置统一左缩进，与行内边距共同构成层级。
+        Padding(
+          padding: metrics.childIndent,
+          child: Column(
+            children: [
+              sliders(),
+              SizedBox(height: metrics.subsectionGap),
+              fontAndPageTurn(),
+            ],
+          ),
+        ),
         const Divider(),
-        if (widget.themes.isEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: AppReadingTokens.settingsRowGap,
-              child: Text(
-                L10n.of(context).readingThemesEmpty,
-                style: StylePanelTokens.helper(context),
+        Padding(
+          padding: metrics.subsectionContentPadding,
+          child: Column(
+            children: [
+              if (widget.themes.isEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: AppReadingTokens.settingsRowGap,
+                    child: Text(
+                      L10n.of(context).readingThemesEmpty,
+                      style: StylePanelTokens.helper(context),
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
+                  ),
+                ),
+              themeSelector(),
+              if (_themeActionFailed)
+                AppInlineFeedback(
+                  message: L10n.of(context).commonActionFailed,
+                  onRetry: _addTheme,
+                ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: AppButton(
+                  variant: AppButtonVariant.outlined,
+                  onPressed: () => widget.setCurrentPage(const BgimgSelector()),
+                  icon: Icons.arrow_forward_ios,
+                  label: L10n.of(context).readingPageStyleBackground,
+                ),
               ),
-            ),
-          ),
-        themeSelector(),
-        if (_themeActionFailed)
-          AppInlineFeedback(
-            message: L10n.of(context).commonActionFailed,
-            onRetry: _addTheme,
-          ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: AppButton(
-            variant: AppButtonVariant.outlined,
-            onPressed: () => widget.setCurrentPage(const BgimgSelector()),
-            icon: Icons.arrow_forward_ios,
-            label: L10n.of(context).readingPageStyleBackground,
+            ],
           ),
         ),
       ],
     );
     if (widget.embedded) return content;
     return SingleChildScrollView(
-      padding: AppReadingTokens.panelPadding,
+      padding: StylePanelTokens.panelPadding,
       child: content,
     );
   }
@@ -197,6 +216,7 @@ class StyleWidgetState extends State<StyleWidget> {
               )
               .toList(),
         ),
+        SizedBox(height: StylePanelDensity.of(context).subsectionGap),
         DropdownMenu<FontModel>(
           label: Text(L10n.of(context).font),
           expandedInsets: AppSpacing.zero,
@@ -567,15 +587,12 @@ class _ThemeChangeWidgetState extends State<ThemeChangeWidget> {
 }
 
 /// 面板滑杆行的统一图标+标签（高度与文字样式取自 StylePanelTokens）。
+///
+/// 宽度由内容决定、不缩放文字，保证英文等较长标签也单行完整展示。
 Widget _panelSliderLabel(
   BuildContext context, {
   required Widget icon,
   required String text,
 }) {
-  return IconAndText(
-    icon: icon,
-    text: text,
-    heightOverride: StylePanelTokens.sliderLabelHeight,
-    style: StylePanelTokens.optionLabel(context),
-  );
+  return StylePanelSliderLabel(icon: icon, text: text);
 }

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:math' as math;
 
+import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/enums/ai_panel_position.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
@@ -13,6 +13,7 @@ import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
 import 'package:anx_reader/widgets/reading_page/reading_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../design_system/design_system_test_utils.dart';
 
@@ -134,7 +135,7 @@ Future<void> _openStylePage(WidgetTester tester) async {
 }
 
 void _expectClosed(_ChromeHarness harness) {
-  expect(find.byType(BottomSheet), findsNothing);
+  expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
   expect(find.byKey(_ttsFabKey), findsOneWidget);
   expect(harness.readerFocusNode.hasFocus, isTrue);
 }
@@ -319,18 +320,28 @@ Future<void> _openCoordinatorTool(
 }
 
 Offstage _coordinatorChromeOffstage(WidgetTester tester) {
+  // ReadingChrome 的显隐 Offstage 在最外层；面板打开动画内部也有 Offstage，
+  // 取第一个匹配项即可。
   return tester.widget<Offstage>(
-    find.descendant(
-      of: find.byType(ReadingChrome),
-      matching: find.byType(Offstage),
-    ),
+    find
+        .descendant(
+          of: find.byType(ReadingChrome),
+          matching: find.byType(Offstage),
+        )
+        .first,
   );
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('chrome fills an unpositioned stack slot for bottom-right FAB',
+  setUp(() async {
+    // 弹层表面色由当前阅读主题推导，需要可用的偏好存储。
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await Prefs().initPrefs();
+  });
+
+  testWidgets('chrome fills its stack slot and mounts the injected TTS player',
       (tester) async {
     final harness = _ChromeHarness();
     addTearDown(harness.dispose);
@@ -368,10 +379,10 @@ void main() {
     );
 
     final chromeRect = tester.getRect(find.byType(ReadingChrome));
-    final fabRect = tester.getRect(find.byKey(_ttsFabKey));
     expect(chromeRect.size, const Size(1000, 800));
-    expect(fabRect.right, greaterThan(900));
-    expect(fabRect.bottom, greaterThan(700));
+    // The injected player is a self-positioning TtsFab that owns its own
+    // anchor; the chrome only needs to mount it and hand it the full stage.
+    expect(find.byKey(_ttsFabKey), findsOneWidget);
   });
 
   testWidgets(
@@ -449,15 +460,18 @@ void main() {
       await _showChrome(tester, harness);
       await _openStylePage(tester);
 
+      await tester.ensureVisible(find.text('Background'));
       await tester.tap(find.text('Background'));
       await tester.pump();
+      // 弹层打开动画（150ms）结束后再测量面板几何。
+      await tester.pump(const Duration(milliseconds: 200));
 
       expect(find.byKey(_themeSubpageKey), findsOneWidget);
-      final panelRect = tester.getRect(find.byType(BottomSheet));
-      expect(
-        panelRect.height,
-        lessThanOrEqualTo(math.min(size.height * 0.7, 600.0) + 1),
-      );
+      final panelRect = tester.getRect(find.byKey(readingToolPanelSurfaceKey));
+      // 样式弹框高度参数为 1.0：占满工具栏之下的可用高度，
+      // 明显高于笔记/TTS 面板的 0.8 比例，且不超出视口。
+      expect(panelRect.height, greaterThan(size.height * 0.5));
+      expect(panelRect.top, lessThan(size.height * 0.3));
       expect(panelRect.bottom, lessThanOrEqualTo(size.height + 1));
       expect(tester.takeException(), isNull);
 
@@ -486,7 +500,7 @@ void main() {
     await _showChrome(tester, harness);
     await tester.tap(find.byTooltip('Notes'));
     await tester.pump();
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
 
     harness.chromeKey.currentState!.closeToolPanel();
     await tester.pump();
@@ -498,7 +512,7 @@ void main() {
       ),
     );
     expect(offstage.offstage, isFalse);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
     expect(find.byKey(_ttsFabKey), findsNothing);
     expect(harness.hideCalls, 0);
   });
@@ -511,17 +525,17 @@ void main() {
       await tester.pump();
 
       await _tapCoordinatorTool(tester, 'Notes');
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
       expect(find.byType(ReadingSidePanelHost), findsNothing);
       expect(find.text('notes-panel'), findsOneWidget);
 
       harness.setNotesPosition(AiPanelPositionEnum.right);
       await tester.pump();
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(find.byType(ReadingSidePanelHost), findsNothing);
 
       await tester.pump();
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
       expect(find.text('notes-panel'), findsOneWidget);
 
@@ -541,7 +555,7 @@ void main() {
 
       await _tapCoordinatorTool(tester, 'Style');
       await tester.pump();
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
       expect(find.byType(ReadingSidePanelHost), findsNothing);
 
       harness.setStylePosition(AiPanelPositionEnum.right);
@@ -549,7 +563,7 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
       expect(find.text('Background'), findsOneWidget);
     });
@@ -591,10 +605,10 @@ void main() {
       );
       await tester.pump();
       expect(find.byType(ReadingSidePanelHost), findsNothing);
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       await tester.pump();
 
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
       expect(find.text('notes-panel'), findsOneWidget);
       expect(_coordinatorChromeOffstage(tester).offstage, isFalse);
       expect(find.byKey(_ttsFabKey), findsNothing);
@@ -640,7 +654,7 @@ void main() {
       await tester.pump();
 
       expect(find.byType(ReadingSidePanelHost), findsNothing);
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
       expect(find.text('Background'), findsOneWidget);
       expect(find.byKey(_themeSubpageKey), findsNothing);
     });
@@ -649,18 +663,18 @@ void main() {
         (tester) async {
       final harness = await _pumpCoordinator(tester);
       await _openCoordinatorTool(tester, harness, 'Notes');
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
 
       harness.setNotesPosition(AiPanelPositionEnum.right);
       harness.chromeKey.currentState!.hideBottomBar();
       await tester.pump();
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(find.byType(ReadingSidePanelHost), findsNothing);
 
       await tester.pump();
 
       expect(find.byType(ReadingSidePanelHost), findsNothing);
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(harness.coordinatorKey.currentState!.activeTool, isNull);
       expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
       expect(find.byKey(_ttsFabKey), findsOneWidget);
@@ -678,7 +692,7 @@ void main() {
 
       expect(harness.tocCalls, 1);
       expect(find.byType(ReadingSidePanelHost), findsNothing);
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(harness.coordinatorKey.currentState!.activeTool, isNull);
       expect(_coordinatorChromeOffstage(tester).offstage, isTrue);
       expect(find.byKey(_ttsFabKey), findsOneWidget);
@@ -703,7 +717,7 @@ void main() {
 
       expect(find.text('Background'), findsOneWidget);
       expect(find.byKey(_themeSubpageKey), findsNothing);
-      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
       expect(find.byType(ReadingSidePanelHost), findsOneWidget);
     });
 
@@ -786,7 +800,7 @@ void main() {
       await _openCoordinatorTool(tester, harness, 'Narrator');
 
       expect(find.byType(ReadingSidePanelHost), findsNothing);
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
       expect(find.text('tts-panel'), findsOneWidget);
       expect(find.byKey(_ttsFabKey), findsNothing);
     });

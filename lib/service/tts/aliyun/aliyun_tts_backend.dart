@@ -40,6 +40,42 @@ class AliyunTtsProvider extends TtsServiceProvider {
   String getLabel(BuildContext context) =>
       L10n.of(context).settingsNarrateAliyunTts;
 
+  /// Alibaba Cloud Intelligent Speech Interaction documents that the `text`
+  /// parameter of RESTful TTS short-text synthesis accepts at most 300
+  /// characters per request; longer input must be split into separate
+  /// requests (or synthesized with the long-text `tts_version` mode that the
+  /// `/stream/v1/tts` endpoint used here does not exercise).
+  ///
+  /// This was the root cause of entire paragraphs being skipped: the shared
+  /// default of 800 split sentences into requests the API rejects as a whole,
+  /// all retries failed and the playback layer marked the segment silent.
+  ///
+  /// https://help.aliyun.com/zh/isi/user-guide/restful-api-3
+  @override
+  int get maxRequestChars => 300;
+
+  @override
+  String get documentedRequestLimitNote =>
+      'Aliyun REST TTS documents a 300-character text limit per request';
+
+  /// Aliyun's NLS gateway is the only engine that answered a chapter-start
+  /// prefetch burst with `400 {"status":40000005,"message":
+  /// "Gateway:TOO_MANY_REQUESTS:Too many requests!"}` on the real device (5-6
+  /// simultaneous warm-up/prefetch requests).
+  ///
+  /// Two concurrent requests match the concurrency the round-2 harness already
+  /// models for Aliyun; the 250 ms minimum start spacing (at most 4 request
+  /// starts per second per app) keeps the warm-up + `prefetchAhead = 4` window
+  /// inside the gateway tolerance observed in the field. Other providers keep
+  /// the shared defaults (concurrency 2, no extra spacing), so their throughput
+  /// is not reduced by this fix.
+  @override
+  int get maxConcurrentSynthesisRequests => 2;
+
+  @override
+  Duration get minSynthesisRequestInterval =>
+      const Duration(milliseconds: 250);
+
   @override
   List<ConfigItem> getConfigItems(BuildContext context) {
     return [
@@ -170,7 +206,40 @@ class AliyunTtsProvider extends TtsServiceProvider {
     }
 
     final errorBody = utf8.decode(response.bodyBytes, allowMalformed: true);
+    if (looksRateLimitedResponse(response.statusCode, errorBody)) {
+      throw TtsRateLimitException(
+        message: 'Aliyun TTS rate limited: ${response.statusCode} $errorBody',
+        statusCode: response.statusCode,
+        body: errorBody,
+        retryAfter: _parseRetryAfter(response.headers['retry-after']),
+      );
+    }
     throw Exception('Aliyun TTS failed: ${response.statusCode} $errorBody');
+  }
+
+  /// Whether an Aliyun gateway response is a request-rate rejection rather
+  /// than a content/config error.
+  ///
+  /// The real-device sample is HTTP 400 with
+  /// `{"status":40000005,"message":"Gateway:TOO_MANY_REQUESTS:Too many
+  /// requests!"}`: the gateway reports the burst through a 400 status, so
+  /// matching only HTTP 429 would keep treating it as a generic failure and
+  /// keep the tight 120/240 ms retry loop that burned the remaining quota.
+  ///
+  /// Exposed for the network-rate-limit regression tests (no HTTP needed).
+  static bool looksRateLimitedResponse(int statusCode, String body) {
+    if (statusCode == 429) return true;
+    final upper = body.toUpperCase();
+    return upper.contains('TOO_MANY_REQUESTS') ||
+        upper.contains('40000005') ||
+        upper.contains('THROTTLING');
+  }
+
+  Duration? _parseRetryAfter(String? header) {
+    if (header == null || header.isEmpty) return null;
+    final seconds = int.tryParse(header.trim());
+    if (seconds != null && seconds >= 0) return Duration(seconds: seconds);
+    return null;
   }
 
   int _toAliyunRate(double value) {
@@ -233,6 +302,15 @@ class AliyunTtsProvider extends TtsServiceProvider {
 
     final responseBody = utf8.decode(response.bodyBytes, allowMalformed: true);
     if (response.statusCode != 200) {
+      if (looksRateLimitedResponse(response.statusCode, responseBody)) {
+        throw TtsRateLimitException(
+          message: 'Aliyun token request rate limited: '
+              '${response.statusCode} $responseBody',
+          statusCode: response.statusCode,
+          body: responseBody,
+          retryAfter: _parseRetryAfter(response.headers['retry-after']),
+        );
+      }
       throw Exception(
           'Aliyun token request failed: ${response.statusCode} $responseBody');
     }

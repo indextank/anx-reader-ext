@@ -1,4 +1,5 @@
 import 'package:anx_reader/theme/app_colors.dart';
+import 'package:anx_reader/theme/app_dropdown_tokens.dart';
 import 'package:anx_reader/theme/app_elevation.dart';
 import 'package:anx_reader/theme/app_motion.dart';
 import 'package:anx_reader/theme/app_radius.dart';
@@ -141,6 +142,10 @@ class AppTheme {
           borderRadius: AppRadius.border12,
           borderSide: BorderSide(color: colorScheme.error),
         ),
+      ),
+      // 全局下拉/菜单选项高度（Material 默认 48dp -> 40dp）。
+      menuButtonTheme: const MenuButtonThemeData(
+        style: AppDropdownTokens.menuItemStyle,
       ),
       cardTheme: const CardThemeData(
         elevation: 0,

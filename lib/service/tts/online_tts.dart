@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
+import 'package:anx_reader/service/tts/diagnostics/tts_diagnostics.dart';
 import 'package:anx_reader/service/tts/engine/engine_kind_mapping.dart';
 import 'package:anx_reader/service/tts/engine/flutter_tts_audio_output.dart';
 import 'package:anx_reader/service/tts/engine/provider_tts_engine.dart';
@@ -12,7 +13,10 @@ import 'package:anx_reader/service/tts/models/tts_reading_position.dart';
 import 'package:anx_reader/service/tts/models/tts_text_splitter.dart';
 import 'package:anx_reader/service/tts/models/tts_voice.dart';
 import 'package:anx_reader/service/tts/pipeline/tts_cursor.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_page_break.dart';
 import 'package:anx_reader/service/tts/pipeline/tts_playback_state.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_speech_text.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_spoken_ranges.dart';
 import 'package:anx_reader/service/tts/pipeline/tts_text.dart';
 import 'package:anx_reader/service/tts/pipeline/tts_text_source.dart';
 import 'package:anx_reader/service/tts/pipeline/tts_utterance_splitter.dart';
@@ -43,11 +47,13 @@ class OnlineTts extends BaseTts {
     bool? windowsOverride,
     Duration? synthesisTimeout,
     int? maxRetries,
+    Duration Function(int failedAttempt)? rateLimitBackoff,
   })  : _engineResolver = engineResolver,
         _audioOutputFactory = audioOutputFactory,
         _windowsOverride = windowsOverride,
         _synthesisTimeout = synthesisTimeout ?? const Duration(seconds: 15),
-        _maxRetries = maxRetries ?? 2;
+        _maxRetries = maxRetries ?? 2,
+        _rateLimitBackoff = rateLimitBackoff;
 
   static final OnlineTts _instance = OnlineTts._();
 
@@ -65,6 +71,10 @@ class OnlineTts extends BaseTts {
     TtsEngineKind? engineKindOverride,
     double volumeOverride = 0.8,
     double pitchOverride = 1.0,
+    Duration? stallTimeout,
+    Duration? advanceTimeout,
+    int? pageTurnAnimationMs,
+    Duration Function(int failedAttempt)? rateLimitBackoff,
   }) {
     final tts = OnlineTts._(
       engineResolver: engineResolver,
@@ -72,11 +82,17 @@ class OnlineTts extends BaseTts {
       windowsOverride: windowsOverride,
       synthesisTimeout: synthesisTimeout,
       maxRetries: maxRetries,
+      rateLimitBackoff: rateLimitBackoff,
     );
     tts._rateOverride = initialRate;
     tts._engineKindOverride = engineKindOverride;
     tts._volumeOverride = volumeOverride;
     tts._pitchOverride = pitchOverride;
+    if (stallTimeout != null) tts._stallTimeout = stallTimeout;
+    if (advanceTimeout != null) tts._advanceTimeout = advanceTimeout;
+    if (pageTurnAnimationMs != null) {
+      tts._pageTurnAnimationMsOverride = pageTurnAnimationMs;
+    }
     return tts;
   }
 
@@ -85,6 +101,23 @@ class OnlineTts extends BaseTts {
   final bool? _windowsOverride;
   final Duration _synthesisTimeout;
   final int _maxRetries;
+
+  /// Test-only override for the rate-limit retry schedule. Production uses
+  /// [rateLimitRetryDelay] (600 ms / 1500 ms with ±100 ms jitter); injectable
+  /// so pipeline tests can assert the retry *sequence* without real waits.
+  final Duration Function(int failedAttempt)? _rateLimitBackoff;
+
+  final math.Random _backoffRandom = math.Random();
+
+  /// Maximum time to wait for an audio completion callback before declaring a
+  /// stall and recovering (MiMo "hangs forever until manual pause/resume").
+  Duration _stallTimeout = const Duration(seconds: 25);
+
+  /// Maximum time to wait for the reader slice advance after a segment ended
+  /// (webview roundtrip); a slow/failed advance must never freeze playback.
+  Duration _advanceTimeout = const Duration(seconds: 8);
+
+  int? _pageTurnAnimationMsOverride;
 
   /// Test hook: avoids touching shared preferences before they are loaded.
   double? _rateOverride;
@@ -95,6 +128,110 @@ class OnlineTts extends BaseTts {
   double? _pitchOverride;
 
   static const int _queueTarget = 8;
+
+  /// How many utterances ahead the background synthesizer prefetches.
+  ///
+  /// Slow engines (StepAudio/MiMo) can take 1.5-5 s per request, which is
+  /// longer than a short sentence's playback time; a deeper window keeps the
+  /// synthesis pipeline filled so short segments do not starve the next one.
+  static const int _prefetchAhead = 4;
+
+  /// Maximum time to spend pre-synthesizing the first units of a cold session
+  /// (engine switch) before letting playback start anyway.
+  static const Duration _warmUpTimeout = Duration(seconds: 10);
+
+  /// Audible-gap thresholds for the per-segment diagnostic.
+  ///
+  /// A chapter start cannot be prefetched (the foliate TTS iterator is bound
+  /// to the section document, see docs/tts-round2/09-network-rate-limit.md), so
+  /// one network round-trip legitimately lands on the audible critical path:
+  /// Aliyun short-sentence synthesis is usually a few hundred ms, but network
+  /// jitter can push a single round-trip into the 0.6-2.5 s band. Only a gap
+  /// that clearly exceeds one round-trip is a defect worth a SEVERE log.
+  @visibleForTesting
+  static const int audibleGapInfoThresholdMs = 600;
+  @visibleForTesting
+  static const int audibleGapSevereThresholdMs = 2500;
+
+  /// Exponential backoff used for rate-limited synthesis retries.
+  ///
+  /// The generic 120/240 ms retry loop is shorter than the gateway's own
+  /// rate-limit window: the real-device log shows attempts 1/2/3 all rejected
+  /// with `TOO_MANY_REQUESTS`, producing the 1.2-1.4 s gap. 600 ms then
+  /// 1500 ms gives the gateway window time to clear while keeping the total
+  /// retry budget bounded (the retry count itself does not change).
+  @visibleForTesting
+  static const List<Duration> rateLimitRetrySchedule = <Duration>[
+    Duration(milliseconds: 600),
+    Duration(milliseconds: 1500),
+  ];
+
+  /// ±[rateLimitRetryJitterMs] jitter so several pipelined clients do not
+  /// retry in lockstep and re-create the burst.
+  @visibleForTesting
+  static const int rateLimitRetryJitterMs = 100;
+
+  /// Delay before retry number [failedAttempt] (0-based) for a rate-limited
+  /// failure, including jitter. Attempts beyond the schedule reuse the last
+  /// entry (the retry count is bounded by `_maxRetries`).
+  @visibleForTesting
+  static Duration rateLimitRetryDelay(
+    int failedAttempt, {
+    math.Random? random,
+  }) {
+    final schedule = rateLimitRetrySchedule;
+    final base = failedAttempt < schedule.length
+        ? schedule[failedAttempt]
+        : schedule.last;
+    final span = 2 * rateLimitRetryJitterMs + 1;
+    final jitter =
+        (random ?? math.Random()).nextInt(span) - rateLimitRetryJitterMs;
+    return base + Duration(milliseconds: jitter);
+  }
+
+  /// True when the audible gap must be logged as SEVERE (defect) instead of
+  /// INFO (chapter-start network latency).
+  @visibleForTesting
+  static bool isSevereAudibleGap(int gapMs) =>
+      gapMs > audibleGapSevereThresholdMs;
+
+  Duration _retryDelayFor(int failedAttempt, {required bool rateLimited}) {
+    if (!rateLimited) {
+      return Duration(
+          milliseconds: _genericRetryBackoffStepMs * (failedAttempt + 1));
+    }
+    final override = _rateLimitBackoff;
+    if (override != null) return override(failedAttempt);
+    return rateLimitRetryDelay(failedAttempt, random: _backoffRandom);
+  }
+
+  static const int _genericRetryBackoffStepMs = 120;
+
+  /// Serializes every audio-output operation (prepare/start/discard/rate/stop).
+  ///
+  /// The production output pre-loads on an idle track (three tracks on desktop,
+  /// two on mobile): the prefetch path and the playback path used to race on
+  /// the same idle track (a concurrent `discardPrepared()` could stop/clear the
+  /// payload between `prepare()` and `start()`, leaving playback started on a
+  /// just-completed track whose MediaEngine ENDED event never fires — the
+  /// observed 25 s stalls).
+  Future<void> _audioOps = Future<void>.value();
+
+  Future<T> _withAudioOps<T>(Future<T> Function() action) {
+    final previous = _audioOps;
+    final gate = Completer<void>();
+    _audioOps = gate.future;
+    Future<T> run() async {
+      await previous;
+      try {
+        return await action();
+      } finally {
+        gate.complete();
+      }
+    }
+
+    return run();
+  }
 
   final TtsPlaybackStateMachine _machine = TtsPlaybackStateMachine();
 
@@ -124,14 +261,34 @@ class OnlineTts extends BaseTts {
   TtsUtterance? _currentUtterance;
   TtsResumeAnchor? _pendingAnchor;
 
-  Uint8List? _prefetchedAudio;
-  TtsUtterance? _prefetchedUtterance;
-  double? _prefetchedRate;
+  final Map<String, _PrefetchedAudio> _prefetched =
+      <String, _PrefetchedAudio>{};
+
+  /// Utterance whose audio was pre-loaded on the idle audio buffer.
   String? _preloadedUtteranceId;
   double? _preloadedRate;
 
+  /// Slice advance runs *decoupled* from audio playback: it is requested as
+  /// soon as a slice's last utterance ends, but the next audio segment starts
+  /// immediately instead of waiting for the webview roundtrip (StepAudio
+  /// perceptible stall between paragraphs).
+  Future<void>? _advanceFuture;
+  int _advanceGeneration = 0;
+
+  /// Audio completion / advance watchdog state (stall recovery).
+  Timer? _stallTimer;
+  TtsStallStage? _stallStage;
+  DateTime? _stallStartedAt;
+  String? _stallUtteranceId;
+  DateTime? _segmentStartedAt;
+  DateTime? _lastSegmentEndedAt;
+
   String? _replayTextOverride;
   bool _replayCurrent = false;
+
+  /// Number of utterances the next session start should synthesize before the
+  /// first segment becomes audible (engine-switch cold start warm-up).
+  int _warmUpUnits = 0;
 
   String? _lastReadCfi;
   String? _lastPageToken;
@@ -225,38 +382,40 @@ class OnlineTts extends BaseTts {
       // Server-side rate: drop buffered/prepared audio so following utterances
       // are re-synthesized with the new parameter. The current sentence keeps
       // playing; nothing is stopped or cleared on the audio output.
-      _prefetchedAudio = null;
-      _prefetchedUtterance = null;
-      _prefetchedRate = null;
-      _preloadedUtteranceId = null;
-      _preloadedRate = null;
-      final audio = _audio;
-      if (audio != null) {
+      _prefetched.clear();
+      await _withAudioOps(() async {
+        _preloadedUtteranceId = null;
+        _preloadedRate = null;
+        final audio = _audio;
+        if (audio == null) return;
         try {
           await audio.discardPrepared();
         } catch (e) {
           AnxLog.info('TTS rate change prepare discard failed: $e');
         }
-      }
+      });
       return;
     }
 
     // Player-side rate (MiMo): apply immediately so the current sentence is
     // affected too; every later utterance re-applies it after loading its
-    // source (a new media source resets the player rate).
-    final audio = _audio;
-    if (audio != null) {
-      try {
+    // source (a new media source resets the player rate). Already-synthesized
+    // prefetched payloads stay valid: the rate is a player property, not part
+    // of the audio data (re-synthesizing them caused seconds-long gaps).
+    try {
+      await _withAudioOps(() async {
+        final audio = _audio;
+        if (audio == null) return;
         await audio.setPlaybackRate(multiplier);
-      } catch (e) {
-        final error = TtsRateChangeError(
-          engine: engineKind,
-          message: 'Failed to apply playback rate',
-          cause: e,
-          context: {'rate': normalized.toString(), 'multiplier': '$multiplier'},
-        );
-        recordEvent(TtsPlaybackFailure(error: error));
-      }
+      });
+    } catch (e) {
+      final error = TtsRateChangeError(
+        engine: engineKind,
+        message: 'Failed to apply playback rate',
+        cause: e,
+        context: {'rate': normalized.toString(), 'multiplier': '$multiplier'},
+      );
+      recordEvent(TtsPlaybackFailure(error: error));
     }
   }
 
@@ -403,15 +562,19 @@ class OnlineTts extends BaseTts {
     _queue.clear();
     _slices.clear();
     _expandedSliceKeys.clear();
+    _sliceLastUtteranceIds.clear();
     _peekWindow = 0;
     _currentUtterance = null;
-    _prefetchedAudio = null;
-    _prefetchedUtterance = null;
-    _prefetchedRate = null;
+    _prefetched.clear();
     _preloadedUtteranceId = null;
     _preloadedRate = null;
     _replayCurrent = false;
     _replayTextOverride = null;
+    _advanceFuture = null;
+    _advanceGeneration++;
+    _lastSegmentEndedAt = null;
+    _currentSegmentGapMs = 0;
+    _cancelStallWatchdog();
 
     var text = located.text;
     if (anchor != null && anchor.charOffset > 0) {
@@ -445,18 +608,59 @@ class OnlineTts extends BaseTts {
       }
       await _fillQueue(session);
       if (!_isActive(session)) return;
+      if (playbackState.hasError) return;
       if (_queue.isEmpty) {
+        // Never stop silently while an advance is still in flight; wait for it
+        // (bounded) and let _fillQueue pull the next slice instead of ending
+        // the session during a slow webview roundtrip.
+        final advance = _advanceFuture;
+        if (advance != null) {
+          await advance;
+          if (!_isActive(session)) return;
+          if (playbackState.hasError) return;
+          continue;
+        }
         _publish(TtsQueueExhausted(sessionId: session));
         recordEvent(TtsStopped(reason: 'queue-exhausted'));
         await _source?.clearHighlight();
         return;
       }
 
-      final utterance = _queue.removeAt(0);
+      var utterance = _queue.removeAt(0);
       _currentUtterance = utterance;
       if (utterance.text.trim().isEmpty) {
         _onSilentUtterance(session);
         continue;
+      }
+      final speechPreview = prepareTtsSpeechText(utterance.text);
+      if (speechPreview.speechText.trim().isEmpty) {
+        // Unit consisting only of sentence-final annotations ([12]): keep the
+        // display/range bookkeeping but do not synthesize, wait or count it as
+        // a skipped segment.
+        recordEvent(TtsBoundaryGuarded(
+          utteranceId: utterance.id,
+          reason: 'annotation-only-unit',
+        ));
+        _publish(TtsUtteranceCompleted(sessionId: session));
+        _handleUtteranceBoundary(session, utterance);
+        continue;
+      }
+
+      if (utterance.isFirstUnitOfSlice) {
+        // Just-in-time page-break detection: the reader TTS cursor must be on
+        // this slice for the bridge to answer, which is only true after the
+        // previous slice advance completed. Bounded wait so a slow webview can
+        // never stall playback; when it is too slow we fall back to a page
+        // turn at the sentence end.
+        await _awaitPendingAdvanceBriefly();
+        if (!_isActive(session)) return;
+        utterance = await _applyPageBreakBeforeSlice(session, utterance);
+        if (!_isActive(session)) return;
+        if (utterance.text.trim().isEmpty) continue;
+        // The page-break split may replace the unit with its `.a` remainder;
+        // keep the "current utterance" bookkeeping in sync so pause cursors,
+        // resume anchors and diagnostics never point at the pre-split unit.
+        _currentUtterance = utterance;
       }
 
       final startCursor = TtsPlaybackCursor.startOf(utterance);
@@ -465,6 +669,27 @@ class OnlineTts extends BaseTts {
         utterance: utterance,
         cursor: startCursor,
       ));
+
+      // Cold-start warm-up (engine switch): synthesize the first units before
+      // the first segment becomes audible. Slow cloud engines (StepAudio/MiMo)
+      // need longer per sentence than a short sentence takes to play, so a
+      // single-segment cold start is followed by a multi-second silence (field
+      // log: 4859 ms after a MiMo→StepAudio switch). Runs only once per session
+      // and keeps playback state "buffering" while it works.
+      final pendingWarmUp = _warmUpUnits;
+      if (pendingWarmUp > 0) {
+        _warmUpUnits = 0;
+        await _warmUpQueue(session, utterance, pendingWarmUp);
+        if (!_isActive(session)) return;
+      } else {
+        // Kick prefetch *before* the playback path blocks on the current
+        // segment. Requests issued only after the segment starts put their
+        // full synthesis latency on the audible critical path; starting them
+        // here overlaps that latency with the current segment's acquisition
+        // and playback. Runs after the page-break split so an utterance that
+        // is about to be re-split is not synthesized twice.
+        _prefetchBeforeAcquire(session, utterance);
+      }
 
       final bytes = await _acquireAudioSafely(session, utterance);
       if (!_isActive(session)) return;
@@ -527,7 +752,9 @@ class OnlineTts extends BaseTts {
       }
 
       _publish(TtsUtteranceCompleted(sessionId: session));
-      await _onUtteranceFinished(session, utterance);
+      // Decoupled from audio: scheduling the reader advance / page turn here
+      // must not block the next segment (StepAudio's audible gap).
+      _handleUtteranceBoundary(session, utterance);
     }
   }
 
@@ -550,15 +777,14 @@ class OnlineTts extends BaseTts {
     int session,
     TtsUtterance utterance,
   ) async {
-    final prefetchedId = _prefetchedUtterance?.id;
-    if (prefetchedId == utterance.id &&
-        _prefetchedRate == rate &&
-        _prefetchedAudio != null) {
-      final bytes = _prefetchedAudio!;
-      _prefetchedAudio = null;
-      _prefetchedUtterance = null;
-      _prefetchedRate = null;
-      return bytes;
+    final entry = _prefetched.remove(utterance.id);
+    // Player-rate engines (MiMo) apply the rate on the audio player, so the
+    // already-synthesized bytes stay valid across a rate change. Re-synthesizing
+    // them after every slider move caused multi-second audible gaps.
+    final rateMatches = entry != null &&
+        (!capabilities.appliesRateOnServer || entry.rate == rate);
+    if (rateMatches) {
+      return entry.bytes;
     }
     return _synthesizeBytes(session, utterance);
   }
@@ -605,7 +831,17 @@ class OnlineTts extends BaseTts {
     TtsUtterance utterance, {
     String? textOverride,
   }) async {
-    final text = textOverride ?? utterance.text;
+    final rawText = textOverride ?? utterance.text;
+    // Sentence-final numeric annotations ([12]) are display-only: never send
+    // them to the engine. The utterance model keeps the raw text/ranges for
+    // highlighting and location.
+    final prepared = prepareTtsSpeechText(rawText);
+    final text = prepared.speechText;
+    if (text.trim().isEmpty) {
+      // Annotation-only unit: nothing to speak. The playback loop skips it
+      // without treating it as a skipped segment or extra wait.
+      return Uint8List(0);
+    }
     final engine = _activeEngine;
     final config = TtsSpeechConfig(
       rate: rate,
@@ -615,6 +851,15 @@ class OnlineTts extends BaseTts {
     Object? lastError;
     for (var attempt = 0; attempt <= _maxRetries; attempt++) {
       if (!_isActive(session)) return null;
+      final requestedAt = DateTime.now();
+      diagnostics.add(TtsSynthesisRequested(
+        at: requestedAt,
+        engine: engineKind,
+        utteranceId: utterance.id,
+        chars: text.length,
+        rate: rate,
+        attempt: attempt + 1,
+      ));
       try {
         final bytes = await engine
             .synthesize(TtsSynthesisRequest(
@@ -631,19 +876,57 @@ class OnlineTts extends BaseTts {
             context: {'chars': '${text.length}'},
           );
         }
+        diagnostics.add(TtsSynthesisReceived(
+          at: DateTime.now(),
+          engine: engineKind,
+          utteranceId: utterance.id,
+          elapsedMs: DateTime.now().difference(requestedAt).inMilliseconds,
+          bytes: bytes.length,
+        ));
         return bytes;
       } on TtsEngineSynthesisException catch (e) {
         lastError = e;
-        if (e.isOversized && text.length > 1) {
-          _splitAndRequeue(session, utterance, text);
+        final rateLimited = e.isRateLimited;
+        diagnostics.add(TtsSynthesisFailed(
+          at: DateTime.now(),
+          engine: engineKind,
+          utteranceId: utterance.id,
+          elapsedMs: DateTime.now().difference(requestedAt).inMilliseconds,
+          // Mark the rate-limit class inside the existing diagnostic field so
+          // device logs make the gateway rejection distinguishable from a
+          // content error without extending the shared event schema.
+          error: rateLimited ? 'rate-limited: ${e.message}' : e.message,
+          attempt: attempt + 1,
+        ));
+        if (e.isOversized && rawText.length > 1) {
+          // Split the RAW text so the requeued units keep the display ranges
+          // (annotations included); each unit is sanitized again on request.
+          _splitAndRequeue(session, utterance, rawText);
           return null;
         }
         if (attempt >= _maxRetries) break;
+        if (rateLimited) {
+          final delay = _retryDelayFor(attempt, rateLimited: true);
+          AnxLog.info('TTS[diag] synthesis rate-limited attempt=${attempt + 1}/'
+              '${_maxRetries + 1} backoffMs=${delay.inMilliseconds} '
+              'utterance=${utterance.id} engine=${engineKind.name}');
+          await Future<void>.delayed(delay);
+          continue;
+        }
       } catch (e) {
         lastError = e;
+        diagnostics.add(TtsSynthesisFailed(
+          at: DateTime.now(),
+          engine: engineKind,
+          utteranceId: utterance.id,
+          elapsedMs: DateTime.now().difference(requestedAt).inMilliseconds,
+          error: '$e',
+          attempt: attempt + 1,
+        ));
         if (attempt >= _maxRetries) break;
       }
-      await Future<void>.delayed(Duration(milliseconds: 120 * (attempt + 1)));
+      // Non-rate-limit failures keep the original short retry loop.
+      await Future<void>.delayed(_retryDelayFor(attempt, rateLimited: false));
     }
     throw TtsSynthesisError(
       engine: engineKind,
@@ -712,21 +995,9 @@ class OnlineTts extends BaseTts {
       throw StateError('Audio output is not initialized');
     }
     final mime = _mimeType();
-    final alreadyPrepared = _preloadedUtteranceId == utterance.id &&
-        _preloadedRate == rate &&
-        audio.hasPrepared;
-    if (!alreadyPrepared) {
-      await audio.discardPrepared();
-      await audio.prepare(TtsAudioRequest(
-        bytes: bytes,
-        mimeType: mime,
-        utteranceId: utterance.id,
-      ));
-    }
-    _preloadedUtteranceId = null;
-    _preloadedRate = null;
     _segmentSession = session;
     _segmentCompleter = Completer<void>();
+    _segmentStartedAt = DateTime.now();
     _publish(TtsUtteranceStarted(
       sessionId: session,
       utterance: utterance,
@@ -738,12 +1009,46 @@ class OnlineTts extends BaseTts {
       cfi: utterance.cfi ?? '',
       at: DateTime.now(),
     ));
+
+    // Text/iterator may run seconds ahead of the audio (silent prefetch
+    // advance). Paint the selection only now, right before the segment becomes
+    // audible, so the highlighted text always matches the spoken progress. This
+    // runs for *every* utterance: a sentence split by the page boundary (`.a`
+    // / `.b`) or by engine request limits repaints the exact spoken sub-span,
+    // drops the previous one, and forces the reader back to the sentence page
+    // when the user manually paged away.
+    await _highlightSpokenBounded(utterance);
+    if (!_isActive(session)) return;
+
     try {
-      await audio.start(
-        playbackRate: ttsRateToMultiplier(rate),
-        applyRate: !capabilities.appliesRateOnServer,
-      );
+      await _withAudioOps(() async {
+        final alreadyPrepared = _isUtterancePrepared(utterance, audio);
+        try {
+          if (!alreadyPrepared) {
+            // No `discardPrepared()` here on purpose: `prepare()` replaces the
+            // idle track's media source itself, while the explicit discard
+            // stopped a track that could still be flushing its sentence tail
+            // (the reported tail-character loss) or that had just delivered
+            // ENDED (the 25 s stall window). A discarded payload stays
+            // unreachable because `start()` only plays an explicitly prepared
+            // payload.
+            await audio.prepare(TtsAudioRequest(
+              bytes: bytes,
+              mimeType: mime,
+              utteranceId: utterance.id,
+            ));
+          }
+        } finally {
+          _preloadedUtteranceId = null;
+          _preloadedRate = null;
+        }
+        await audio.start(
+          playbackRate: ttsRateToMultiplier(rate),
+          applyRate: !capabilities.appliesRateOnServer,
+        );
+      });
     } catch (e) {
+      _cancelStallWatchdog();
       _segmentCompleter?.complete();
       final error = TtsAudioOutputError(
         engine: engineKind,
@@ -753,23 +1058,193 @@ class OnlineTts extends BaseTts {
       );
       recordEvent(TtsPlaybackFailure(error: error));
       _publishFailure(session, error);
+      return;
     }
+    if (!_isActive(session)) return;
+    _currentSegmentGapMs = _lastSegmentEndedAt == null
+        ? 0
+        : _segmentStartedAt!.difference(_lastSegmentEndedAt!).inMilliseconds;
+    diagnostics.add(TtsAudioSegmentStarted(
+      at: _segmentStartedAt!,
+      engine: engineKind,
+      utteranceId: utterance.id,
+      queueDepth: _queue.length,
+      rate: rate,
+      gapMs: _currentSegmentGapMs,
+    ));
+    if (_currentSegmentGapMs > audibleGapInfoThresholdMs) {
+      final message = 'TTS[diag] audible gap ${_currentSegmentGapMs}ms before '
+          '${utterance.id}';
+      // A chapter start cannot be prefetched (the foliate TTS iterator is
+      // per-section, see docs/tts-round2/09-network-rate-limit.md), so one
+      // network round-trip legitimately lands on the audible path. Only a
+      // multiple-round-trip gap is a defect worth SEVERE; the rest stays INFO
+      // so a normal chapter transition no longer looks like a crash.
+      if (isSevereAudibleGap(_currentSegmentGapMs)) {
+        AnxLog.severe(message);
+      } else {
+        AnxLog.info(message);
+      }
+    }
+    _armStallWatchdog(
+      session: session,
+      stage: TtsStallStage.audioCompletion,
+      utteranceId: utterance.id,
+      timeout: _stallTimeout,
+    );
+  }
+
+  /// Whether the audio output already holds the payload for [utterance].
+  ///
+  /// Player-rate engines apply the rate on the player, so their prepared bytes
+  /// remain valid after a rate change; server-rate engines need a re-synthesis.
+  bool _isUtterancePrepared(TtsUtterance utterance, TtsAudioOutput audio) {
+    if (_preloadedUtteranceId != utterance.id || !audio.hasPrepared) {
+      return false;
+    }
+    if (!capabilities.appliesRateOnServer) return true;
+    return _preloadedRate == rate;
+  }
+
+  /// Repaints the reader highlight for exactly the spoken part of [utterance].
+  ///
+  /// Bounded so a busy/slow webview can never stall the audio start; the source
+  /// also force-scrolls back to the spoken sentence when the user manually paged
+  /// away and returns whether it could show the page.
+  Future<void> _highlightSpokenBounded(TtsUtterance utterance) async {
+    final source = _source;
+    if (source is! TtsHighlightCapable) return;
+    final ranges = spokenRangesFor(utterance);
+    final watch = Stopwatch()..start();
+    var ok = false;
+    try {
+      ok = await (source as TtsHighlightCapable)
+          .highlightSpoken(cfi: utterance.cfi, ranges: ranges)
+          .timeout(const Duration(milliseconds: 800));
+    } catch (e) {
+      ok = false;
+      AnxLog.info('TTS highlight sync failed: $e');
+    }
+    watch.stop();
+    diagnostics.add(TtsHighlightSynced(
+      at: DateTime.now(),
+      engine: engineKind,
+      utteranceId: utterance.id,
+      elapsedMs: watch.elapsedMilliseconds,
+      ok: ok,
+    ));
+  }
+
+  /// Pre-synthesizes the current utterance and the following units of a cold
+  /// session (engine switch) so playback starts with a lead instead of running
+  /// dry after the first sentence.
+  ///
+  /// Called *after* the page-break split of the current utterance, so the queue
+  /// already holds the final units. Best effort and bounded: a slow or failing
+  /// engine must never block the switch forever; when the bound is hit playback
+  /// starts and the normal pipeline (with its typed errors) takes over.
+  Future<void> _warmUpQueue(
+    int session,
+    TtsUtterance current,
+    int units,
+  ) async {
+    if (!_isActive(session)) return;
+    final targets = <TtsUtterance>[
+      current,
+      ..._queue.take(math.max(0, units - 1)),
+    ].where((utterance) => utterance.text.trim().isNotEmpty).toList();
+    if (targets.isEmpty) return;
+    final watch = Stopwatch()..start();
+    final futures = <Future<void>>[
+      for (final utterance in targets) _prebuffer(session, utterance),
+    ];
+    try {
+      await Future.wait(futures).timeout(_warmUpTimeout);
+    } on TimeoutException catch (e) {
+      AnxLog.info('TTS warm-up timed out after ${_warmUpTimeout.inSeconds}s: '
+          '$e');
+    } catch (e) {
+      AnxLog.info('TTS warm-up failed: $e');
+    }
+    if (!_isActive(session)) return;
+    final ready = targets
+        .where((utterance) => _prefetched.containsKey(utterance.id))
+        .length;
+    AnxLog.info('TTS[diag] engine.warmup units=$ready/${targets.length} '
+        'elapsedMs=${watch.elapsedMilliseconds}');
+    if (ready > 0) _maybePreloadNext(session, current);
+    // Continue filling the prefetch window in the background.
+    _prebufferNext(session);
+  }
+
+  /// Starts synthesis of the current utterance first (so it wins the request
+  /// order and the network), then prefetches the following window.
+  void _prefetchBeforeAcquire(int session, TtsUtterance current) {
+    if (current.text.trim().isNotEmpty &&
+        !_prefetched.containsKey(current.id)) {
+      unawaited(_prebuffer(session, current));
+    }
+    _prebufferNext(session);
   }
 
   void _prebufferNext(int session) {
     if (_queue.isEmpty) return;
-    final candidate = _queue.first;
-    if (candidate.text.trim().isEmpty) return;
-    // Drop a stale pre-fetched payload (different rate / different candidate)
-    // instead of playing it later against the wrong cursor.
-    if (_prefetchedUtterance != null &&
-        (_prefetchedUtterance!.id != candidate.id || _prefetchedRate != rate)) {
-      _prefetchedUtterance = null;
-      _prefetchedAudio = null;
-      _prefetchedRate = null;
+    // Prefetch a small lookahead window; single-flight synthesis dedupes when
+    // the playback loop requests the same utterance.
+    final candidates = _queue.take(_prefetchAhead).toList(growable: false);
+    for (final candidate in candidates) {
+      if (candidate.text.trim().isEmpty) continue;
+      if (_prefetched.containsKey(candidate.id)) continue;
+      unawaited(_prebuffer(session, candidate));
     }
-    if (_prefetchedUtterance != null) return;
-    unawaited(_prebuffer(session, candidate));
+    // Pre-load only the immediate next utterance on the audio output.
+    final next = candidates.isEmpty ? null : candidates.first;
+    if (next == null) return;
+    if (_preloadedUtteranceId != next.id) {
+      _maybePreloadNext(session, next);
+    }
+  }
+
+  void _maybePreloadNext(int session, TtsUtterance candidate) {
+    final entry = _prefetched[candidate.id];
+    if (entry == null) return;
+    // Server-rate engines need bytes synthesized at the current rate; for
+    // player-rate engines (MiMo) the rate is applied on the player, so the
+    // already-synthesized payload is reusable across rate changes.
+    if (capabilities.appliesRateOnServer && entry.rate != rate) return;
+    final audio = _audio;
+    if (audio == null || !audio.supportsPreload) return;
+    final alreadyPrepared = _preloadedUtteranceId == candidate.id &&
+        (!capabilities.appliesRateOnServer || _preloadedRate == rate);
+    if (alreadyPrepared) return;
+    unawaited(_preloadOnIdleBuffer(session, candidate, entry));
+  }
+
+  Future<void> _preloadOnIdleBuffer(
+    int session,
+    TtsUtterance candidate,
+    _PrefetchedAudio entry,
+  ) async {
+    try {
+      await _withAudioOps(() async {
+        final audio = _audio;
+        if (audio == null || !_isActive(session)) return;
+        if (capabilities.appliesRateOnServer && entry.rate != rate) return;
+        // Overwrite the idle track's source directly instead of stopping it
+        // first: the track may be the one that just finished, and a stop()
+        // there clips the still-draining sentence tail (see `_prepareAndStart`).
+        await audio.prepare(TtsAudioRequest(
+          bytes: entry.bytes,
+          mimeType: _mimeType(),
+          utteranceId: candidate.id,
+        ));
+        if (!_isActive(session)) return;
+        _preloadedUtteranceId = candidate.id;
+        _preloadedRate = entry.rate;
+      });
+    } catch (e) {
+      AnxLog.info('TTS preload failed for ${candidate.id}: $e');
+    }
   }
 
   Future<void> _prebuffer(int session, TtsUtterance candidate) async {
@@ -778,40 +1253,209 @@ class OnlineTts extends BaseTts {
       final bytes = await _synthesizeBytes(session, candidate);
       if (!_isActive(session) || bytes == null || bytes.isEmpty) return;
       if (rate != rateAtRequest) return;
-      _prefetchedUtterance = candidate;
-      _prefetchedAudio = bytes;
-      _prefetchedRate = rateAtRequest;
-      final audio = _audio;
-      if (audio != null &&
-          audio.supportsPreload &&
-          _preloadedUtteranceId != candidate.id) {
-        await audio.discardPrepared();
-        await audio.prepare(TtsAudioRequest(
-          bytes: bytes,
-          mimeType: _mimeType(),
-          utteranceId: candidate.id,
-        ));
-        _preloadedUtteranceId = candidate.id;
-        _preloadedRate = rateAtRequest;
+      if (_prefetched.length >= _prefetchAhead * 2) {
+        _prefetched.remove(_prefetched.keys.first);
       }
+      _prefetched[candidate.id] =
+          _PrefetchedAudio(bytes: bytes, rate: rateAtRequest);
+      _maybePreloadNext(session, candidate);
     } catch (_) {
       // Prefetch is best-effort; the main loop reports real failures.
     }
   }
 
   void _onAudioCompleted() {
-    if (_disposed || _paused) return;
+    if (_disposed) return;
     if (_segmentSession != _session) return;
+    // A completion that arrives after the segment was already settled (late
+    // callback from a retired track, duplicate ENDED event) must not advance
+    // playback or overwrite the gap bookkeeping.
     final completer = _segmentCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete();
+    if (completer == null || completer.isCompleted) return;
+    _cancelStallWatchdog();
+    final now = DateTime.now();
+    final startedAt = _segmentStartedAt;
+    final utteranceId = _currentUtterance?.id ?? '';
+    if (startedAt != null) {
+      diagnostics.add(TtsAudioSegmentCompleted(
+        at: now,
+        engine: engineKind,
+        utteranceId: utteranceId,
+        elapsedMs: now.difference(startedAt).inMilliseconds,
+        interSegmentGapMs: _currentSegmentGapMs,
+      ));
+    }
+    _lastSegmentEndedAt = now;
+    if (_paused) return;
+    completer.complete();
+  }
+
+  /// Decides what has to happen when one audio segment finished.
+  ///
+  /// Runs synchronously in the audio loop and only *schedules* the reader
+  /// advance / page turn: the next segment starts immediately, so a slow
+  /// webview roundtrip can no longer create StepAudio's inter-paragraph stall
+  /// or MiMo's "stopped after selecting the next line".
+  void _handleUtteranceBoundary(int session, TtsUtterance utterance) {
+    final endedAt = _lastSegmentEndedAt ?? DateTime.now();
+    final scheduledTurn = _pageBreakTurns[utterance.id];
+    if (scheduledTurn != null && _turnedBreaks.add(utterance.id)) {
+      // The split entry has been consumed; keeping it would only leak memory
+      // for the rest of the session.
+      _pageBreakTurns.remove(utterance.id);
+      unawaited(
+          _performPageBreakTurn(session, utterance.id, scheduledTurn, endedAt));
+      return;
+    }
+    final lastOfSlice = _lastUtteranceIdOfSlice(utterance);
+    if (lastOfSlice != null && lastOfSlice == utterance.id) {
+      _startAdvanceSlice(session, endedAt);
     }
   }
 
-  Future<void> _onUtteranceFinished(int session, TtsUtterance utterance) async {
-    final lastOfSlice = _lastUtteranceIdOfSlice(utterance);
-    if (lastOfSlice == null || lastOfSlice != utterance.id) return;
-    await _advanceSlice(session);
+  /// Page turn for a page boundary that falls *inside* a sentence: the page is
+  /// turned right after the page-last-character segment finishes, while the
+  /// remainder of the sentence keeps playing.
+  Future<void> _performPageBreakTurn(
+    int session,
+    String utteranceId,
+    Future<void> Function() turn,
+    DateTime audioEndedAt,
+  ) async {
+    final requestedAt = DateTime.now();
+    diagnostics.add(TtsPageTurnRequested(
+      at: requestedAt,
+      engine: engineKind,
+      source: TtsPageTurnSource.pageBreak,
+      fromCfi: _lastReadCfi ?? '',
+    ));
+    try {
+      await turn().timeout(_advanceTimeout);
+      final completedAt = DateTime.now();
+      final elapsedMs = completedAt.difference(audioEndedAt).inMilliseconds;
+      diagnostics.add(TtsPageTurnCompleted(
+        at: completedAt,
+        engine: engineKind,
+        source: TtsPageTurnSource.pageBreak,
+        elapsedMs: elapsedMs,
+        animationMs: _pageTurnAnimationMs(),
+      ));
+      recordEvent(TtsPageTurned(
+        fromCfi: _lastReadCfi ?? '',
+        at: completedAt,
+      ));
+      unawaited(_refreshPageToken());
+    } catch (e) {
+      recordEvent(TtsBoundaryGuarded(
+        utteranceId: utteranceId,
+        reason: 'page-break-turn-failed',
+      ));
+      AnxLog.info('TTS page-break turn failed: $e');
+    }
+    if (!_isActive(session)) return;
+  }
+
+  void _startAdvanceSlice(int session, DateTime audioEndedAt) {
+    if (_advanceFuture != null) return;
+    final generation = ++_advanceGeneration;
+    final future = _runAdvanceSlice(session, generation, audioEndedAt);
+    _advanceFuture = future;
+    unawaited(future.then<void>((_) {
+      if (identical(_advanceFuture, future)) _advanceFuture = null;
+    }, onError: (Object _) {
+      if (identical(_advanceFuture, future)) _advanceFuture = null;
+    }));
+  }
+
+  Future<void> _runAdvanceSlice(
+    int session,
+    int generation,
+    DateTime audioEndedAt,
+  ) async {
+    final source = _source;
+    if (source == null) return;
+    final requestedAt = DateTime.now();
+    diagnostics.add(TtsSliceAdvanceRequested(
+      at: requestedAt,
+      engine: engineKind,
+      fromCfi: _lastReadCfi ?? '',
+    ));
+    diagnostics.add(TtsPageTurnRequested(
+      at: requestedAt,
+      engine: engineKind,
+      source: TtsPageTurnSource.sliceEnd,
+      fromCfi: _lastReadCfi ?? '',
+    ));
+    TtsTextSlice? next;
+    Object? lastError;
+    final startedAt = DateTime.now();
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        next = await source.advance().timeout(_advanceTimeout);
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      }
+    }
+    final completedAt = DateTime.now();
+    diagnostics.add(TtsSliceAdvanceCompleted(
+      at: completedAt,
+      engine: engineKind,
+      elapsedMs: completedAt.difference(startedAt).inMilliseconds,
+      nextCfi: next?.cfi ?? '',
+    ));
+    diagnostics.add(TtsPageTurnCompleted(
+      at: completedAt,
+      engine: engineKind,
+      source: TtsPageTurnSource.sliceEnd,
+      elapsedMs: completedAt.difference(audioEndedAt).inMilliseconds,
+      animationMs: _pageTurnAnimationMs(),
+    ));
+    if (!_isActive(session) || generation != _advanceGeneration) return;
+    if (next == null) {
+      if (lastError != null) {
+        diagnostics.add(TtsStallDetected(
+          at: completedAt,
+          engine: engineKind,
+          stage: TtsStallStage.readerAdvance,
+          elapsedMs: completedAt.difference(startedAt).inMilliseconds,
+          action: 'surface-retryable-error',
+        ));
+        _publishFailure(
+          session,
+          TtsTextLoadError(
+            engine: engineKind,
+            message: 'Reader failed to advance to the next sentence',
+            cause: lastError,
+          ),
+        );
+      }
+      return;
+    }
+    final nextSlice = next;
+    recordEvent(TtsPageTurned(
+      fromCfi: _lastReadCfi ?? '',
+      at: DateTime.now(),
+    ));
+    final known = _slices.where((s) => s.index != null).toList();
+    final nextIndex =
+        known.isEmpty ? 0 : (known.map((s) => s.index!).reduce(math.max) + 1);
+    if (!_slices.any((s) => s.key == nextSlice.key)) {
+      _slices.add(nextSlice.copyWith(index: nextIndex));
+    }
+    await _refreshPageToken();
+  }
+
+  int _pageTurnAnimationMs() {
+    final override = _pageTurnAnimationMsOverride;
+    if (override != null) return override;
+    // The webview paginator animates page turns in the 200-300ms range (see
+    // assets/foliate-js/src/paginator.js animatePage: Math.max(200,
+    // Math.min(300, 250 * distance/size))). Diagnostics count the upper bound
+    // so the measured last-character→page-turn latency includes the effect.
+    return 300;
   }
 
   String? _lastUtteranceIdOfSlice(TtsUtterance utterance) {
@@ -827,27 +1471,98 @@ class OnlineTts extends BaseTts {
 
   int? _segmentSession;
 
-  Future<void> _advanceSlice(int session) async {
-    final source = _source;
-    if (source == null) return;
-    try {
-      final next = await source.advance();
-      if (!_isActive(session)) return;
-      if (next == null) return;
-      recordEvent(TtsPageTurned(
-        fromCfi: _lastReadCfi ?? '',
-        at: DateTime.now(),
-      ));
-      final known = _slices.where((s) => s.index != null).toList();
-      final nextIndex =
-          known.isEmpty ? 0 : (known.map((s) => s.index!).reduce(math.max) + 1);
-      if (_slices.any((s) => s.key == next.key)) {
-        return;
-      }
-      _slices.add(next.copyWith(index: nextIndex));
-      await _refreshPageToken();
-    } catch (e) {
-      AnxLog.info('TTS advance slice failed: $e');
+  int _currentSegmentGapMs = 0;
+
+  /// Page-boundary turns for utterances that end exactly at the page's last
+  /// character (filled when a slice is expanded with a known page break).
+  final Map<String, Future<void> Function()> _pageBreakTurns =
+      <String, Future<void> Function()>{};
+
+  final Set<String> _turnedBreaks = <String>{};
+
+  // ============ Stall watchdog ============
+
+  void _armStallWatchdog({
+    required int session,
+    required TtsStallStage stage,
+    required String? utteranceId,
+    required Duration timeout,
+  }) {
+    _stallTimer?.cancel();
+    _stallStage = stage;
+    _stallStartedAt = DateTime.now();
+    _stallUtteranceId = utteranceId;
+    _stallTimer = Timer(timeout, () => _onStallDetected(session));
+  }
+
+  void _cancelStallWatchdog() {
+    _stallTimer?.cancel();
+    _stallTimer = null;
+    _stallStage = null;
+    _stallStartedAt = null;
+    _stallUtteranceId = null;
+  }
+
+  void _onStallDetected(int session) {
+    if (!_isActive(session)) return;
+    final stage = _stallStage;
+    final startedAt = _stallStartedAt;
+    if (stage == null || startedAt == null) return;
+    if (_paused) {
+      // A pause freezes the audio player, so no completion can arrive while
+      // paused: the 25 s audioCompletion watchdog must not "recover" a segment
+      // the user intentionally paused (it used to force-advance the reader and
+      // desync the paused cursor). `pause()` cancels the watchdog and
+      // `resume()` re-arms it; this guard covers the race between them.
+      AnxLog.info('TTS[diag] stall ignored while paused stage=${stage.name} '
+          '(utterance=$_stallUtteranceId)');
+      _cancelStallWatchdog();
+      return;
+    }
+    final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+    // Track forensics: when the watchdog fires, the position/duration/player
+    // state of every audio track shows whether the segment was still playing
+    // (and how far the fallback detection got) or whether the completion event
+    // was lost after the media actually ended.
+    final audio = _audio;
+    var audioState = '';
+    if (audio is TtsAudioOutputDiagnostics) {
+      audioState =
+          ' audio=[${(audio as TtsAudioOutputDiagnostics).debugState}]';
+    }
+    diagnostics.add(TtsStallDetected(
+      at: DateTime.now(),
+      engine: engineKind,
+      stage: stage,
+      elapsedMs: elapsedMs,
+      action: 'recover',
+    ));
+    AnxLog.severe(
+        'TTS[diag] stall detected stage=${stage.name} after ${elapsedMs}ms '
+        '(utterance=$_stallUtteranceId)$audioState - recovering');
+    recordEvent(TtsBoundaryGuarded(
+      utteranceId: _stallUtteranceId ?? '',
+      reason: 'stall-${stage.name}',
+    ));
+    _cancelStallWatchdog();
+    switch (stage) {
+      case TtsStallStage.audioCompletion:
+        // The player completion callback was lost: treat the segment as
+        // finished so the queue continues instead of hanging forever (MiMo's
+        // "stuck until manual pause/resume").
+        final completer = _segmentCompleter;
+        _lastSegmentEndedAt = DateTime.now();
+        if (completer != null && !completer.isCompleted) {
+          completer.complete();
+        }
+        break;
+      case TtsStallStage.audioStart:
+      case TtsStallStage.synthesize:
+        // Bounded synthesis retry already surfaces an error; nothing else to
+        // do here.
+        break;
+      case TtsStallStage.readerAdvance:
+        break;
     }
   }
 
@@ -864,7 +1579,17 @@ class OnlineTts extends BaseTts {
     while (_isActive(session) && _queue.length < _queueTarget) {
       final next = _nextUnexpandedSlice();
       if (next != null) {
-        _expandSlice(next);
+        await _expandSlice(session, next);
+        continue;
+      }
+      // No known-unexpanded text left: wait for the in-flight reader advance if
+      // one is running (it may bring the next slice) instead of peeking from
+      // a stale reader cursor and spinning.
+      final advance = _advanceFuture;
+      if (advance != null) {
+        await advance;
+        if (!_isActive(session)) return;
+        if (playbackState.hasError) return;
         continue;
       }
       final grew = await _peekMore(session);
@@ -896,7 +1621,7 @@ class OnlineTts extends BaseTts {
     return added;
   }
 
-  void _expandSlice(TtsTextSlice slice) {
+  Future<void> _expandSlice(int session, TtsTextSlice slice) async {
     _expandedSliceKeys.add(slice.key);
     final units = _foldWhitespaceUnits(splitTtsParagraph(
       paragraph: slice.toParagraph(),
@@ -911,10 +1636,144 @@ class OnlineTts extends BaseTts {
     _sliceLastUtteranceIds[slice.key] = units.last.id;
   }
 
+  /// Waits at most a short budget for a pending reader advance so the page
+  /// break bridge can see the new slice. Playback continues from the prefetched
+  /// slice afterwards, so a slow webview never freezes audio.
+  Future<void> _awaitPendingAdvanceBriefly() async {
+    final advance = _advanceFuture;
+    if (advance == null) return;
+    try {
+      await advance.timeout(const Duration(milliseconds: 150));
+    } catch (_) {
+      // Slow/failed advance: fall back to sentence-end page turn.
+    }
+  }
+
+  TtsTextSlice? _sliceForUtterance(TtsUtterance utterance) {
+    for (final slice in _slices) {
+      if ((slice.index ?? -1) == utterance.sliceIndex) return slice;
+    }
+    return null;
+  }
+
+  /// Splits the current slice at its page boundary right before its first unit
+  /// starts playing, so the page turns on the page's last character.
+  Future<TtsUtterance> _applyPageBreakBeforeSlice(
+    int session,
+    TtsUtterance utterance,
+  ) async {
+    final source = _source;
+    if (source is! TtsPageTurnCapable) return utterance;
+    final slice = _sliceForUtterance(utterance);
+    if (slice == null) return utterance;
+    try {
+      final pageTurnSource = source as TtsPageTurnCapable;
+      // Bounded: a busy webview must never delay the audio start by seconds.
+      final pageBreak = await pageTurnSource
+          .pageBreakFor(slice)
+          .timeout(const Duration(milliseconds: 500), onTimeout: () => null);
+      if (!_isActive(session) || pageBreak == null) return utterance;
+      final sliceUnits = <TtsUtterance>[utterance];
+      var take = 0;
+      while (take < _queue.length &&
+          _queue[take].sliceIndex == utterance.sliceIndex) {
+        sliceUnits.add(_queue[take]);
+        take++;
+      }
+      final split = _splitUnitsAtPageBreak(sliceUnits, pageBreak);
+      if (split.isEmpty) return utterance;
+      final tail = _queue.skip(take).toList();
+      _queue
+        ..clear()
+        ..addAll(split.skip(1))
+        ..addAll(tail);
+      _sliceLastUtteranceIds[slice.key] = split.last.id;
+      recordEvent(TtsBoundaryGuarded(
+        utteranceId: utterance.id,
+        reason: 'page-break-split@${pageBreak.charOffsetInSlice}',
+      ));
+      return split.first;
+    } catch (e) {
+      AnxLog.info('TTS page-break split failed: $e');
+      return utterance;
+    }
+  }
+
+  /// Splits the unit that contains [pageBreak] and records a page-turn action
+  /// for the part that ends exactly at the page's last character.
+  List<TtsUtterance> _splitUnitsAtPageBreak(
+    List<TtsUtterance> units,
+    TtsPageBreak pageBreak,
+  ) {
+    final offset = pageBreak.charOffsetInSlice;
+    final result = <TtsUtterance>[];
+    var turnScheduled = false;
+    for (final unit in units) {
+      if (turnScheduled) {
+        result.add(unit);
+        continue;
+      }
+      final start = unit.range.start;
+      final end = unit.range.end;
+      if (offset > start && offset < end) {
+        final rel = offset - start;
+        final firstText = unit.text.substring(0, rel);
+        final secondText = unit.text.substring(rel);
+        if (firstText.trim().isNotEmpty) {
+          final firstPart = TtsUtterance(
+            id: '${unit.id}.a',
+            paragraphId: unit.paragraphId,
+            unitIndex: unit.unitIndex,
+            text: firstText,
+            range: TtsCharRange(start: start, end: offset),
+            boundaryBefore: unit.boundaryBefore,
+            cfi: unit.cfi,
+            isParagraphStart: unit.isParagraphStart,
+            sliceIndex: unit.sliceIndex,
+          );
+          result.add(firstPart);
+          _pageBreakTurns[firstPart.id] = () => _turnPageForBreak(pageBreak);
+          turnScheduled = true;
+        }
+        final secondPart = TtsUtterance(
+          id: '${unit.id}.b',
+          paragraphId: unit.paragraphId,
+          unitIndex: unit.unitIndex,
+          text: secondText,
+          range: TtsCharRange(start: offset, end: end),
+          boundaryBefore: TtsBoundaryBefore.hardCut,
+          cfi: unit.cfi,
+          isParagraphStart: false,
+          sliceIndex: unit.sliceIndex,
+        );
+        if (secondText.trim().isNotEmpty) {
+          result.add(secondPart);
+        }
+        continue;
+      }
+      if (offset == end) {
+        // Page ends exactly at this unit's last character.
+        result.add(unit);
+        _pageBreakTurns[unit.id] = () => _turnPageForBreak(pageBreak);
+        turnScheduled = true;
+        continue;
+      }
+      result.add(unit);
+    }
+    return result;
+  }
+
+  Future<void> _turnPageForBreak(TtsPageBreak pageBreak) async {
+    final source = _source;
+    if (source is TtsPageTurnCapable) {
+      await (source as TtsPageTurnCapable).turnPageFromBreak(pageBreak);
+    }
+  }
+
   /// Fold whitespace-only units (leading indentation, stray line breaks) into
   /// the following spoken unit. Engines must never receive an empty-text
   /// request (it produces silence) and dropping the unit would lose characters
-  /// at the paragraph head — the reported "paragraph loses its first 2-3
+  /// at the paragraph head -the reported "paragraph loses its first 2-3
   /// characters" class of bug.
   List<TtsUtterance> _foldWhitespaceUnits(List<TtsUtterance> units) {
     if (units.length <= 1) return units;
@@ -965,7 +1824,7 @@ class OnlineTts extends BaseTts {
   // ============ Public playback API ============
 
   @override
-  Future<void> speak({TtsResumeAnchor? anchor}) async {
+  Future<void> speak({TtsResumeAnchor? anchor, int warmUpUnits = 0}) async {
     if (_disposed) return;
     if (anchor != null) _pendingAnchor = anchor;
     // Serialize a play() that races an async init() instead of starting a
@@ -998,10 +1857,12 @@ class OnlineTts extends BaseTts {
         phase == TtsPlaybackPhase.stopped ||
         phase == TtsPlaybackPhase.stopping ||
         phase == TtsPlaybackPhase.switchingEngine) {
+      _warmUpUnits = warmUpUnits;
       await _beginSession(anchor: _pendingAnchor);
       return;
     }
     _paused = false;
+    _warmUpUnits = warmUpUnits;
     _startRunner(_session);
   }
 
@@ -1016,25 +1877,28 @@ class OnlineTts extends BaseTts {
     }
     _publish(TtsPauseRequested(sessionId: session));
     _paused = true;
-    final audio = _audio;
-    if (audio != null) {
-      try {
-        await audio.pause();
-      } catch (e) {
-        _publishFailure(
-          session,
-          TtsAudioOutputError(
-            engine: engineKind,
-            message: 'Failed to pause audio output',
-            stage: TtsStage.pause,
-            cause: e,
-          ),
-        );
-        return;
-      }
+    try {
+      await _withAudioOps(() async {
+        await _audio?.pause();
+      });
+    } catch (e) {
+      _publishFailure(
+        session,
+        TtsAudioOutputError(
+          engine: engineKind,
+          message: 'Failed to pause audio output',
+          stage: TtsStage.pause,
+          cause: e,
+        ),
+      );
+      return;
     }
     final cursor = _pausedCursorFor(_currentUtterance);
     _publish(TtsPlaybackPaused(sessionId: session, cursor: cursor));
+    // While paused no audio completion can arrive; keeping the audioCompletion
+    // watchdog armed made it fire after 25 s and force-advance the reader
+    // behind the user's back. It is re-armed by `resume()`.
+    _cancelStallWatchdog();
     unawaited(_refreshPageToken());
     recordEvent(TtsPaused(pageCfi: _lastPageToken ?? ''));
   }
@@ -1056,32 +1920,31 @@ class OnlineTts extends BaseTts {
     if (!_isActive(session)) return;
     if (playbackState.phase != TtsPlaybackPhase.paused) return;
     _publish(TtsResumeRequested(sessionId: session));
+    final current = _currentUtterance;
+    final cursor = _pausedCursorFor(current);
+    recordEvent(TtsResumed(
+      action: TtsResumeAction.continueInPlace,
+      anchorCfi: current?.cfi ?? _lastReadCfi ?? '',
+    ));
+    diagnostics.add(TtsDiagResumeRequested(
+      at: DateTime.now(),
+      engine: engineKind,
+      utteranceId: current?.id,
+      charOffset: cursor.charOffset,
+    ));
 
-    // The reader may have moved to another page while paused; never jump back
-    // to the old page in that case.
-    var visibility = false;
-    final cfi = _lastReadCfi;
-    final source = _source;
-    if (cfi != null && cfi.isNotEmpty && source != null) {
-      visibility = await source.isCfiVisible(cfi);
-    }
-    final action = resolveResumeAction(
-      lastReadCfi: cfi,
-      lastReadPositionVisible: visibility,
-    );
-    recordEvent(TtsResumed(action: action, anchorCfi: cfi ?? ''));
-    if (action == TtsResumeAction.restartFromCurrentPageStart) {
-      await stop();
-      await speak();
-      return;
-    }
-
+    // Never restart from the page top on pause→resume: that was the reported
+    // "resume skips the selected unread text and jumps to the next line".
+    // Always continue the current utterance in place; if the player lost the
+    // buffered segment, re-synthesize only the remaining text from the
+    // word-calibrated cursor.
     _paused = false;
-    final audio = _audio;
     var resumedInPlace = false;
-    if (audio != null) {
+    if (_audio != null && _segmentCompleter != null) {
       try {
-        await audio.resume();
+        await _withAudioOps(() async {
+          await _audio?.resume();
+        });
         resumedInPlace = true;
       } catch (e) {
         AnxLog.info('TTS audio resume failed, will re-synthesize: $e');
@@ -1089,16 +1952,27 @@ class OnlineTts extends BaseTts {
     }
     if (!resumedInPlace) {
       _replayCurrent = true;
-      final utterance = _currentUtterance;
-      final cursor = playbackState.cursor;
-      if (utterance != null && cursor != null) {
-        _replayTextOverride = resumeTextFromCursor(utterance.text, cursor);
-      }
+      _replayTextOverride =
+          current == null ? null : resumeTextFromCursor(current.text, cursor);
       final completer = _segmentCompleter;
       if (completer != null && !completer.isCompleted) {
         completer.complete();
       }
+    } else if (_stallStage == null) {
+      _armStallWatchdog(
+        session: session,
+        stage: TtsStallStage.audioCompletion,
+        utteranceId: current?.id,
+        timeout: _stallTimeout,
+      );
     }
+    diagnostics.add(TtsDiagResumed(
+      at: DateTime.now(),
+      engine: engineKind,
+      utteranceId: current?.id,
+      charOffset: cursor.charOffset,
+      textOverride: !resumedInPlace,
+    ));
     _publish(TtsPlaybackResumed(sessionId: session));
     _resumeGate?.complete();
     _resumeGate = null;
@@ -1126,12 +2000,14 @@ class OnlineTts extends BaseTts {
     _audio = null;
     _infraFuture = null;
     if (audio != null) {
-      try {
-        await audio.stop();
-      } catch (e) {
-        AnxLog.info('TTS audio stop failed: $e');
-      }
-      await audio.dispose();
+      await _withAudioOps(() async {
+        try {
+          await audio.stop();
+        } catch (e) {
+          AnxLog.info('TTS audio stop failed: $e');
+        }
+        await audio.dispose();
+      });
     }
     _queue.clear();
     _slices.clear();
@@ -1139,13 +2015,18 @@ class OnlineTts extends BaseTts {
     _sliceLastUtteranceIds.clear();
     _peekWindow = 0;
     _currentUtterance = null;
-    _prefetchedAudio = null;
-    _prefetchedUtterance = null;
-    _prefetchedRate = null;
+    _prefetched.clear();
+    _pageBreakTurns.clear();
+    _turnedBreaks.clear();
     _preloadedUtteranceId = null;
     _preloadedRate = null;
     _replayCurrent = false;
     _replayTextOverride = null;
+    _advanceFuture = null;
+    _advanceGeneration++;
+    _currentSegmentGapMs = 0;
+    _lastSegmentEndedAt = null;
+    _cancelStallWatchdog();
     recordEvent(const TtsStopped(reason: 'stop'));
     final source = _source;
     if (source != null) {
@@ -1419,11 +2300,12 @@ class OnlineTts extends BaseTts {
   }
 }
 
-/// 等待预览播放完成（或超时）后释放音频输出。
+/// Waits for preview playback to finish (or time out) and then releases the
+/// audio output.
 ///
-/// completions 流可能在未发出任何事件的情况下关闭（dispose/竞态），
-/// [Stream.first] 此时抛 "Bad state: No element"——必须吞掉，
-/// 否则成为未捕获异步错误进入全局 SEVERE 日志。
+/// The completion stream can close without emitting any event (dispose race);
+/// `Stream.first` then throws "Bad state: No element", which must be swallowed
+/// so it does not become an uncaught async error in the SEVERE log.
 @visibleForTesting
 Future<void> disposePreviewAudioWhenDone(
   Stream<void> completions, {
@@ -1435,9 +2317,17 @@ Future<void> disposePreviewAudioWhenDone(
   try {
     await completions.first.timeout(timeout, onTimeout: () {});
   } catch (_) {
-    // 完成/关闭/超时之外的异常不影响释放路径。
+    // Completion/close/timeout failures must not skip disposal.
   } finally {
     if (isCurrent()) onDone();
     await dispose();
   }
+}
+
+/// One pre-fetched audio payload waiting in the lookahead queue.
+final class _PrefetchedAudio {
+  const _PrefetchedAudio({required this.bytes, required this.rate});
+
+  final Uint8List bytes;
+  final double rate;
 }

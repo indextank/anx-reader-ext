@@ -39,19 +39,32 @@ enum TtsService {
   /// Get the display label from the provider.
   String getLabel(BuildContext context) => provider.getLabel(context);
 
+  /// 系统 TTS：始终启用、不可关闭、不参与第三方引擎开关列表。
+  bool get isSystem => this == TtsService.system;
+
+  /// 第三方（在线）引擎：可在设置中单独启用/停用。
+  bool get isThirdParty => !isSystem;
+
   /// Check if the service is an online TTS provider.
-  bool get isOnline => this != TtsService.system;
+  bool get isOnline => isThirdParty;
+
+  /// 所有第三方引擎，按 [values] 的声明顺序（不含系统 TTS）。
+  static List<TtsService> get thirdPartyServices => values
+      .where((service) => service.isThirdParty)
+      .toList(growable: false);
+
+  /// 由持久化的引擎 id（[name]）解析枚举；未知 id 返回 null。
+  static TtsService? tryParse(String serviceId) {
+    for (final service in values) {
+      if (service.name == serviceId) return service;
+    }
+    return null;
+  }
 }
 
 /// Get TTS service from service ID string.
-TtsService getTtsService(String serviceId) {
-  try {
-    return TtsService.values
-        .firstWhere((e) => e.toString().split('.').last == serviceId);
-  } catch (e) {
-    return TtsService.system;
-  }
-}
+TtsService getTtsService(String serviceId) =>
+    TtsService.tryParse(serviceId) ?? TtsService.system;
 
 /// System TTS provider (placeholder for service provider pattern).
 /// System TTS doesn't need configuration, so it returns empty config items.

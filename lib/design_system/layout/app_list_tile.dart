@@ -1,4 +1,5 @@
 import 'package:anx_reader/theme/app_spacing.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:flutter/material.dart';
 
 class AppListTile extends StatelessWidget {
@@ -12,7 +13,7 @@ class AppListTile extends StatelessWidget {
     this.selected = false,
     this.onTap,
     this.onLongPress,
-    this.contentPadding = AppSpacing.horizontal16,
+    this.contentPadding,
     this.semanticLabel,
     this.titleMaxLines,
     this.subtitleMaxLines,
@@ -26,7 +27,10 @@ class AppListTile extends StatelessWidget {
   final bool selected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final EdgeInsetsGeometry contentPadding;
+
+  /// 行内边距；默认取样式面板当前密度（常规 16、紧凑 8），
+  /// 面板外仍为 16，兼容既有页面。
+  final EdgeInsetsGeometry? contentPadding;
   final String? semanticLabel;
 
   /// 标题最大行数；设置后超长省略（默认不限制，保持既有行为）。
@@ -64,7 +68,8 @@ class AppListTile extends StatelessWidget {
       selected: selected,
       onTap: enabled ? onTap : null,
       onLongPress: enabled ? onLongPress : null,
-      contentPadding: contentPadding,
+      contentPadding:
+          contentPadding ?? StylePanelDensity.of(context).tileContentPadding,
       minTileHeight: AppSpacing.tokens.s48,
     );
   }

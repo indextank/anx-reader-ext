@@ -68,5 +68,12 @@ google_service_account.json
 
 google_service_account.json
 
+# Agent / tooling local state
+.superpowers/
+.playwright-cli/
+
+# Test failure artifacts (golden/regression screenshots written by failing runs)
+test/**/failures/
+
 # FVM Version Cache
 .fvm/

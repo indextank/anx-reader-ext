@@ -510,6 +510,26 @@ class Prefs extends ChangeNotifier {
     return prefs.getDouble('ttsRate') ?? 0.6;
   }
 
+  /// 朗读悬浮播放器的归一化水平锚点：0 = 贴舞台左侧，1 = 贴右侧（默认）。
+  set ttsFabAnchorX(double value) {
+    prefs.setDouble('ttsFabAnchorX', value.clamp(0.0, 1.0).toDouble());
+    notifyListeners();
+  }
+
+  double get ttsFabAnchorX {
+    return (prefs.getDouble('ttsFabAnchorX') ?? 1.0).clamp(0.0, 1.0).toDouble();
+  }
+
+  /// 朗读悬浮播放器的归一化垂直锚点：0 = 贴舞台顶部，1 = 贴底部（默认）。
+  set ttsFabAnchorY(double value) {
+    prefs.setDouble('ttsFabAnchorY', value.clamp(0.0, 1.0).toDouble());
+    notifyListeners();
+  }
+
+  double get ttsFabAnchorY {
+    return (prefs.getDouble('ttsFabAnchorY') ?? 1.0).clamp(0.0, 1.0).toDouble();
+  }
+
   void setTtsVoiceModel(String serviceId, String shortName) {
     prefs.setString('ttsVoiceModel_$serviceId', shortName);
     notifyListeners();
@@ -542,6 +562,29 @@ class Prefs extends ChangeNotifier {
       if (online != null) return online;
     }
     return 'system';
+  }
+
+  /// 已启用的第三方 TTS 引擎 id 集合（键名固定，便于迁移与排查）。
+  static const ttsEnabledEngineIdsKey = 'ttsEnabledEngines';
+
+  /// 已启用的第三方 TTS 引擎 id 集合；系统 TTS 恒开启，不在该集合中。
+  ///
+  /// 键缺失时返回空集合（第三方引擎默认关闭）；内容损坏时抛出
+  /// [FormatException]，由 `TtsEngineEnablementStore` 统一转换为加载失败，
+  /// 上层回退默认值并提示。
+  List<String> get ttsEnabledEngineIds {
+    final raw = prefs.getString(ttsEnabledEngineIdsKey);
+    if (raw == null) return const <String>[];
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) {
+      throw const FormatException('Invalid TTS engine enablement payload');
+    }
+    return decoded.whereType<String>().toList(growable: false);
+  }
+
+  set ttsEnabledEngineIds(List<String> serviceIds) {
+    prefs.setString(ttsEnabledEngineIdsKey, jsonEncode(serviceIds));
+    notifyListeners();
   }
 
   Map<String, dynamic> getOnlineTtsConfig(String serviceId) {
@@ -577,11 +620,17 @@ class Prefs extends ChangeNotifier {
   }
 
   FontModel get font {
-    String? fontJson = prefs.getString('font');
-    BuildContext context = navigatorKey.currentContext!;
+    final fontJson = prefs.getString('font');
     if (fontJson == null) {
+      // 仅在需要本地化“跟随书籍”文案时才依赖全局 navigatorKey 的
+      // BuildContext；无根 Navigator（测试/极早期启动）时用非本地化兜底，
+      // 避免空断言崩溃。
+      final context = navigatorKey.currentContext;
       return FontModel(
-          label: L10n.of(context).followBook, name: 'book', path: 'book');
+        label: context == null ? 'Follow book' : L10n.of(context).followBook,
+        name: 'book',
+        path: 'book',
+      );
     }
     return FontModel.fromJson(fontJson);
   }
@@ -1447,8 +1496,9 @@ class Prefs extends ChangeNotifier {
   FontModel get excerptShareFont {
     String? fontJson = prefs.getString('excerptShareFont');
     if (fontJson == null) {
+      final context = navigatorKey.currentContext;
       return FontModel(
-          label: L10n.of(navigatorKey.currentContext!).systemFont,
+          label: context == null ? 'System' : L10n.of(context).systemFont,
           name: 'customFont0',
           path: 'SourceHanSerifSC-Regular.otf');
     }

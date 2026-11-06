@@ -9,6 +9,7 @@ export 'feedback/app_feedback.dart';
 export 'feedback/app_loading_indicator.dart';
 export 'feedback/app_page_transitions.dart';
 export 'feedback/app_skeleton.dart';
+export 'inputs/app_dropdown_field.dart';
 export 'inputs/app_text_field.dart';
 export 'layout/app_card.dart';
 export 'layout/app_list_tile.dart';

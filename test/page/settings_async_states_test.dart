@@ -96,6 +96,12 @@ void main() {
 
   testWidgets('voice empty result offers configuration guidance',
       (tester) async {
+    // The engine-switch section pushes the voice-list action below the default
+    // 800x600 viewport; a taller surface keeps the tap target laid out.
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await pumpDesignSystem(
       tester,
       ProviderScope(
@@ -120,6 +126,12 @@ void main() {
 
   testWidgets('voice load failure is localized and retry recovers',
       (tester) async {
+    // The engine-switch section pushes the voice-list action below the default
+    // 800x600 viewport; a taller surface keeps the tap target laid out.
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     var attempts = 0;
     await pumpDesignSystem(
       tester,

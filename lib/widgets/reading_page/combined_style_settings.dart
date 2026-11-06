@@ -5,6 +5,7 @@ import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/other_settings.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/reading_settings.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/style_settings.dart';
+import 'package:anx_reader/widgets/reading_page/style_panel_content_width.dart';
 import 'package:anx_reader/widgets/reading_page/style_widget.dart';
 import 'package:flutter/material.dart';
 
@@ -25,38 +26,61 @@ class CombinedStyleSettings extends StatelessWidget {
   final List<ReadTheme> themes;
   final GlobalKey<EpubPlayerState> epubPlayerKey;
   final ValueChanged<Widget> setCurrentPage;
-  final Function hideAppBarAndBottomBar;
+  final void Function(bool hide) hideAppBarAndBottomBar;
   final Future<int> Function(ReadTheme)? themeInserter;
 
   @override
   Widget build(BuildContext context) {
     final l10n = L10n.of(context);
-    return SingleChildScrollView(
-      key: const ValueKey('combined-style-settings-scroll'),
-      padding: StylePanelTokens.panelPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SectionTitle(title: l10n.readingPageStyle),
-          StyleWidget(
-            themes: themes,
-            epubPlayerKey: epubPlayerKey,
-            setCurrentPage: setCurrentPage,
-            hideAppBarAndBottomBar: hideAppBarAndBottomBar,
-            embedded: true,
-            themeInserter: themeInserter,
+    final metrics = StylePanelDensity.of(context);
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionTitle(title: l10n.readingPageStyle),
+        StyleWidget(
+          themes: themes,
+          epubPlayerKey: epubPlayerKey,
+          setCurrentPage: setCurrentPage,
+          hideAppBarAndBottomBar: hideAppBarAndBottomBar,
+          embedded: true,
+          themeInserter: themeInserter,
+        ),
+        SizedBox(height: metrics.sectionGap),
+        _SectionTitle(title: l10n.readingPageReading),
+        const ReadingMoreSettings(),
+        SizedBox(height: metrics.sectionGap),
+        _SectionTitle(title: l10n.readingPageStyle),
+        const StyleSettings(),
+        SizedBox(height: metrics.sectionGap),
+        _SectionTitle(title: l10n.readingPageOther),
+        const OtherSettings(),
+      ],
+    );
+
+    // 合并内容在极窄右栏/弹框中无法把所有行压到单行时，保持内容按
+    // 测量宽度渲染，并用横向滚动兜底，避免换行/省略或 RenderFlex 溢出。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final requiredWidth = stylePanelContentWidthFor(context, metrics);
+        final availableWidth =
+            constraints.hasBoundedWidth ? constraints.maxWidth : requiredWidth;
+        final scrollable = SingleChildScrollView(
+          key: const ValueKey('combined-style-settings-scroll'),
+          padding: metrics.panelPadding,
+          child: content,
+        );
+        if (availableWidth >= StylePanelTokens.minSingleLineFallbackWidth ||
+            requiredWidth <= availableWidth + 0.5) {
+          return scrollable;
+        }
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: requiredWidth,
+            child: scrollable,
           ),
-          const SizedBox(height: StylePanelTokens.sectionGap),
-          _SectionTitle(title: l10n.readingPageReading),
-          const ReadingMoreSettings(),
-          const SizedBox(height: StylePanelTokens.sectionGap),
-          _SectionTitle(title: l10n.readingPageStyle),
-          const StyleSettings(),
-          const SizedBox(height: StylePanelTokens.sectionGap),
-          _SectionTitle(title: l10n.readingPageOther),
-          const OtherSettings(),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -68,8 +92,9 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = StylePanelDensity.of(context);
     return Padding(
-      padding: StylePanelTokens.sectionHeaderPadding,
+      padding: metrics.sectionHeaderPadding,
       child: Text(title, style: StylePanelTokens.sectionTitle(context)),
     );
   }

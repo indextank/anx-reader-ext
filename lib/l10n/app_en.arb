@@ -895,6 +895,9 @@
   "settingsNarrateMimoInstructionDescription": "Optional voice/style description sent as the user message",
   "settingsNarrateTimeoutDescription": "Request timeout in seconds",
   "settingsNarrateEmptyAudioResult": "No audio was returned. Please check your configuration.",
+  "settingsNarrateEngineSwitches": "Engine switches",
+  "settingsNarrateEngineSwitchDescription": "Hide this engine from the narration player's engine list when off",
+  "settingsNarrateEngineLoadFailed": "Couldn't load engine switches. Using defaults.",
   "ttsSegmentsSkipped": "Skipped {n} paragraph(s) because speech synthesis failed; reading continues.",
   "@ttsSegmentsSkipped": {
     "placeholders": {
@@ -1012,9 +1015,19 @@
   "readingTocClearSearch": "Clear search",
   "readingTocExpand": "Expand subchapters",
   "readingTocCollapse": "Collapse subchapters",
+  "readingTocPin": "Pin table of contents",
+  "readingTocUnpin": "Unpin table of contents",
   "readingNotesPanelPosition": "Notes panel position",
   "readingStylePanelPosition": "Style panel position",
   "readingPanelPositionPopup": "Popup",
   "readingPanelPositionRight": "Right",
-  "readingThemesEmpty": "No reading themes yet"
+  "readingThemesEmpty": "No reading themes yet",
+  "ttsPlay": "Play",
+  "ttsStop": "Stop",
+  "ttsFabDragHint": "Drag to move",
+  "ttsFabResetPosition": "Reset position",
+  "ttsFabPositionReset": "Position reset",
+  "ttsEngineSwitching": "Switching engine…",
+  "ttsEngineSwitchFailed": "Couldn't switch the TTS engine",
+  "ttsEngineSettings": "Manage engines & voices"
 }

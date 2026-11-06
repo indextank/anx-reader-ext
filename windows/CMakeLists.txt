@@ -74,7 +74,13 @@ include(flutter/generated_plugins.cmake)
 set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
 # Make the "install" step default, as it's required to run.
 set(CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD 1)
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+# The bundle must be installed next to the executable. Keep the cached prefix
+# in sync even when it was already initialized: a CMake cache left behind by an
+# interrupted/older configure can keep CMake's default prefix
+# ("C:/Program Files/<project>"), which makes the INSTALL step fail with an
+# access-denied error instead of copying the runtime next to the app.
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR
+   NOT CMAKE_INSTALL_PREFIX STREQUAL "${BUILD_BUNDLE_DIR}")
   set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
 endif()
 

@@ -58,6 +58,13 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     tts.markPreparedAsStopped();
   }
 
+  /// How many utterances the new engine synthesizes before the switch resumes
+  /// playback. Cloud engines are slower than real time for long sentences, so a
+  /// cold single-segment start is followed by a multi-second blank (field log:
+  /// 4859 ms after MiMo→StepAudio). A two-segment lead keeps playback
+  /// continuous; a longer lead would just delay the switch further.
+  static const int _engineSwitchWarmUpUnits = 2;
+
   /// Switches the TTS engine while migrating the current reading cursor.
   ///
   /// The old engine captures its anchor *before* stopping; the new engine is
@@ -65,6 +72,7 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   /// from the current sentence instead of restarting at the page top.
   Future<void> switchTtsType(String serviceId) async {
     if (Prefs().ttsService == serviceId) return;
+    final switchWatch = Stopwatch()..start();
     final anchor = tts.captureResumeAnchor(
       reason: TtsResumeReason.engineSwitched,
     );
@@ -103,10 +111,63 @@ class TtsHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       playbackLog.add(TtsAnchorMigrated(anchor: anchor));
     }
     if (wasActive && _textSource != null) {
-      await tts.speak(anchor: anchor);
+      final engine = tts;
+      await tts.speak(
+        anchor: anchor,
+        warmUpUnits: _engineSwitchWarmUpUnits,
+      );
+      _logSwitchAudibleLatency(engine, serviceId, switchWatch);
     } else {
       tts.markPreparedAsStopped();
     }
+  }
+
+  /// Records the switch → first audible segment latency without blocking the
+  /// switch. Field logs need this number to tell engine-switch cold start apart
+  /// from steady-state provider throughput gaps.
+  void _logSwitchAudibleLatency(
+    BaseTts engine,
+    String serviceId,
+    Stopwatch watch,
+  ) {
+    final completer = Completer<void>();
+    Timer? timeout;
+    void listener() {
+      final state = engine.playbackStateNotifier.value;
+      if (state.phase == TtsPlaybackPhase.playing ||
+          state.hasError ||
+          state.isEmpty ||
+          state.phase == TtsPlaybackPhase.stopped) {
+        if (!completer.isCompleted) completer.complete();
+      }
+    }
+
+    engine.playbackStateNotifier.addListener(listener);
+    listener();
+    timeout = Timer(const Duration(seconds: 30), () {
+      if (!completer.isCompleted) completer.complete();
+    });
+    unawaited(completer.future.whenComplete(() {
+      timeout?.cancel();
+      try {
+        engine.playbackStateNotifier.removeListener(listener);
+      } catch (_) {
+        // Engine already disposed.
+      }
+      final elapsed = watch.elapsedMilliseconds;
+      final state = engine.playbackState;
+      if (state.phase == TtsPlaybackPhase.playing) {
+        AnxLog.info('TTS[diag] engine.switch.audible service=$serviceId '
+            'elapsedMs=$elapsed');
+        if (elapsed > 3000) {
+          AnxLog.severe('TTS[diag] engine switch to $serviceId took '
+              '${elapsed}ms before the first audible segment');
+        }
+      } else {
+        AnxLog.info('TTS[diag] engine.switch.no-audio service=$serviceId '
+            'elapsedMs=$elapsed phase=${state.phase.name}');
+      }
+    }));
   }
 
   Future<void> retry() => tts.retry();

@@ -22,6 +22,7 @@ import 'package:anx_reader/models/read_theme.dart';
 import 'package:anx_reader/models/reading_rules.dart';
 import 'package:anx_reader/models/search_result_model.dart';
 import 'package:anx_reader/models/toc_item.dart';
+import 'package:anx_reader/page/book_player/battery_indicator.dart';
 import 'package:anx_reader/page/book_player/image_viewer.dart';
 import 'package:anx_reader/page/book_player/reader_tokens_bridge.dart';
 import 'package:anx_reader/page/home_page.dart';
@@ -31,10 +32,12 @@ import 'package:anx_reader/providers/book_toc.dart';
 import 'package:anx_reader/providers/bookmark.dart';
 import 'package:anx_reader/providers/chapter_content_bridge.dart';
 import 'package:anx_reader/providers/current_reading.dart';
+import 'package:anx_reader/providers/toc_panel.dart';
 import 'package:anx_reader/service/book_player/book_player_server.dart';
 import 'package:anx_reader/providers/toc_search.dart';
 import 'package:anx_reader/service/tts/base_tts.dart';
 import 'package:anx_reader/service/tts/models/tts_sentence.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_text_source.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/utils/coordinates_to_part.dart';
 import 'package:anx_reader/utils/js/convert_dart_color_to_js.dart';
@@ -50,13 +53,11 @@ import 'package:anx_reader/widgets/context_menu/context_menu.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/page_turning/diagram.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/page_turning/types_and_icons.dart';
 import 'package:anx_reader/widgets/reading_page/style_widget.dart';
-import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:iconsx_plus/iconsx_plus.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -366,6 +367,56 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
           functionBody: "return await ttsNext()",
         ),
       );
+
+  /// Moves the TTS iterator to the next sentence WITHOUT painting/scrolling the
+  /// highlight. The playback pipeline prefetches text with this, then calls
+  /// [ttsHighlightCurrent] when the corresponding audio starts, so the visual
+  /// selection never runs ahead of the spoken text when synthesis is slow.
+  Future<String> ttsNextSilent() async => _jsString(
+        await webViewController.callAsyncJavaScript(
+          functionBody: "return await ttsNextSilent()",
+        ),
+      );
+
+  /// Repaints the highlight for the current TTS sentence without moving the
+  /// iterator (pairs with [ttsNextSilent]).
+  Future<void> ttsHighlightCurrent() async {
+    await webViewController.callAsyncJavaScript(
+      functionBody: 'return ttsHighlightCurrent()',
+    );
+  }
+
+  /// Paints exactly the spoken part of the sentence at [cfi] and forces the
+  /// reader back to that page when the user paged away while playback
+  /// continued.
+  ///
+  /// [ranges] are sentence-relative UTF-16 offsets of the spoken segments
+  /// (annotations such as `[12]` are already excluded by the pipeline). The JS
+  /// bridge resolves the sentence by CFI without moving the TTS iterator, maps
+  /// the offsets onto DOM points with the reader's own text extraction (local
+  /// link/footnote text skipped, `<br>` counted as one space) and repaints only
+  /// the intersection, dropping the previous selection first.
+  ///
+  /// Returns true when the reader is showing (or is already scrolling to) the
+  /// painted sentence page; false when the sentence could not be resolved or
+  /// painted, in which case playback must carry on.
+  Future<bool> ttsHighlightSpoken({
+    required String cfi,
+    required List<TtsSpokenRange> ranges,
+  }) async {
+    final anchor = cfi.trim();
+    if (anchor.isEmpty) return false;
+    final spokenRanges = <Map<String, int>>[
+      for (final range in ranges)
+        if (range.end > range.start)
+          <String, int>{'start': range.start, 'end': range.end},
+    ];
+    final result = await webViewController.callAsyncJavaScript(
+      functionBody: 'return await ttsHighlightSpoken('
+          '${jsonEncode(anchor)}, ${jsonEncode(spokenRanges)})',
+    );
+    return result.value == true;
+  }
 
   Future<String> ttsPrev() async => _jsString(
         await webViewController.callAsyncJavaScript(
@@ -734,9 +785,22 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
     controller.addJavaScriptHandler(
         handlerName: 'onSetToc',
         callback: (args) {
-          List<dynamic> t = args[0];
-          final toc = t.map((i) => TocItem.fromJson(i)).toList();
-          ref.read(bookTocProvider.notifier).setToc(toc);
+          final loadStatus = ref.read(tocLoadStatusProvider.notifier);
+          try {
+            final raw = args.isNotEmpty ? args.first : null;
+            final entries = raw is List ? raw : const <dynamic>[];
+            final toc = entries
+                .map((item) => TocItem.fromJson(
+                      Map<String, dynamic>.from(item as Map),
+                    ))
+                .toList();
+            ref.read(bookTocProvider.notifier).setToc(toc);
+            loadStatus.markReady();
+          } catch (e, stack) {
+            // 目录回传数据损坏时进入错误态，由目录区域提供重试入口。
+            AnxLog.severe('Failed to load toc: $e\n$stack');
+            loadStatus.markFailed();
+          }
         });
     controller.addJavaScriptHandler(
         handlerName: 'onSelectionEnd',
@@ -1121,12 +1185,6 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
     final iconColor = Color(int.parse('0x$textColor'));
 
     Widget getWidget(ReadingInfoEnum readingInfoEnum, TextStyle textStyle) {
-      final batteryTextStyle = TextStyle(
-        color: iconColor,
-        fontSize: (textStyle.fontSize ?? 10) - 1,
-      );
-      final batteryIconSize = (textStyle.fontSize ?? 10) * 2.7;
-
       final chapterTitleWidget = Text(
         (chapterCurrentPage == 1 ? widget.book.title : chapterTitle),
         style: textStyle,
@@ -1142,31 +1200,9 @@ class EpubPlayerState extends ConsumerState<EpubPlayer>
 
       final timeWidget = MinuteClock(textStyle: textStyle);
 
-      final batteryWidget = FutureBuilder(
-          future: Battery().batteryLevel,
-          builder: (context, snapshot) {
-            if (snapshot.hasData) {
-              return Stack(
-                alignment: Alignment.center,
-                children: [
-                  Padding(
-                    padding: AppSpacing.only(
-                      top: (textStyle.fontSize ?? 10) * 0.08,
-                      right: 2,
-                    ),
-                    child: Text('${snapshot.data}', style: batteryTextStyle),
-                  ),
-                  Icon(
-                    HeroIcons.battery_0,
-                    size: batteryIconSize,
-                    color: iconColor,
-                  ),
-                ],
-              );
-            } else {
-              return const SizedBox();
-            }
-          });
+      final batteryWidget = BatteryIndicator(
+        textStyle: textStyle.copyWith(color: iconColor),
+      );
 
       Widget batteryAndTimeWidget() => Row(
             mainAxisSize: MainAxisSize.min,

@@ -35,6 +35,10 @@ class StepAudioTtsProvider extends TtsServiceProvider {
   int get maxRequestChars => 1000;
 
   @override
+  String get documentedRequestLimitNote =>
+      'StepFun audio/speech documents a 1000-character limit for input';
+
+  @override
   String getLabel(BuildContext context) =>
       L10n.of(context).settingsNarrateStepAudioTts;
 

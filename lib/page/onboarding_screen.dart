@@ -216,6 +216,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       final currentCountryCode = currentLocale?.countryCode ?? '';
       final currentLanguageTag = currentLanguageCode +
           (currentCountryCode.isNotEmpty ? '-$currentCountryCode' : '');
+      final selectedLanguageTag = languageOptions
+              .any((option) => option.values.first == currentLanguageTag)
+          ? currentLanguageTag
+          : languageOptions.first.values.first;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,29 +237,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
               borderRadius: AppRadius.border8,
             ),
-            child: DropdownButton<String>(
-              isExpanded: true,
-              underline: const SizedBox.shrink(),
-              value: languageOptions.any(
-                      (option) => option.values.first == currentLanguageTag)
-                  ? currentLanguageTag
-                  : 'system',
-              onChanged: (String? newValue) {
+            child: AppDropdownField<String>(
+              expandedInsets: EdgeInsets.zero,
+              value: selectedLanguageTag,
+              inputDecorationTheme: AppDropdownField.borderlessDecoration,
+              items: [
+                for (final option in languageOptions)
+                  AppDropdownItem<String>(
+                    value: option.values.first,
+                    label: option.keys.first,
+                  ),
+              ],
+              onChanged: (newValue) {
                 if (newValue != null) {
                   ref
                       .read(uiSettingsProvider.notifier)
                       .setLocale(localeFromLanguageCode(newValue));
                 }
               },
-              items: languageOptions
-                  .map<DropdownMenuItem<String>>((Map<String, String> option) {
-                final displayName = option.keys.first;
-                final languageCode = option.values.first;
-                return DropdownMenuItem<String>(
-                  value: languageCode,
-                  child: Text(displayName),
-                );
-              }).toList(),
             ),
           ),
         ],

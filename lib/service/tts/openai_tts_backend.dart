@@ -29,6 +29,14 @@ class OpenAiTtsProvider extends TtsServiceProvider {
   String getLabel(BuildContext context) =>
       L10n.of(context).settingsNarrateOpenAiTts;
 
+  /// OpenAI documents a 4096-character `input` limit for `audio/speech`; the
+  /// shared 800-character split stays far below it and keeps latency per
+  /// request low. Rate is applied through the `instructions` field.
+  @override
+  String get documentedRequestLimitNote =>
+      'OpenAI documents a 4096-character input limit; the pipeline caps '
+      'requests at 800 characters';
+
   @override
   List<ConfigItem> getConfigItems(BuildContext context) {
     return [

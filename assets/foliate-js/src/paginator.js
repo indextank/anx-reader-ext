@@ -1318,6 +1318,12 @@ export class Paginator extends HTMLElement {
   get atEnd() {
     return this.#adjacentIndex(1) == null && this.page >= this.pages - 2
   }
+  // True while a page turn is in flight: renderer navigation calls are ignored
+  // during that window, so programmatic navigation (e.g. the TTS highlight
+  // pulling the reader back to the reading page) must wait for it first.
+  get locked() {
+    return this.#locked
+  }
   #adjacentIndex(dir) {
     for (let index = this.#index + dir; this.#canGoToIndex(index); index += dir)
       if (this.sections[index]?.linear !== 'no') return index

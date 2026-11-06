@@ -8,6 +8,8 @@ import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/main.dart';
 import 'package:anx_reader/models/book_note.dart';
 import 'package:anx_reader/page/reading_page.dart';
+import 'package:anx_reader/service/tts/pipeline/epub_tts_text_source.dart';
+import 'package:anx_reader/service/tts/pipeline/tts_text.dart';
 import 'package:anx_reader/service/tts/tts_handler.dart';
 import 'package:anx_reader/utils/env_var.dart';
 import 'package:anx_reader/widgets/book_share/excerpt_share_service.dart';
@@ -324,9 +326,13 @@ class ExcerptMenuState extends State<ExcerptMenu> {
 
               // Now initialize TTS - it will use the current (updated) position
               await TtsHandler().init(
-                () => playerState.initTts(fromCfi: widget.annoCfi),
-                playerState.ttsNext,
-                playerState.ttsPrev,
+                textSource: EpubTtsTextSource(
+                  resolveState: () => playerState,
+                ),
+                anchor: TtsResumeAnchor(
+                  cfi: widget.annoCfi,
+                  reason: TtsResumeReason.userRequested,
+                ),
               );
 
               // Start TTS - audioHandler.play() will call TTS speak

@@ -36,11 +36,54 @@ abstract class TtsServiceProvider extends ServiceProvider<dynamic> {
   /// oversized input. Engines with a documented limit override this.
   int get maxRequestChars => 800;
 
+  /// Human-readable evidence for [maxRequestChars]: the documentation
+  /// sentence (or the explicit "no documented limit" fallback) the cap comes
+  /// from. Surfaced in diagnostics so a split request can be explained
+  /// without reading the engine sources.
+  String get documentedRequestLimitNote =>
+      'No documented request limit for $serviceId; $maxRequestChars '
+      'characters is a conservative safety cap';
+
+  /// Whether the engine can pause in place. Cloud engines only pause the
+  /// playback of their audio output, so they all report false; the system
+  /// engine reports its capability through `TtsNativeSpeechEngine` instead.
+  bool get supportsNativePause => false;
+
+  /// Whether the engine reports character-level playback progress. Cloud
+  /// engines do not, so the pipeline falls back to sentence-start anchors
+  /// calibrated to word boundaries.
+  bool get reportsCharacterProgress => false;
+
   /// Whether the engine applies [speak]'s rate argument server-side.
   /// Engines without a documented speed parameter must return false; the
   /// playback pipeline then applies the rate via player playback speed so
   /// the UI slider still works and takes effect immediately.
   bool get supportsRateParameter => true;
+
+  /// Maximum number of synthesis requests this provider accepts concurrently.
+  ///
+  /// The playback pipeline deliberately issues several requests in parallel
+  /// (cold-start warm-up plus a lookahead prefetch window), so without an
+  /// adapter-side bound a new chapter can produce 5-6 simultaneous requests.
+  /// Aliyun's gateway answered exactly that burst with
+  /// `400 {"status":40000005,"message":"Gateway:TOO_MANY_REQUESTS:Too many
+  /// requests!"}` on the real device.
+  ///
+  /// The shared default of 2 is a conservative safety cap: it matches the
+  /// concurrency the round-2 test harness already models for Aliyun
+  /// (`Round2EngineProfile.aliyun.maxParallelRequests = 2`) and no engine has a
+  /// documented allowance for more. Providers that can tolerate more may
+  /// override it (never above their documented quota).
+  int get maxConcurrentSynthesisRequests => 2;
+
+  /// Minimum spacing between two synthesis request *starts*.
+  ///
+  /// Zero means "no extra spacing": the concurrency bound alone is enough for
+  /// providers without a known burst/QPS rejection. Providers whose gateway
+  /// enforces a QPS window override this; Aliyun rejects bursts with
+  /// `TOO_MANY_REQUESTS` and spaces request starts by 250 ms (at most four
+  /// starts per second, well inside the observed gateway tolerance).
+  Duration get minSynthesisRequestInterval => Duration.zero;
 
   /// Generate speech audio from text.
   /// Only required for online TTS services.
@@ -84,4 +127,39 @@ abstract class TtsServiceProvider extends ServiceProvider<dynamic> {
     }
     return selected;
   }
+}
+
+/// Typed rate-limit failure raised by a [TtsServiceProvider] when the engine
+/// or the gateway in front of it rejects a request burst.
+///
+/// Providers throw this instead of a generic [Exception] so the adapter layer
+/// can map it to `TtsEngineSynthesisException(isRateLimited: true)` and the
+/// playback pipeline can use its exponential retry backoff instead of the
+/// short generic one. The message still carries the raw response for logs and
+/// diagnostics.
+class TtsRateLimitException implements Exception {
+  const TtsRateLimitException({
+    required this.message,
+    this.statusCode,
+    this.body,
+    this.retryAfter,
+    this.cause,
+  });
+
+  final String message;
+
+  /// HTTP status of the rejected response (400 for the Aliyun gateway
+  /// `40000005`, 429 for a standard rate-limit response).
+  final int? statusCode;
+
+  /// Raw response body, kept for diagnostics.
+  final String? body;
+
+  /// Server-provided `Retry-After` hint, when present.
+  final Duration? retryAfter;
+
+  final Object? cause;
+
+  @override
+  String toString() => 'TtsRateLimitException($message)';
 }

@@ -1,3 +1,4 @@
+import 'package:anx_reader/design_system/inputs/app_dropdown_field.dart';
 import 'package:flutter/material.dart';
 
 /// Defines a single dropdown item used by [AnxDropdownButton].
@@ -13,8 +14,11 @@ class DropdownItem<T> {
   final Widget? icon;
 }
 
-/// A thin wrapper around [DropdownButton] that provides consistent styling
-/// and accepts [DropdownItem] definitions across the app.
+/// App-wide dropdown wrapper.
+///
+/// 已从旧式 [DropdownButton] 迁移到 [AppDropdownField]（Material 3
+/// [DropdownMenu]）：选项高度统一读取 `AppDropdownTokens.itemHeight`，
+/// 与项目其它下拉框保持一致，不再受 Flutter 旧组件 48dp 下限约束。
 class AnxDropdownButton<T> extends StatelessWidget {
   const AnxDropdownButton({
     super.key,
@@ -39,32 +43,22 @@ class AnxDropdownButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButton<T>(
-      isDense: true,
-      value: value,
-      isExpanded: isExpanded,
-      underline: const SizedBox.shrink(),
-      hint: hint,
-      items: items.map((item) {
-        return DropdownMenuItem<T>(
-          value: item.value,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (item.icon != null) ...[
-                item.icon!,
-                const SizedBox(width: 8),
-              ],
-              Text(
-                item.label,
-                style: textStyle,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+    final hintWidget = hint;
+    return AppDropdownField<T>(
+      items: [
+        for (final item in items)
+          AppDropdownItem<T>(
+            value: item.value,
+            label: item.label,
+            leadingIcon: item.icon,
           ),
-        );
-      }).toList(),
+      ],
+      value: value,
       onChanged: enabled ? onChanged : null,
+      expandedInsets: isExpanded ? EdgeInsets.zero : null,
+      hintText: hintWidget is Text ? hintWidget.data : null,
+      textStyle: textStyle,
+      inputDecorationTheme: AppDropdownField.borderlessDecoration,
     );
   }
 }

@@ -2,14 +2,13 @@ import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
 import 'package:anx_reader/theme/style_panel_tokens.dart';
-import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/enums/text_alignment.dart';
 import 'package:anx_reader/enums/writing_mode.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/models/book_style.dart';
 import 'package:anx_reader/page/reading_page.dart';
-import 'package:anx_reader/widgets/icon_and_text.dart';
 import 'package:anx_reader/widgets/reading_page/more_settings/custom_css_editor.dart';
+import 'package:anx_reader/widgets/reading_page/style_panel_slider_label.dart';
 import 'package:anx_reader/widgets/settings/single_row_setting_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:iconsx_plus/iconsx_plus.dart';
@@ -43,12 +42,7 @@ class StyleSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        IconAndText(
-          icon: Icon(icon),
-          text: label,
-          heightOverride: StylePanelTokens.sliderLabelHeight,
-          style: StylePanelTokens.optionLabel(context),
-        ),
+        StylePanelSliderLabel(icon: Icon(icon), text: label),
         Expanded(
           child: Slider(
             padding: AppReadingTokens.sliderPadding,
@@ -87,7 +81,6 @@ class _StyleSettingsState extends State<StyleSettings> {
       return AppListTile(
         title: L10n.of(context).useBookStyles,
         subtitle: L10n.of(context).useBookStylesDescription,
-        contentPadding: AppSpacing.zero,
         trailing: Switch(
           value: Prefs().useBookStyles,
           onChanged: (value) {
@@ -163,17 +156,13 @@ class _StyleSettingsState extends State<StyleSettings> {
       final bookStyle = Prefs().bookStyle;
       return Row(children: [
         Prefs().writingMode == WritingModeEnum.verticalRl
-            ? IconAndText(
+            ? StylePanelSliderLabel(
                 icon: const Icon(Bootstrap.chevron_bar_right),
                 text: L10n.of(context).readingPageRightMargin,
-                heightOverride: StylePanelTokens.sliderLabelHeight,
-                style: StylePanelTokens.optionLabel(context),
               )
-            : IconAndText(
+            : StylePanelSliderLabel(
                 icon: const Icon(Bootstrap.chevron_bar_up),
                 text: L10n.of(context).readingPageTopMargin,
-                heightOverride: StylePanelTokens.sliderLabelHeight,
-                style: StylePanelTokens.optionLabel(context),
               ),
         Expanded(
           child: Slider(
@@ -189,17 +178,13 @@ class _StyleSettingsState extends State<StyleSettings> {
           ),
         ),
         Prefs().writingMode == WritingModeEnum.verticalRl
-            ? IconAndText(
+            ? StylePanelSliderLabel(
                 icon: const Icon(Bootstrap.chevron_bar_left),
                 text: L10n.of(context).readingPageLeftMargin,
-                heightOverride: StylePanelTokens.sliderLabelHeight,
-                style: StylePanelTokens.optionLabel(context),
               )
-            : IconAndText(
+            : StylePanelSliderLabel(
                 icon: const Icon(Bootstrap.chevron_bar_down),
                 text: L10n.of(context).readingPageBottomMargin,
-                heightOverride: StylePanelTokens.sliderLabelHeight,
-                style: StylePanelTokens.optionLabel(context),
               ),
         Expanded(
           child: Slider(
@@ -329,14 +314,22 @@ class _StyleSettingsState extends State<StyleSettings> {
       );
     }
 
+    final metrics = StylePanelDensity.of(context);
     return Padding(
-      padding: StylePanelTokens.groupPadding,
+      // 水平对齐统一由各设置行内边距 / 子缩进决定，分组仅保留垂直留白。
+      padding: metrics.groupVerticalPadding,
       child: Column(
         children: [
           useBookStylesSwitch(),
-          sliders(),
+          Padding(
+            padding: metrics.childIndent,
+            child: sliders(),
+          ),
           textAlignment(),
-          CustomCSSEditor(),
+          Padding(
+            padding: metrics.childIndent,
+            child: const CustomCSSEditor(),
+          ),
         ],
       ),
     );

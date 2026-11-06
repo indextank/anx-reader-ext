@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anx_reader/l10n/generated/L10n.dart';
 import 'package:anx_reader/theme/app_colors.dart';
 import 'package:anx_reader/theme/app_theme.dart';
+import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/widgets/reading_page/panel_width.dart';
 import 'package:anx_reader/widgets/reading_page/style_panel_content_width.dart';
 
@@ -41,10 +42,8 @@ void main() {
 
   testWidgets('content width grows with text scale', (tester) async {
     final base = await contentWidthOf(tester, TextScaler.noScaling);
-    final s13 =
-        await contentWidthOf(tester, const TextScaler.linear(1.3));
-    final s15 =
-        await contentWidthOf(tester, const TextScaler.linear(1.5));
+    final s13 = await contentWidthOf(tester, const TextScaler.linear(1.3));
+    final s15 = await contentWidthOf(tester, const TextScaler.linear(1.5));
     expect(s13, greaterThan(base));
     expect(s15, greaterThan(s13));
   });
@@ -105,25 +104,25 @@ void main() {
       labelStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
       controlStyle: theme.textTheme.labelLarge ?? const TextStyle(),
       textScaler: TextScaler.noScaling,
-      horizontalPaddingTotal: kStylePanelHorizontalPaddingTotal,
+      metrics: StylePanelMetrics.regular,
     );
-    final writingRowEstimate =
-        measureTextWidth(
+    final metrics = StylePanelMetrics.regular;
+    final writingRowEstimate = measureTextWidth(
           l10n.readingPageWritingDirection,
           theme.textTheme.bodyMedium ?? const TextStyle(),
           TextScaler.noScaling,
         ) +
-        12 + // labelGap
-        3 * (measureTextWidth(
+        metrics.labelGap +
+        3 *
+            (measureTextWidth(
                   l10n.readingPageWritingDirectionVertical,
                   theme.textTheme.labelLarge ?? const TextStyle(),
                   TextScaler.noScaling,
                 ) +
-                64) +
-        32 + // sliderLeading
-        kStylePanelHorizontalPaddingTotal;
+                metrics.segmentChrome) +
+        metrics.horizontalPaddingTotal +
+        metrics.childIndent.horizontal;
     expect(contentWidth, greaterThanOrEqualTo(writingRowEstimate - 1),
         reason: '内容宽度应不小于最宽三段行的估算');
   });
 }
-

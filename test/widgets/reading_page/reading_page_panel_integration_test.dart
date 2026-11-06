@@ -19,6 +19,7 @@ import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/reading_page/combined_style_settings.dart';
 import 'package:anx_reader/widgets/reading_page/reading_panel_coordinator.dart';
 import 'package:anx_reader/widgets/reading_page/reading_side_panel_host.dart';
+import 'package:anx_reader/widgets/reading_page/reading_tool_panel.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -188,6 +189,8 @@ Future<void> _openProductionTool(
     harness.pageKey.currentState!.styleHandler();
   }
   await tester.pump();
+  // 弹层打开动画（150ms）结束，避免后续帧计数被动画帧干扰。
+  await tester.pump(const Duration(milliseconds: 200));
 }
 
 Future<void> _openProductionAi(
@@ -232,7 +235,7 @@ void main() {
     prefs.panelPositionWriterForTesting = (key, value) => write.future;
 
     await _openProductionTool(tester, harness, l10n.navBarNotes);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
     expect(harness.coordinator.activeTool, isNotNull);
 
     prefs.notesPanelPosition = AiPanelPositionEnum.right;
@@ -241,14 +244,14 @@ void main() {
 
     write.complete(true);
     await tester.pump();
+    // 写入成功后旧弹层立即消失，侧栏在随后的过渡帧 + 打开动画中挂载。
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
     await tester.pump();
-    expect(find.byType(BottomSheet), findsNothing);
-    expect(find.byType(ReadingSidePanelHost), findsNothing);
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.byType(ReadingSidePanelHost), findsOneWidget);
     expect(find.text('production-notes'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsNothing);
   });
 
   testWidgets('production ReadingPage applies async failure fallback',
@@ -274,7 +277,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ReadingSidePanelHost), findsNothing);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
     expect(find.text('production-notes'), findsOneWidget);
   });
 
@@ -307,7 +310,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ReadingSidePanelHost), findsNothing);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
     expect(find.text('production-notes'), findsOneWidget);
   });
 
@@ -355,7 +358,7 @@ void main() {
     final l10n = L10n.of(tester.element(find.byType(ReadingPage)));
 
     await _openProductionTool(tester, harness, l10n.navBarNotes);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(readingToolPanelSurfaceKey), findsOneWidget);
     unawaited(
       harness.pageKey.currentState!.showAiChat(content: 'from-notes'),
     );

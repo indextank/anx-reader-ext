@@ -75,6 +75,12 @@ void main() {
 
   testWidgets('dependency changes keep one highlight completion listener',
       (tester) async {
+    // The engine-switch section pushes the voice-list action below the default
+    // 800x600 viewport; a taller surface keeps the tap target laid out.
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     var completions = 0;
     final child = ProviderScope(
       overrides: [

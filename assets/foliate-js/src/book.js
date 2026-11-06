@@ -2090,6 +2090,12 @@ window.initTts = () => reader.view.initTTS()
 
 window.ttsStop = () => reader.view.initTTS(true)
 
+// Ensure the TTS sentence list exists without rebuilding it. The playback
+// pipeline keeps advancing the iterator while the user may be looking at
+// another page/section: these bridges must read from the *reading* section and
+// never reset the iterator to the visible page.
+const ensureTts = () => reader.view.ensureTTS()
+
 window.ttsHere = () => {
   initTts()
   return reader.view.tts.from(reader.view.lastLocation.range)
@@ -2114,18 +2120,19 @@ window.ttsFromCfi = async (cfi) => {
 }
 
 window.ttsCurrentDetail = () => {
-  initTts()
-  return reader.view.tts.currentDetail()
+  ensureTts()
+  return reader.view.tts?.currentDetail() ?? null
 }
 
 window.ttsCollectDetails = (count = 1, includeCurrent = false, offset = 1) => {
-  initTts()
+  ensureTts()
+  if (!reader.view.tts) return []
   return reader.view.tts.collectDetails(count, { includeCurrent, offset })
 }
 
 window.ttsHighlightByCfi = cfi => {
-  initTts()
-  return reader.view.tts.highlightCfi(cfi)
+  ensureTts()
+  return reader.view.tts?.highlightCfi(cfi) ?? null
 }
 
 // Whether the sentence at the given cfi is on the currently displayed
@@ -2135,8 +2142,11 @@ window.ttsCfiOnCurrentPage = async cfi => {
   try {
     const resolved = await reader.view.resolveNavigation(cfi)
     if (!resolved || !resolved.anchor) return false
-    const contents = reader.view.renderer.getContents()
-    const content = contents.find(c => c.index === resolved.index) || contents[0]
+    // Only the section that is actually displayed can answer this: resolving
+    // the CFI against another section's document would produce a meaningless
+    // range.
+    const content = reader.view.renderer.getContents()
+      .find(c => c.index === resolved.index)
     if (!content || !content.doc) return false
     const range = resolved.anchor(content.doc)
     const rects = range && range.getClientRects && range.getClientRects()
@@ -2155,6 +2165,27 @@ window.ttsCfiOnCurrentPage = async cfi => {
 // Cfi of the reader's current location; page token for the TTS position.
 window.ttsCurrentPageCfi = () => reader.view.lastLocation?.cfi ?? ''
 
+// Page-boundary bridge for the TTS pipeline:
+// - ttsPageBreak() reports where the visible page ends inside the sentence the
+//   TTS iterator currently points at, or null when the sentence is not split.
+// - ttsTurnPage() turns exactly one page (normal animation) without advancing
+//   the TTS sentence iterator.
+window.ttsPageBreak = () => reader.view.ttsPageBreak()
+
+window.ttsTurnPage = () => reader.view.ttsTurnPage()
+
+// Highlight exactly the spoken part of the sentence at [cfi] and force the
+// reading page back into view when the user paged away. Called by the playback
+// pipeline right before every engine request becomes audible; [ranges] are
+// sentence-relative UTF-16 offsets of the spoken segments (annotations like
+// `[12]` already excluded). Resolves to true when the sentence page is shown.
+window.ttsHighlightSpoken = (cfi, ranges) =>
+  reader.view.ttsHighlightSpoken(cfi, ranges)
+
+// Debug snapshot of the last painted TTS highlight (used by browser evidence
+// scripts and diagnostics; no UI depends on it).
+window.ttsHighlightDebug = () => reader.view.ttsHighlightDebug()
+
 window.ttsNextSection = async () => {
   await nextSection()
   initTts()
@@ -2168,18 +2199,45 @@ window.ttsPrevSection = async (last) => {
 }
 
 window.ttsNext = async () => {
+  ensureTts()
   const result = reader.view.tts.next(true)
   if (result) return result
   return await ttsNextSection()
 }
 
+// Silent iterator navigation used by the playback pipeline while prefetching:
+// it moves the TTS iterator but does NOT paint/scroll the highlight, so a slow
+// synthesis cannot make the visual selection run ahead of the audible text.
+// The pipeline calls ttsHighlightSpoken() when the segment actually starts.
+window.ttsNextSilent = async () => {
+  ensureTts()
+  if (!reader.view.tts) return ''
+  const result = reader.view.tts.next(false)
+  if (result) return result
+  await nextSection()
+  initTts()
+  return reader.view.tts.next(false)
+}
+
+// Repaint the highlight for the current TTS sentence without moving the
+// iterator (paired with ttsNextSilent: keep selection and audio in sync).
+window.ttsHighlightCurrent = () => {
+  ensureTts()
+  return reader.view.tts?.highlightCurrent() ?? null
+}
+
 window.ttsPrev = () => {
+  ensureTts()
+  if (!reader.view.tts) return ''
   const result = reader.view.tts.prev(true)
   if (result) return result
   return ttsPrevSection(true)
 }
 
-window.ttsPrepare = () => reader.view.tts.prepare()
+window.ttsPrepare = () => {
+  ensureTts()
+  return reader.view.tts?.prepare() ?? ''
+}
 
 window.clearSearch = () => reader.view.clearSearch()
 

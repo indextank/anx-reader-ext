@@ -213,9 +213,14 @@ void main() {
 
     test('engines without a documented limit use the conservative default', () {
       expect(TtsService.openai.provider.maxRequestChars, 800);
-      expect(TtsService.aliyun.provider.maxRequestChars, 800);
       expect(TtsService.mimo.provider.maxRequestChars, 800);
       expect(TtsService.azure.provider.maxRequestChars, 800);
+    });
+
+    test('Aliyun uses its documented 300-character request limit', () {
+      // Root cause of whole paragraphs being skipped: the Aliyun REST TTS
+      // gateway rejects longer text, so the pipeline must split at 300 chars.
+      expect(TtsService.aliyun.provider.maxRequestChars, 300);
     });
   });
 }

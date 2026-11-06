@@ -173,6 +173,12 @@ dependency_overrides:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # SDK-provided integration test driver. Used by integration_test/tts_*.dart
+  # to run the TTS acceptance scenarios on a real device (Windows desktop).
+  # No third-party dependency is added; see docs/tts-audit/03-dependency-
+  # evaluation.md for the evaluation.
+  integration_test:
+    sdk: flutter
   flutter_lints: ^5.0.0
   build_runner: ^2.4.13
   custom_lint: ^0.7.5
