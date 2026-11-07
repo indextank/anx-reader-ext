@@ -79,3 +79,5 @@ test/**/failures/
 .fvm/
 
 /dist/
+docs
+test

@@ -14,6 +14,7 @@ import 'package:anx_reader/page/settings_page/subpage/fonts.dart';
 import 'package:anx_reader/service/book_player/book_player_server.dart';
 import 'package:anx_reader/service/font.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_dropdown_tokens.dart';
 import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/theme/app_spacing.dart';
 import 'package:anx_reader/utils/font_parser.dart';
@@ -190,13 +191,13 @@ class StyleWidgetState extends State<StyleWidget> {
       return null;
     }
 
-    final inputDecorationTheme = InputDecorationTheme(
-      isDense: true,
+    final inputDecorationTheme =
+        AppDropdownTokens.fieldInputDecorationTheme.copyWith(
       border: OutlineInputBorder(borderRadius: AppReadingTokens.dropdownRadius),
     );
     return Column(
       children: [
-        DropdownMenu<PageTurn>(
+        _compactDropdownIcon(DropdownMenu<PageTurn>(
           label: Text(L10n.of(context).readingPagePageTurningMethod),
           initialSelection: Prefs().pageTurnStyle,
           expandedInsets: AppSpacing.zero,
@@ -215,9 +216,9 @@ class StyleWidgetState extends State<StyleWidget> {
                 ),
               )
               .toList(),
-        ),
+        )),
         SizedBox(height: StylePanelDensity.of(context).subsectionGap),
-        DropdownMenu<FontModel>(
+        _compactDropdownIcon(DropdownMenu<FontModel>(
           label: Text(L10n.of(context).font),
           expandedInsets: AppSpacing.zero,
           initialSelection: font,
@@ -250,8 +251,16 @@ class StyleWidgetState extends State<StyleWidget> {
                 ),
               )
               .toList(),
-        ),
+        )),
       ],
+    );
+  }
+
+  /// 下拉输入框箭头按钮改用全局紧凑尺寸，避免把输入框撑到 56dp。
+  Widget _compactDropdownIcon(Widget child) {
+    return IconButtonTheme(
+      data: AppDropdownTokens.suffixIconButtonTheme,
+      child: child,
     );
   }
 

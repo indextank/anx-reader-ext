@@ -83,6 +83,12 @@ class FlutterTtsAudioOutput
     Duration progressSampleInterval = const Duration(milliseconds: 500),
     int startStallMinProgressMs = 100,
     Duration midSegmentStallProbe = const Duration(milliseconds: 2500),
+    Duration resumeGuardWindow = const Duration(milliseconds: 900),
+    int resumeJumpPositionToleranceMs = 1500,
+    int resumeJumpMinRemainingMs = 1500,
+    Duration resumeJumpDetectionWindow = const Duration(seconds: 4),
+    double resumeJumpExpectedRatio = 0.4,
+    Duration resumeSuspectPause = const Duration(seconds: 20),
     bool segmentDiagnostics = true,
   })  : _preloadOverride = preload,
         _warmUpByDefault = warmUpByDefault ?? false,
@@ -99,6 +105,12 @@ class FlutterTtsAudioOutput
         _progressSampleInterval = progressSampleInterval,
         _startStallMinProgressMs = startStallMinProgressMs,
         _midSegmentStallProbe = midSegmentStallProbe,
+        _resumeGuardWindow = resumeGuardWindow,
+        _resumeJumpPositionToleranceMs = resumeJumpPositionToleranceMs,
+        _resumeJumpMinRemainingMs = resumeJumpMinRemainingMs,
+        _resumeJumpDetectionWindow = resumeJumpDetectionWindow,
+        _resumeJumpExpectedRatio = resumeJumpExpectedRatio,
+        _resumeSuspectPause = resumeSuspectPause,
         _segmentDiagnostics = segmentDiagnostics {
     _clock = clock ?? WallTtsAudioClock();
     _trackFactory = trackFactory ?? () => _AudioPlayerTrack(clock: _clock);
@@ -134,11 +146,40 @@ class FlutterTtsAudioOutput
   /// (faster than waiting for the deadline extensions).
   final Duration _midSegmentStallProbe;
 
+  /// Pause→resume jump guard (real-device 2026-11-06: after a 56–98 s pause the
+  /// MediaFoundation position jumped to the media end, so the segment "ended"
+  /// 745 ms after resume and ~10 s of audio was skipped). On resume the output
+  /// remembers the paused position and watches for a position jump / premature
+  /// ENDED; it then reloads the payload, seeks back to the paused position and
+  /// keeps the same segment pending (no completion is sent to the pipeline).
+  final Duration _resumeGuardWindow;
+  final int _resumeJumpPositionToleranceMs;
+  final int _resumeJumpMinRemainingMs;
+  final Duration _resumeJumpDetectionWindow;
+  final double _resumeJumpExpectedRatio;
+
+  /// A pause longer than this is treated as suspicious (machine suspend): when
+  /// the paused position is unknown the segment is replayed from the beginning.
+  final Duration _resumeSuspectPause;
+
   /// Emit one INFO line per segment start/end with the track index, payload
   /// size/mime, parsed vs player duration and the completion source. These are
   /// the fields needed to diagnose "events look normal but the segment was
   /// silent" from a user log (see docs/tts-round2/11-pagebreak-audio-skip.md).
   final bool _segmentDiagnostics;
+
+  // Pause→resume guard state.
+  Duration? _pausedPosition;
+  int? _pausedAtWallMs;
+  int? _pausedMediaDurationMs;
+  String? _pausedUtteranceId;
+  int? _pausedTrackIndex;
+  int? _resumeAtClockMs;
+  bool _resumeGuardActive = false;
+  int? _resumeGuardUntilMs;
+  int? _resumeExpectedRemainingMs;
+  bool _resumeRecoveryInProgress = false;
+  int _pauseJumpRecoveries = 0;
 
   /// Clock time when the active payload was pre-loaded (null when the payload
   /// was loaded inside `start()`), used for the prepare→start diagnostic.
@@ -525,6 +566,8 @@ class FlutterTtsAudioOutput
     _preparedAtMs = null;
     _preparedRequest = null;
     _preparedTrack = null;
+    _clearResumeGuard();
+    _resumeRecoveryInProgress = false;
     _armCompletionDeadline();
     _startProgressMonitor();
   }
@@ -586,8 +629,19 @@ class FlutterTtsAudioOutput
     final now = _clock.nowMs;
     final positionMs = progress?.position?.inMilliseconds;
     final durationMs = progress?.duration?.inMilliseconds;
+    // Pause→resume jump guard: after a long suspend MediaFoundation can jump the
+    // media position forward (real device: +10 s after a 56 s pause). Detect it
+    // on the first progress sample and replay the segment from the paused
+    // position instead of silently skipping the remaining audio.
+    if (_isResumeJumpPosition(positionMs, now)) {
+      await _recoverFromResumeJump(track, 'position-jump');
+      return;
+    }
     if (durationMs != null && durationMs > 0) {
       _playerReportedDurationMs = durationMs;
+      // A paused position recorded during a suspend can be unreliable; keep the
+      // player-reported duration for the jump-recovery deadline.
+      _pausedMediaDurationMs ??= durationMs;
       _maybeRebaseDeadlineOnPlayerDuration(positionMs);
       if (!_completionPending || !identical(track, _active)) return;
     }
@@ -951,45 +1005,319 @@ class FlutterTtsAudioOutput
       }
     }
     if (!_completions.isClosed) _completions.add(null);
+    _clearResumeGuard();
+    _resumeRecoveryInProgress = false;
   }
 
   @override
   Future<void> pause() async {
     _paused = true;
     // Paused time must not count against the completion deadline / start-stall
-    // watchdog; both are re-armed generously when playback resumes.
+    // watchdog; both are re-armed when playback resumes.
     _cancelDeadlineTimerOnly();
     _cancelProgressMonitor();
-    await _active?.pause();
+    final track = _active;
+    if (track != null && _completionPending) {
+      // Capture the paused media position for the pause→resume jump guard.
+      // The recovered audio always seeks to THIS position (never to a sample
+      // taken after resume, which may already be the jumped-to position).
+      var positionMs = _lastSampledPositionMs ?? _maxSampledPositionMs;
+      final sampledPositionMs = positionMs;
+      int? durationMs = _playerReportedDurationMs ?? _activeMediaDurationMs;
+      try {
+        final progress = await track.progress();
+        positionMs = progress?.position?.inMilliseconds ?? positionMs;
+        if (progress?.duration != null &&
+            progress!.duration!.inMilliseconds > 0) {
+          durationMs = progress.duration!.inMilliseconds;
+        }
+      } catch (_) {
+        // Best effort: fall back to the last sampled position.
+      }
+      _pausedPosition =
+          positionMs == null ? null : Duration(milliseconds: positionMs);
+      _pausedMediaDurationMs = durationMs;
+      _pausedAtWallMs = DateTime.now().millisecondsSinceEpoch;
+      _pausedUtteranceId = _activeRequest?.utteranceId;
+      _pausedTrackIndex = _tracks.indexOf(track);
+      if (_segmentDiagnostics) {
+        AnxLog.info('TTS[audio] pause position=${positionMs ?? '?'}ms '
+            'utterance=${_activeRequest?.utteranceId ?? ''} '
+            'track=$_pausedTrackIndex/${_tracks.length} '
+            'sampledPosMs=${sampledPositionMs ?? -1} '
+            'maxSampledPosMs=${_maxSampledPositionMs ?? -1} '
+            'mediaMs=${durationMs ?? -1}');
+      }
+    }
+    await track?.pause();
   }
 
   @override
   Future<void> resume() async {
-    _paused = false;
-    await _active?.resume();
     final track = _active;
-    if (_completionDeferred && track != null && _completionPending) {
+    if (track == null || !_completionPending) {
+      _paused = false;
+      await track?.resume();
+      _clearResumeGuard();
+      return;
+    }
+    // Arm the jump guard BEFORE resuming: the platform may deliver the early
+    // ENDED (or the jumped position) while the resume call is still in flight.
+    _setupResumeGuard(track);
+    _paused = false;
+    await track.resume();
+    TtsAudioProgress? first;
+    try {
+      first = await track.progress();
+    } catch (_) {
+      // Diagnostics/guard only.
+    }
+    if (_resumeRecoveryInProgress) return;
+    final firstPosMs = first?.position?.inMilliseconds;
+    if (first?.duration != null && first!.duration!.inMilliseconds > 0) {
+      _playerReportedDurationMs = first.duration!.inMilliseconds;
+    }
+    if (_completionDeferred) {
       _completionDeferred = false;
+      final jump = _isResumeJumpEnded() ||
+          _isResumeJumpPosition(firstPosMs, _clock.nowMs);
+      if (jump) {
+        await _recoverFromResumeJump(track, 'deferred-early-ended');
+        return;
+      }
       _completeSegment(TtsAudioCompletionSource.deferred, track);
       return;
     }
-    if (_completionPending && track != null) {
-      // Restart the start-stall window from the resume: a long pause must not
-      // look like a stalled start.
-      _segmentStartedAtMs = _clock.nowMs;
-      _startStallRetried = false;
-      _retriedAtMs = null;
-      _maxSampledPositionMs = null;
-      _lastSampledPositionMs = null;
-      _progressAdvancedAtMs = _segmentStartedAtMs;
-      _unobservablePositionLogged = false;
-      _resetRateVerification();
-      // Re-arm with the full payload duration: the remaining media time is
-      // unknown after an arbitrary pause and being generous here can never
-      // truncate the segment (the position check at the deadline still
-      // settles it quickly when it is actually near the end).
+    if (_paused || !_completionPending || !identical(track, _active)) return;
+    // Restart the start-stall window from the resume: a long pause must not
+    // look like a stalled start.
+    _segmentStartedAtMs = _clock.nowMs;
+    _startStallRetried = false;
+    _retriedAtMs = null;
+    _maxSampledPositionMs = firstPosMs;
+    _lastSampledPositionMs = firstPosMs;
+    _progressAdvancedAtMs = _segmentStartedAtMs;
+    _unobservablePositionLogged = false;
+    _resetRateVerification();
+    final jumpDetected = _isResumeJumpPosition(firstPosMs, _clock.nowMs);
+    final wallPauseMs = _pausedAtWallMs == null
+        ? -1
+        : DateTime.now().millisecondsSinceEpoch - _pausedAtWallMs!;
+    if (_segmentDiagnostics) {
+      AnxLog.info('TTS[audio] resume '
+          'pausedPos=${_pausedPosition?.inMilliseconds ?? 'null'}ms '
+          'firstPos=${firstPosMs ?? 'null'}ms '
+          'expectedRemainingMs=${_resumeExpectedRemainingMs ?? 'null'} '
+          'jumpDetected=$jumpDetected '
+          'replay=${jumpDetected ? 'pending' : 'none'} '
+          'utterance=${_pausedUtteranceId ?? _activeRequest?.utteranceId ?? ''} '
+          'track=${_tracks.indexOf(track)}/${_tracks.length} '
+          'wallPauseMs=$wallPauseMs');
+    }
+    if (jumpDetected) {
+      await _recoverFromResumeJump(
+          track, firstPosMs != null ? 'first-sample-jump' : 'early-ended');
+      return;
+    }
+    final expected = _resumeExpectedRemainingMs;
+    if (expected != null && expected > 0) {
+      _armDeadlineFor(
+          Duration(milliseconds: expected + _deadlineMargin.inMilliseconds));
+    } else {
       _armCompletionDeadline();
-      _startProgressMonitor();
+    }
+    _startProgressMonitor();
+  }
+
+  /// Records the paused position/time and decides how strictly the resumed
+  /// position must be validated.
+  ///
+  /// The paused position recorded by `pause()` is kept for the recovery seek
+  /// target; only the resume-window fields are reset here.
+  void _setupResumeGuard(TtsAudioTrack track) {
+    _resumeAtClockMs = _clock.nowMs;
+    _resumeGuardUntilMs = _clock.nowMs + _resumeGuardWindow.inMilliseconds;
+    final pausedPos = _pausedPosition;
+    final mediaMs = _pausedMediaDurationMs ??
+        _playerReportedDurationMs ??
+        _activeMediaDurationMs;
+    final rate = _effectiveTrackRate > 0 ? _effectiveTrackRate : 1.0;
+    int? expectedRemainingMs;
+    if (pausedPos != null && mediaMs != null && mediaMs > 0) {
+      final remainingMediaMs = math.max(0, mediaMs - pausedPos.inMilliseconds);
+      expectedRemainingMs = (remainingMediaMs / rate).round();
+    }
+    _resumeExpectedRemainingMs = expectedRemainingMs;
+    _resumeGuardActive = expectedRemainingMs != null &&
+        expectedRemainingMs >= _resumeJumpMinRemainingMs;
+    final wallPauseMs = _pausedAtWallMs == null
+        ? -1
+        : DateTime.now().millisecondsSinceEpoch - _pausedAtWallMs!;
+    if (_segmentDiagnostics) {
+      AnxLog.info('TTS[audio] resume-guard set '
+          'pausedPos=${pausedPos?.inMilliseconds ?? 'null'}ms '
+          'expectedRemainingMs=${expectedRemainingMs ?? 'null'} '
+          'guard=$_resumeGuardActive '
+          'track=${_tracks.indexOf(track)}/${_tracks.length} '
+          'wallPauseMs=$wallPauseMs '
+          'longSuspendLikely=${wallPauseMs >= _resumeSuspectPause.inMilliseconds}');
+    }
+  }
+
+  void _clearResumeGuard() {
+    _pausedPosition = null;
+    _pausedAtWallMs = null;
+    _pausedMediaDurationMs = null;
+    _pausedUtteranceId = null;
+    _pausedTrackIndex = null;
+    _resumeAtClockMs = null;
+    _resumeExpectedRemainingMs = null;
+    _resumeGuardActive = false;
+    _resumeGuardUntilMs = null;
+  }
+
+  /// A platform ENDED event that is far too early for the remaining paused audio.
+  bool _isResumeJumpEnded() {
+    if (_resumeRecoveryInProgress) return false;
+    final expected = _resumeExpectedRemainingMs;
+    final resumedAt = _resumeAtClockMs;
+    if (expected == null || resumedAt == null) return false;
+    if (expected < _resumeJumpMinRemainingMs) return false;
+    final elapsed = _clock.nowMs - resumedAt;
+    if (elapsed > _resumeJumpDetectionWindow.inMilliseconds) return false;
+    final stillExpected = expected - elapsed;
+    final threshold = math.max(_resumeJumpMinRemainingMs,
+        (expected * _resumeJumpExpectedRatio).round());
+    return stillExpected > threshold;
+  }
+
+  /// A position sample that jumped past `pausedPos + rate * elapsed`.
+  bool _isResumeJumpPosition(int? positionMs, int now) {
+    if (!_resumeGuardActive || _resumeRecoveryInProgress) return false;
+    final until = _resumeGuardUntilMs;
+    if (until != null && now > until) {
+      _resumeGuardActive = false;
+      return false;
+    }
+    final pausedPos = _pausedPosition;
+    final resumedAt = _resumeAtClockMs;
+    if (pausedPos == null || resumedAt == null || positionMs == null) {
+      return false;
+    }
+    final elapsed = math.max(0, now - resumedAt);
+    final rate = _effectiveTrackRate > 0 ? _effectiveTrackRate : 1.0;
+    final maxAllowed = pausedPos.inMilliseconds +
+        (rate * elapsed).round() +
+        _resumeJumpPositionToleranceMs;
+    return positionMs > maxAllowed;
+  }
+
+  /// Replays the remaining audio of the current segment after a resume jump.
+  ///
+  /// Stops the track, reloads the original payload, seeks to the position that
+  /// was captured at `pause()` (when the track supports seeking) and plays
+  /// again. The segment stays pending: no completion is emitted to the
+  /// pipeline. Tracks without a seek implementation (or a failing seek) fall
+  /// back to replaying the whole utterance from its beginning — a duplicate is
+  /// preferable to silently skipping audio.
+  Future<void> _recoverFromResumeJump(
+      TtsAudioTrack track, String reason) async {
+    if (_resumeRecoveryInProgress ||
+        !_completionPending ||
+        !identical(track, _active)) {
+      return;
+    }
+    final request = _activeRequest;
+    final pausedPos = _pausedPosition;
+    final pausedUtteranceId = _pausedUtteranceId;
+    final pausedTrackIndex = _pausedTrackIndex;
+    final mediaMs = _pausedMediaDurationMs ??
+        _playerReportedDurationMs ??
+        _activeMediaDurationMs;
+    final resumedAt = _resumeAtClockMs;
+    final elapsed = resumedAt == null ? -1 : _clock.nowMs - resumedAt;
+    if (request == null) {
+      AnxLog.severe('TTS[audio] pause-resume jump detected ($reason) but no '
+          'active payload is available - settling segment: $debugState');
+      _completeSegment(TtsAudioCompletionSource.deadlineForced, track);
+      return;
+    }
+    _resumeRecoveryInProgress = true;
+    _pauseJumpRecoveries++;
+    AnxLog.severe('TTS[audio] pause-resume jump detected ($reason) '
+        'pausedPosMs=${pausedPos?.inMilliseconds ?? 'null'} '
+        'expectedRemainingMs=${_resumeExpectedRemainingMs ?? 'null'} '
+        'elapsedSinceResumeMs=$elapsed '
+        'utterance=${pausedUtteranceId ?? _activeRequest?.utteranceId ?? ''} '
+        'track=${pausedTrackIndex ?? _tracks.indexOf(track)}/${_tracks.length} '
+        '- replaying remaining: $debugState');
+    _cancelCompletionDeadline();
+    _cancelProgressMonitor();
+    final rate = _playbackRate;
+    final rateFirst = _applyRateBeforePlay && _activeApplyTrackRate;
+    Duration? restartPosition;
+    try {
+      await _stopTrackQuietly(track);
+      await track.setSource(request.bytes, mimeType: request.mimeType);
+      if (pausedPos != null &&
+          track is TtsAudioTrackSeekable &&
+          (mediaMs == null || pausedPos.inMilliseconds < mediaMs)) {
+        try {
+          await (track as TtsAudioTrackSeekable).seekTo(pausedPos);
+          restartPosition = pausedPos;
+          if (_segmentDiagnostics) {
+            AnxLog.info('TTS[audio] pause-resume seeked back to '
+                '${pausedPos.inMilliseconds}ms');
+          }
+        } catch (e) {
+          AnxLog.severe('TTS[audio] pause-resume seek failed ($e) - '
+              'replaying the whole segment');
+        }
+      }
+      restartPosition ??= Duration.zero;
+      if (rateFirst) await _applyRateTo(track, rate);
+      await track.play();
+      if (!rateFirst && _activeApplyTrackRate) await _applyRateTo(track, rate);
+    } catch (e) {
+      AnxLog.severe('TTS[audio] pause-resume replay failed: $e - '
+          'settling segment: $debugState');
+      _resumeRecoveryInProgress = false;
+      _completeSegment(TtsAudioCompletionSource.deadlineForced, track);
+      return;
+    }
+    if (!_completionPending || !identical(track, _active)) {
+      _resumeRecoveryInProgress = false;
+      return;
+    }
+    final restartPosMs = restartPosition.inMilliseconds;
+    _maxSampledPositionMs = restartPosMs;
+    _lastSampledPositionMs = restartPosMs;
+    _progressAdvancedAtMs = _clock.nowMs;
+    _startedProgressing = restartPosMs >= _startStallMinProgressMs;
+    _segmentStartedAtMs = _clock.nowMs;
+    _retriedAtMs = null;
+    _startStallRetried = false;
+    _unobservablePositionLogged = false;
+    _resetRateVerification();
+    _clearResumeGuard();
+    final rateNow = _effectiveTrackRate > 0 ? _effectiveTrackRate : 1.0;
+    if (mediaMs != null && mediaMs > 0) {
+      final remainingMs = math.max(0, mediaMs - restartPosMs);
+      _armDeadlineFor(Duration(
+          milliseconds: (remainingMs / rateNow).round() +
+              _deadlineMargin.inMilliseconds));
+    } else {
+      _armCompletionDeadline();
+    }
+    _startProgressMonitor();
+    _resumeRecoveryInProgress = false;
+    final replayMode = restartPosMs == 0 ? 'whole-utterance' : 'seek';
+    if (_segmentDiagnostics) {
+      AnxLog.info('TTS[audio] pause-resume replayMode=$replayMode '
+          'restartPosMs=$restartPosMs '
+          'pausedPosMs=${pausedPos?.inMilliseconds ?? 'null'} '
+          'remainingMs=${mediaMs == null ? '?' : math.max(0, mediaMs - restartPosMs)} '
+          'utterance=${pausedUtteranceId ?? ''}');
     }
   }
 
@@ -1002,6 +1330,8 @@ class FlutterTtsAudioOutput
     _completionDeferred = false;
     _cancelCompletionDeadline();
     _cancelProgressMonitor();
+    _clearResumeGuard();
+    _resumeRecoveryInProgress = false;
     for (final track in _tracks) {
       await _stopTrackQuietly(track);
     }
@@ -1072,6 +1402,13 @@ class FlutterTtsAudioOutput
       _completionDeferred = true;
       return;
     }
+    if (_isResumeJumpEnded()) {
+      // The platform ENDED event is far too early for the audio that is left
+      // after the paused position: MediaFoundation jumped the clock during a
+      // long suspend. Replay the remaining audio instead of accepting it.
+      unawaited(_recoverFromResumeJump(track, 'early-ended'));
+      return;
+    }
     _completeSegment(TtsAudioCompletionSource.ended, track);
   }
 
@@ -1097,6 +1434,17 @@ class FlutterTtsAudioOutput
       buffer.write('measuredRate=${measuredRate.toStringAsFixed(2)} ');
     }
     if (_rateReapplied) buffer.write('rateReapplied=true ');
+    if (_pauseJumpRecoveries > 0) {
+      buffer.write('pauseJumpRecoveries=$_pauseJumpRecoveries ');
+    }
+    final pausedPos = _pausedPosition;
+    if (pausedPos != null) {
+      buffer.write('pausedPos=${pausedPos.inMilliseconds}ms ');
+    }
+    if (_resumeExpectedRemainingMs != null) {
+      buffer.write('resumeExpected=${_resumeExpectedRemainingMs}ms ');
+    }
+    if (_resumeRecoveryInProgress) buffer.write('resumeRecovering=true ');
     buffer.write('pending=$_completionPending deferred=$_completionDeferred ');
     final source = _lastCompletionSource;
     if (source != null) buffer.write('lastSource=${source.name} ');
@@ -1133,6 +1481,8 @@ class FlutterTtsAudioOutput
   Future<void> dispose() async {
     _cancelCompletionDeadline();
     _cancelProgressMonitor();
+    _clearResumeGuard();
+    _resumeRecoveryInProgress = false;
     _completionPending = false;
     _completionDeferred = false;
     await _completions.close();
@@ -1198,7 +1548,7 @@ class FlutterTtsAudioOutput
 /// the end. `getDuration()` may be null right after a `BytesSource` load, so the
 /// payload's own frame/header duration is used as a cached fallback. At most one
 /// completion is emitted per `play()` call.
-class _AudioPlayerTrack implements TtsAudioTrack {
+class _AudioPlayerTrack implements TtsAudioTrack, TtsAudioTrackSeekable {
   _AudioPlayerTrack({required TtsAudioClock clock}) : _clock = clock {
     _player.setReleaseMode(ReleaseMode.stop).catchError((Object e) {
       AnxLog.info('TTS audio player release mode failed: $e');
@@ -1383,6 +1733,15 @@ class _AudioPlayerTrack implements TtsAudioTrack {
 
   @override
   Future<void> setVolume(double volume) => _player.setVolume(volume);
+
+  /// Seek support for the pause→resume jump recovery. `audioplayers` maps this
+  /// to `IMFMediaEngine::SetCurrentTime` on Windows; the next `play()` starts
+  /// from the requested media position.
+  @override
+  Future<void> seekTo(Duration position) async {
+    _lastPosition = position;
+    await _player.seek(position);
+  }
 
   @override
   Future<void> dispose() async {

@@ -252,28 +252,25 @@ class _ReadingMoreSettingsState extends State<ReadingMoreSettings> {
         title: label,
         pinnedTrailing: true,
         contentPadding: AppSpacing.zero,
-        // 极窄侧栏（如 240px）下 3 列下拉行会被压缩；等比缩小而不是
-        // RenderFlex 溢出/换行，保证单行完整展示。
-        trailing: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerRight,
-          child: AppDropdownField<ReadingInfoEnum>(
-            width: StylePanelTokens.dropdownWidth,
-            value: currentValue,
-            inputDecorationTheme: AppDropdownField.borderlessDecoration,
-            items: [
-              for (final info in ReadingInfoEnum.values)
-                AppDropdownItem<ReadingInfoEnum>(
-                  value: info,
-                  label: info.getL10n(context),
-                ),
-            ],
-            onChanged: (value) {
-              if (value != null) {
-                onChanged(value);
-              }
-            },
-          ),
+        // 不再用 FittedBox 缩放整块下拉框（会把默认值文字一起缩小）；
+        // 三个下拉框等分列宽，默认值沿用面板统一的正文字号。
+        trailing: AppDropdownField<ReadingInfoEnum>(
+          expandedInsets: EdgeInsets.zero,
+          value: currentValue,
+          textStyle: StylePanelTokens.optionLabel(context),
+          inputDecorationTheme: AppDropdownField.borderlessDecoration,
+          items: [
+            for (final info in ReadingInfoEnum.values)
+              AppDropdownItem<ReadingInfoEnum>(
+                value: info,
+                label: info.getL10n(context),
+              ),
+          ],
+          onChanged: (value) {
+            if (value != null) {
+              onChanged(value);
+            }
+          },
         ),
       );
     }

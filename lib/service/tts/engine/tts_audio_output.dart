@@ -118,3 +118,16 @@ abstract interface class TtsAudioTrack {
 
   Future<void> dispose();
 }
+
+/// Optional seek capability of a [TtsAudioTrack].
+///
+/// Used by the pause→resume jump recovery: when MediaFoundation jumps the media
+/// position forward during a long suspend (observed on a real device after a
+/// 56–98 s pause, where the segment "ended" 745 ms after resume and skipped
+/// 10 s of audio), the output re-loads the payload and seeks back to the
+/// position captured at `pause()`. Tracks that cannot seek simply do not
+/// implement this interface; the output then falls back to replaying the whole
+/// current utterance (no silent skip).
+abstract interface class TtsAudioTrackSeekable {
+  Future<void> seekTo(Duration position);
+}

@@ -88,10 +88,13 @@ class AppTheme {
       content: AppContentStyleTokens.tokens,
       isEInk: eInkMode,
     );
+    // 全局统一文字体系：所有组件（含下拉框默认值）都从同一 TextTheme 派生，
+    // 避免个别组件使用 Material 默认字号/字重造成视觉不一致。
+    final appTextTheme = AppTypography.textTheme(colorScheme.onSurface);
 
     return base.copyWith(
       scaffoldBackgroundColor: background,
-      textTheme: AppTypography.textTheme(colorScheme.onSurface),
+      textTheme: appTextTheme,
       primaryTextTheme: AppTypography.textTheme(colorScheme.onPrimary),
       filledButtonTheme: FilledButtonThemeData(
         style: ButtonStyle(
@@ -146,6 +149,11 @@ class AppTheme {
       // 全局下拉/菜单选项高度（Material 默认 48dp -> 40dp）。
       menuButtonTheme: const MenuButtonThemeData(
         style: AppDropdownTokens.menuItemStyle,
+      ),
+      // 全局下拉输入框（关闭态）统一紧凑高度 + 统一正文文字样式。
+      dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: appTextTheme.bodyLarge,
+        inputDecorationTheme: AppDropdownTokens.fieldInputDecorationTheme,
       ),
       cardTheme: const CardThemeData(
         elevation: 0,

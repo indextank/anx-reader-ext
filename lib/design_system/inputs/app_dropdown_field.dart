@@ -1,3 +1,4 @@
+import 'package:anx_reader/design_system/inputs/app_dropdown_menu.dart';
 import 'package:anx_reader/theme/app_dropdown_tokens.dart';
 import 'package:flutter/material.dart';
 
@@ -59,15 +60,10 @@ class AppDropdownField<T> extends StatefulWidget {
   final double? menuHeight;
 
   /// 无边框、紧凑型输入装饰（用于嵌在自定义容器/设置行里的下拉框）。
-  static const InputDecorationTheme borderlessDecoration = InputDecorationTheme(
-    isDense: true,
-    filled: false,
-    border: InputBorder.none,
-    enabledBorder: InputBorder.none,
-    focusedBorder: InputBorder.none,
-    disabledBorder: InputBorder.none,
-    contentPadding: EdgeInsets.zero,
-  );
+  ///
+  /// 高度与全局下拉输入框一致（紧凑 contentPadding），避免某些行比其它行高。
+  static const InputDecorationTheme borderlessDecoration =
+      AppDropdownTokens.borderlessFieldInputDecorationTheme;
 
   @override
   State<AppDropdownField<T>> createState() => _AppDropdownFieldState<T>();
@@ -117,7 +113,7 @@ class _AppDropdownFieldState<T> extends State<AppDropdownField<T>> {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownMenu<T>(
+    return AppDropdownMenu<T>(
       controller: _controller,
       initialSelection: _initialSelection,
       width: widget.width,

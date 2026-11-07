@@ -1,6 +1,7 @@
 import 'package:anx_reader/config/shared_preference_provider.dart';
 import 'package:anx_reader/design_system/design_system.dart';
 import 'package:anx_reader/theme/app_reading_tokens.dart';
+import 'package:anx_reader/theme/app_dropdown_tokens.dart';
 import 'package:anx_reader/theme/style_panel_tokens.dart';
 import 'package:anx_reader/enums/text_alignment.dart';
 import 'package:anx_reader/enums/writing_mode.dart';
@@ -274,13 +275,11 @@ class _StyleSettingsState extends State<StyleSettings> {
             Icons.format_align_left,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-          trailing: DropdownMenu<TextAlignmentEnum>(
+          trailing: _compactDropdownIcon(DropdownMenu<TextAlignmentEnum>(
             width: StylePanelTokens.dropdownWidth,
             initialSelection: Prefs().textAlignment,
-            inputDecorationTheme: InputDecorationTheme(
-              isDense: false,
-              border: InputBorder.none,
-            ),
+            inputDecorationTheme:
+                AppDropdownTokens.borderlessFieldInputDecorationTheme,
             dropdownMenuEntries: items.map((item) {
               return DropdownMenuEntry<TextAlignmentEnum>(
                 value: item["value"] as TextAlignmentEnum,
@@ -296,7 +295,7 @@ class _StyleSettingsState extends State<StyleSettings> {
                 });
               }
             },
-          ),
+          )),
         ),
       );
     }
@@ -332,6 +331,14 @@ class _StyleSettingsState extends State<StyleSettings> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 下拉输入框箭头按钮改用全局紧凑尺寸（输入框约 40dp）。
+  Widget _compactDropdownIcon(Widget child) {
+    return IconButtonTheme(
+      data: AppDropdownTokens.suffixIconButtonTheme,
+      child: child,
     );
   }
 }

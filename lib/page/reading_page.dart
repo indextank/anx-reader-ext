@@ -24,6 +24,7 @@ import 'package:anx_reader/providers/sync.dart';
 import 'package:anx_reader/service/ai/index.dart';
 import 'package:anx_reader/service/ai/prompt_generate.dart';
 import 'package:anx_reader/utils/env_var.dart';
+import 'package:anx_reader/utils/reader_font_size.dart';
 import 'package:anx_reader/utils/ui/status_bar.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_stream.dart';
 import 'package:anx_reader/widgets/ai/ai_chat_session.dart';
@@ -41,6 +42,8 @@ import 'package:anx_reader/widgets/reading_page/tts_widget.dart';
 import 'package:anx_reader/widgets/reading_page/toc_sidebar.dart';
 import 'package:anx_reader/widgets/reading_page/toc_widget.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -333,6 +336,25 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     return result == KeyEventResult.handled;
   }
 
+  /// Ctrl+↑ / Ctrl+↓ 调整当前阅读字号：每次 1px，区间内限制在 10–30px。
+  ///
+  /// 仅 Windows/macOS/Linux 默认启用。书籍自带样式（[Prefs.useBookStyles]）
+  /// 时字号由书内 CSS 决定，与样式面板字号滑块一致地跳过调整；按键仍被
+  /// 消费，避免 Ctrl+↑ 被当成普通方向键翻页。若样式面板已把字号设置在
+  /// 10–30px 之外，朝区间内调整会夹入区间、朝区间外调整保持不变。
+  void _adjustReaderFontSize({required bool increase}) {
+    if (Prefs().useBookStyles) return;
+    final currentStyle = Prefs().bookStyle;
+    final nextEm = ReaderFontSize.adjustedEm(
+      currentStyle.fontSize,
+      increase: increase,
+    );
+    if ((nextEm - currentStyle.fontSize).abs() <= 1e-9) return;
+    final nextStyle = currentStyle.copyWith(fontSize: nextEm);
+    unawaited(Prefs().saveBookStyleToPrefs(nextStyle));
+    epubPlayerKey.currentState?.changeStyle(nextStyle);
+  }
+
   KeyEventResult _handleReaderKeyEvent(FocusNode node, KeyEvent event,
       {bool requireFocus = true}) {
     if (requireFocus && !_readerFocusNode.hasFocus) {
@@ -344,6 +366,21 @@ class ReadingPageState extends ConsumerState<ReadingPage>
     }
 
     final logicalKey = event.logicalKey;
+
+    // Ctrl+↑ / Ctrl+↓ 调整阅读字号（桌面三平台默认支持）。必须放在普通
+    // 方向键翻页之前，否则 Ctrl+↑ 会触发上一页。
+    if ((logicalKey == LogicalKeyboardKey.arrowUp ||
+            logicalKey == LogicalKeyboardKey.arrowDown) &&
+        HardwareKeyboard.instance.isControlPressed &&
+        ReaderFontSize.supportsShortcutOn(
+          defaultTargetPlatform,
+          isWeb: kIsWeb,
+        )) {
+      _adjustReaderFontSize(
+        increase: logicalKey == LogicalKeyboardKey.arrowUp,
+      );
+      return KeyEventResult.handled;
+    }
 
     if (logicalKey == LogicalKeyboardKey.arrowRight ||
         logicalKey == LogicalKeyboardKey.arrowDown ||
